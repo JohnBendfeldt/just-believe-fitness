@@ -26,7 +26,7 @@ async function main() {
   try {
     console.log('\n=== Just Believe Fitness · Garmin Session Token Helper ===');
     console.log('Signs into Garmin Connect from your residential IP so you can paste');
-    console.log('the resulting OAuth token JSON into justbelievefitness.netlify.app.\n');
+    console.log('the resulting OAuth token JSON into jbfit.studio.\n');
 
     const email = (await rl.question('Garmin Connect Email: ')).trim();
     const password = await rl.question('Garmin Connect Password: ');

@@ -46,7 +46,7 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
       notes: 'Great ride on jbfit.studio',
     });
     const descDeduped = buildRideSummaryDescription(rideAlreadyLinked);
-    expect(descDeduped.match(/justbelievefitness\.netlify\.app/g)?.length).toBe(1);
+    expect(descDeduped.match(/jbfit\.studio/g)?.length).toBe(1);
   });
 
   it('exchanges OAuth code via /api/strava-token and imports athlete FTP & kg->lbs weight', async () => {
