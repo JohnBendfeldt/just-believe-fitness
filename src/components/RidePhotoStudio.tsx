@@ -112,7 +112,7 @@ export function RidePhotoStudio({
           title: title.trim() || ride.title,
           text:
             notes.trim() ||
-            `${ride.burnPoints} Burn Points on Just Believe Fitness!\njustbelievefitness.netlify.app`,
+            `${ride.burnPoints} Burn Points on Just Believe Fitness!\njbfit.studio`,
           files: [file],
         });
       } else {

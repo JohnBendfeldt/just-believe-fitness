@@ -307,7 +307,7 @@ export function renderRideShareCanvas(
 
   ctx.fillStyle = '#F97316';
   ctx.font = '800 22px "Plus Jakarta Sans", system-ui, sans-serif';
-  ctx.fillText('JUST BELIEVE FITNESS · JBF STUDIO', padX + 92, 84);
+  ctx.fillText('JUST BELIEVE FITNESS · JBFIT.STUDIO', padX + 92, 84);
 
   ctx.fillStyle = '#94A3B8';
   ctx.font = '600 22px "JetBrains Mono", monospace';

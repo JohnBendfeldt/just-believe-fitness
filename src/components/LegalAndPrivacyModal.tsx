@@ -43,7 +43,7 @@ export function LegalAndPrivacyModal({
                 : 'Terms of Use & Release of Liability'}
             </h2>
             <p className="modal-subtitle">
-              Just Believe Fitness (JBF) · Effective {EFFECTIVE_DATE}
+              Just Believe Fitness · Effective {EFFECTIVE_DATE}
             </p>
           </div>
           <button

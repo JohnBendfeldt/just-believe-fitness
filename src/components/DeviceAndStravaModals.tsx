@@ -846,10 +846,10 @@ export function HistoryAndStravaModal({
                     size={13}
                     style={{ verticalAlign: '-2px', marginRight: '4px', color: '#0EA5E9' }}
                   />
-                  For <strong>pushing new JBF workouts</strong> to Garmin Connect (write access),
+                  For <strong>pushing new workouts</strong> to Garmin Connect (write access),
                   sign in via Garmin SSO below or paste a local session token if cloud IPs hit a
                   429 cooldown. Only rolling OAuth tokens are stored in this browser. When both
-                  Garmin and Strava are linked, JBF uploads in import mode to prevent duplicates.
+                  Garmin and Strava are linked, uploads use import mode to prevent duplicates.
                 </p>
 
                 {!garminMfaState ? (
@@ -1071,7 +1071,7 @@ export function HistoryAndStravaModal({
                     id="download-strava-app-icon"
                     className="btn btn-sm"
                   >
-                    <Download size={14} /> Download JBF App Icon (.PNG · 256×256)
+                    <Download size={14} /> Download App Icon (.PNG · 256×256)
                   </a>
                   <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
                     Upload this PNG on Strava&apos;s &ldquo;Update App Icon&rdquo; page (SVGs are

@@ -10,14 +10,14 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
   {
     id: 'free-ride',
     name: 'Just Ride · Open Studio',
-    subtitle: 'Free-form spin with live JBF Burn Points, 5-zone gauges & YouTube PiP',
+    subtitle: 'Free-form spin with live Burn Points, 5-zone gauges & YouTube PiP',
     category: 'free',
     isFreeRide: true,
     segments: [],
   },
   {
     id: 'jbf-23-burn',
-    name: 'JBF 23-Min Signature Burn',
+    name: '23-Min Signature Burn',
     subtitle: 'Base · Push · All-Out blocks designed to stack 12+ Burn Points',
     category: 'jbf',
     segments: [
@@ -145,7 +145,7 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
   },
   {
     id: 'burn-hiit-20',
-    name: 'JBF 20-Min Burn Express',
+    name: '20-Min Burn Express',
     subtitle: 'Crisp 60s Push / 30s All-Out / 60s Recovery rounds for busy days',
     category: 'hiit',
     segments: [

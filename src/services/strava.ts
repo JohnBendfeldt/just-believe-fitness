@@ -156,12 +156,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-export const JBF_STRAVA_APP_DOMAIN = 'justbelievefitness.netlify.app';
+export const JBF_STRAVA_APP_DOMAIN = 'jbfit.studio';
 
 export function buildRideSummaryDescription(ride: SavedRide): string {
   const bikeTag = ride.bikeLabel || 'Indoor Bike';
   const statsLine = [
-    `Just Believe Fitness (JBF) · ${bikeTag}`,
+    `Just Believe Fitness · ${bikeTag}`,
     `Burn Points: ${ride.burnPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
     ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
     `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,

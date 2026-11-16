@@ -31,8 +31,8 @@ export function makeSampleRide(overrides: Partial<SavedRide> = {}): SavedRide {
 
   return {
     id: 'ride-sample-1',
-    title: 'JBF 23-Min Signature Burn',
-    workoutName: 'JBF 23-Min Signature Burn',
+    title: '23-Min Signature Burn',
+    workoutName: '23-Min Signature Burn',
     startedAtIso: '2026-11-15T22:00:00.000Z',
     endedAtIso: '2026-11-15T22:23:00.000Z',
     durationSec: 1380,

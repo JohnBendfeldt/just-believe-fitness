@@ -931,7 +931,7 @@ export function App() {
           />
           <div>
             <h1 className="brand-title">Just Believe Fitness</h1>
-            <div className="brand-sub">JBF Studio · Any Bike &amp; BLE HR</div>
+            <div className="brand-sub">Indoor Cycling Studio · Any Bike &amp; BLE HR</div>
           </div>
         </div>
 
@@ -1038,7 +1038,7 @@ export function App() {
           <span className="effort-zone-title">
             {isAnySensorLive
               ? `ZONE ${headlineZone.zone} · ${headlineZone.stageLabel}`
-              : 'JBF READY · PAIR OR START'}
+              : 'READY · PAIR OR START'}
           </span>
           <span className="effort-cue-meta">
             {activeSegmentInfo ? (

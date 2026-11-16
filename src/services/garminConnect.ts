@@ -36,7 +36,7 @@ async function postGarminSync(body: Record<string, unknown>): Promise<GarminSync
   const contentType = resp.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     throw new Error(
-      'Garmin Connect cloud sync runs via the Netlify serverless proxy (deployed at justbelievefitness.netlify.app).'
+      'Garmin Connect cloud sync runs via the Netlify serverless proxy (deployed at jbfit.studio).'
     );
   }
 
