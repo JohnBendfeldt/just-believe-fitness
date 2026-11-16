@@ -236,7 +236,12 @@ export function renderTelemetryHudCanvas(
       label: 'HEART RATE',
       value: telemetry.heartRateBpm > 0 ? `${Math.round(telemetry.heartRateBpm)}` : '--',
       unit: 'BPM',
-      sub: telemetry.heartRateBpm > 0 ? `${hrPct}% MAX (${profile.maxHrBpm})` : 'GARMIN IDLE',
+      sub:
+        telemetry.heartRateBpm > 0
+          ? `${hrPct}% MAX (${profile.maxHrBpm})`
+          : telemetry.hrName
+            ? `${telemetry.hrName.toUpperCase()} READY`
+            : 'BLE HR IDLE',
       zones: hrZones,
       active: activeHr,
       isLive: telemetry.heartRateBpm > 0,

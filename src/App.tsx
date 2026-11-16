@@ -91,6 +91,11 @@ import {
   HistoryAndStravaModal,
   type CloudUploadTarget,
 } from './components/DeviceAndStravaModals';
+import { LegalAndPrivacyModal } from './components/LegalAndPrivacyModal';
+import {
+  resolveLegalRouteFromPathname,
+  type LegalDocTab,
+} from './utils/legalRoutes';
 
 const EMPTY_ZONE_SECONDS: Record<ZoneId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 const GAUGE_MODE_STORAGE_KEY = 'jbf_gauge_mode_v1';
@@ -107,7 +112,7 @@ function loadGaugeDisplayMode(): GaugeDisplayMode {
 }
 
 export function App() {
-  // Athlete Profile (defaults to 5'9", 168 lbs, 257W FTP, 196 Max HR)
+  // Athlete Profile (safe starter defaults: Rider, 5'8", 165 lbs, 150W FTP, 180 Max HR)
   const [profile, setProfile] = useState<AthleteProfile>(() => loadAthleteProfile());
   const profileRef = useRef<AthleteProfile>(profile);
 
@@ -149,9 +154,9 @@ export function App() {
   const telemetryRef = useRef<LiveTelemetry>(telemetry);
 
   // Simulator Controls
-  const [simResistance, setSimResistance] = useState<number>(22);
-  const [simCadence, setSimCadence] = useState<number>(88);
-  const simCurrentHrRef = useRef<number>(126);
+  const [simResistance, setSimResistance] = useState<number>(18);
+  const [simCadence, setSimCadence] = useState<number>(85);
+  const simCurrentHrRef = useRef<number>(122);
 
   // YouTube & PiP State
   const initialYt = useMemo(() => loadYouTubePresets(), []);
@@ -160,11 +165,14 @@ export function App() {
   const [ytPresets, setYtPresets] = useState(initialYt.presets);
   const [isHudPipActive, setIsHudPipActive] = useState<boolean>(false);
 
-  // Modals, History, Strava, Audio, Toast
+  // Modals, History, Cloud Sync, Legal/Privacy Route, Audio, Toast
   const [isFocusModalOpen, setIsFocusModalOpen] = useState<boolean>(false);
   const [isAthleteModalOpen, setIsAthleteModalOpen] = useState<boolean>(false);
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState<boolean>(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+  const [legalDocTab, setLegalDocTab] = useState<LegalDocTab | null>(() =>
+    typeof window !== 'undefined' ? resolveLegalRouteFromPathname(window.location.pathname) : null
+  );
   const [highlightedRide, setHighlightedRide] = useState<SavedRide | null>(null);
   const [savedRides, setSavedRides] = useState<SavedRide[]>([]);
   const [stravaConfig, setStravaConfig] = useState<StravaConfig>(() => loadStravaConfig());
@@ -182,6 +190,29 @@ export function App() {
   const hudCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const hudVideoRef = useRef<HTMLVideoElement | null>(null);
   const hudStreamAttachedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setLegalDocTab(resolveLegalRouteFromPathname(window.location.pathname));
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const handleOpenLegalDoc = useCallback((tab: LegalDocTab) => {
+    setLegalDocTab(tab);
+    const targetPath = tab === 'privacy' ? '/privacy' : '/terms';
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', `${targetPath}${window.location.search}`);
+    }
+  }, []);
+
+  const handleCloseLegalDoc = useCallback(() => {
+    setLegalDocTab(null);
+    if (resolveLegalRouteFromPathname(window.location.pathname) !== null) {
+      window.history.pushState({}, '', `/${window.location.search}`);
+    }
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -1382,6 +1413,32 @@ export function App() {
         hasHrStream={hasHrStream}
       />
 
+      {/* Privacy-First Local-Only Studio Footer & Legal Links */}
+      <footer className="studio-footer" id="studio-footer">
+        <div className="studio-footer-pledge">
+          <strong>100% Local-First · No Accounts · No Paywalls — Just Be Fit.</strong>
+          <span>Your workouts &amp; stats stay in your browser unless you choose to sync.</span>
+        </div>
+        <nav className="studio-footer-links" aria-label="Privacy and legal">
+          <button
+            type="button"
+            id="open-privacy-btn"
+            className="studio-footer-link"
+            onClick={() => handleOpenLegalDoc('privacy')}
+          >
+            Privacy Policy
+          </button>
+          <button
+            type="button"
+            id="open-terms-btn"
+            className="studio-footer-link"
+            onClick={() => handleOpenLegalDoc('terms')}
+          >
+            Terms &amp; Liability Release
+          </button>
+        </nav>
+      </footer>
+
       {/* Floating YouTube Mini-Player when switched to Corner PiP Mode */}
       {ytLayoutMode === 'floating' && (
         <YouTubeDeck
@@ -1531,6 +1588,12 @@ export function App() {
         }}
         onNotify={showToast}
         onClose={() => setIsHistoryModalOpen(false)}
+      />
+
+      <LegalAndPrivacyModal
+        activeTab={legalDocTab}
+        onSelectTab={handleOpenLegalDoc}
+        onClose={handleCloseLegalDoc}
       />
 
       {toastMsg && (

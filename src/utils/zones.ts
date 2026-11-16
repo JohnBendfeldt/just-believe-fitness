@@ -1,13 +1,13 @@
 import type { AthleteProfile, EffortCue, ZoneDefinition, ZoneId } from '../types/fitness';
 
 export const DEFAULT_ATHLETE_PROFILE: AthleteProfile = {
-  name: 'JB',
+  name: 'Rider',
   heightFeet: 5,
-  heightInches: 9,
-  weightLbs: 168,
-  ftpWatts: 257,
-  maxHrBpm: 196,
-  restingHrBpm: 56,
+  heightInches: 8,
+  weightLbs: 165,
+  ftpWatts: 150,
+  maxHrBpm: 180,
+  restingHrBpm: 65,
   powerCurve: 'ex3-vector',
   wattGain: 1.0,
 };

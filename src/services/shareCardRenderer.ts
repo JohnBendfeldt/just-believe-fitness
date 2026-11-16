@@ -1,5 +1,6 @@
 import type { SavedRide, ZoneDefinition, ZoneId } from '../types/fitness';
 import {
+  DEFAULT_ATHLETE_PROFILE,
   ZONE_PALETTE,
   computeSegmentedGaugeProgress,
   formatDuration,
@@ -232,7 +233,9 @@ function drawStudioDarkArtwork(ctx: CanvasRenderingContext2D, ride: SavedRide): 
   }
 
   // Centerpiece Hero Stat Ring in Studio Mode (when no camera photo is used)
-  const powerZones = getPowerZones(ride.athleteSnapshot.ftpWatts || 257);
+  const powerZones = getPowerZones(
+    ride.athleteSnapshot.ftpWatts || DEFAULT_ATHLETE_PROFILE.ftpWatts
+  );
   const avgZone = resolveZone(ride.avgWatts, powerZones);
   ctx.save();
   ctx.textAlign = 'center';
@@ -385,9 +388,13 @@ export function renderRideShareCanvas(
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
     ctx.stroke();
 
-    const pwrZones = getPowerZones(ride.athleteSnapshot.ftpWatts || 257);
+    const pwrZones = getPowerZones(
+      ride.athleteSnapshot.ftpWatts || DEFAULT_ATHLETE_PROFILE.ftpWatts
+    );
     const cadZones = getCadenceZones();
-    const hrZones = getHrZones(ride.athleteSnapshot.maxHrBpm || 196);
+    const hrZones = getHrZones(
+      ride.athleteSnapshot.maxHrBpm || DEFAULT_ATHLETE_PROFILE.maxHrBpm
+    );
 
     const innerW = SHARE_CARD_WIDTH - padX * 2;
     const centers = [padX + innerW * 0.18, padX + innerW * 0.5, padX + innerW * 0.82];

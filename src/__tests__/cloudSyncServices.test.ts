@@ -1,0 +1,225 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  buildRideSummaryDescription,
+  buildStravaAuthorizeUrl,
+  exchangeStravaOAuthCode,
+  getValidStravaAccessToken,
+  updateStravaActivityDetails,
+  uploadRideToStrava,
+} from '../services/strava';
+import {
+  loginGarminConnect,
+  updateGarminActivityDetails,
+  uploadRideToGarmin,
+  verifyGarminConnectMfa,
+} from '../services/garminConnect';
+import { loadGarminConfig, loadStravaConfig, saveGarminConfig, saveStravaConfig } from '../services/storage';
+import { makeSampleRide } from '../test/fixtures';
+
+describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('builds Strava authorize URL with activity:write scope and formats custom ride notes', () => {
+    const url = buildStravaAuthorizeUrl('98765');
+    expect(url).toContain('client_id=98765');
+    expect(url).toContain('activity%3Awrite');
+
+    const rideWithNotes = makeSampleRide({ notes: 'Loved the climb block!' });
+    const desc = buildRideSummaryDescription(rideWithNotes);
+    expect(desc.startsWith('Loved the climb block!\n\nJust Believe Fitness (JBF)')).toBe(true);
+    expect(desc).toContain('Burn Points: 14');
+
+    const rideNoNotes = makeSampleRide({ notes: undefined });
+    expect(buildRideSummaryDescription(rideNoNotes).startsWith('Just Believe Fitness')).toBe(true);
+  });
+
+  it('exchanges OAuth code via /api/strava-token and imports athlete FTP & kg->lbs weight', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          access_token: 'strava-acc-1',
+          refresh_token: 'strava-ref-1',
+          expires_at: Math.floor(Date.now() / 1000) + 7200,
+          athlete: {
+            id: 42,
+            firstname: 'Taylor',
+            lastname: 'Swiftspin',
+            ftp: 195,
+            weight: 70, // ~154 lbs
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    const res = await exchangeStravaOAuthCode('oauth-code-xyz', {
+      clientId: '111',
+      clientSecret: '222',
+    });
+
+    expect(res.updatedConfig.athleteName).toBe('Taylor Swiftspin');
+    expect(res.importedFtp).toBe(195);
+    expect(res.importedWeightLbs).toBe(154);
+    expect(loadStravaConfig().accessToken).toBe('strava-acc-1');
+  });
+
+  it('automatically refreshes expired Strava access tokens before uploading or updating activities', async () => {
+    saveStravaConfig({
+      clientId: '111',
+      clientSecret: '222',
+      accessToken: 'expired-token',
+      refreshToken: 'valid-refresh',
+      expiresAtSec: Math.floor(Date.now() / 1000) - 60, // Expired 1 min ago
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/api/strava-token')) {
+        return new Response(
+          JSON.stringify({
+            access_token: 'fresh-token-99',
+            refresh_token: 'fresh-refresh-99',
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/v3/activities/555')) {
+        return new Response(JSON.stringify({ id: 555 }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    const token = await getValidStravaAccessToken();
+    expect(token).toBe('fresh-token-99');
+
+    const ride = makeSampleRide({ stravaActivityId: 555, title: 'Updated Ride Title' });
+    await updateStravaActivityDetails(ride);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('uploads TCX multipart payload to Strava and polls until activity_id is assigned', async () => {
+    vi.useFakeTimers();
+    saveStravaConfig({
+      clientId: '111',
+      clientSecret: '222',
+      accessToken: 'live-token',
+      refreshToken: 'live-refresh',
+      expiresAtSec: Math.floor(Date.now() / 1000) + 7200,
+    });
+
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 7001, status: 'Processing', error: null, activity_id: null }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ id: 7001, status: 'Ready', error: null, activity_id: 880011 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+
+    const uploadPromise = uploadRideToStrava(makeSampleRide());
+    await vi.advanceTimersByTimeAsync(2500);
+    const result = await uploadPromise;
+
+    expect(result).toEqual({ uploadId: 7001, activityId: 880011 });
+    vi.useRealTimers();
+  });
+});
+
+describe('Garmin Connect SSO, 2FA/MFA, Duplicate-Safe Import & Rolling Tokens', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('handles both direct Garmin SSO login and 2FA/MFA verification without persisting passwords', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            mfaRequired: true,
+            mfaMethod: 'email',
+            mfaState: { ticket: 'mfa-session-1' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            connected: true,
+            athleteName: 'Jordan Rider',
+            tokens: { oauth1: 'o1', oauth2: 'o2' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+
+    const step1 = await loginGarminConnect('jordan@example.com', 'super-secret-pw');
+    expect(step1.mfaRequired).toBe(true);
+    // Ensure password is NEVER saved to localStorage
+    expect(window.localStorage.getItem('jbf_garmin_connect_v1')).toBeNull();
+
+    if (step1.mfaRequired) {
+      const cfg = await verifyGarminConnectMfa(step1.mfaState, '654321', 'jordan@example.com');
+      expect(cfg.athleteName).toBe('Jordan Rider');
+    }
+
+    const rawStored = window.localStorage.getItem('jbf_garmin_connect_v1') || '';
+    expect(rawStored).not.toContain('super-secret-pw');
+    expect(loadGarminConfig().tokens).toEqual({ oauth1: 'o1', oauth2: 'o2' });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('uploads rides to Garmin in import mode (preventing duplicate Strava forwarding) and saves rolling tokens', async () => {
+    saveGarminConfig({
+      email: 'jordan@example.com',
+      athleteName: 'Jordan Rider',
+      tokens: { oauth1: 'o1', oauth2: 'old-o2' },
+    });
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            activityId: 445566,
+            tokens: { oauth1: 'o1', oauth2: 'refreshed-o2' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            tokens: { oauth1: 'o1', oauth2: 'refreshed-o2-v2' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+
+    const ride = makeSampleRide({ title: 'Evening Burn', notes: 'Strong cadence!' });
+    const res = await uploadRideToGarmin(ride, { uploadMode: 'import' });
+    expect(res.activityId).toBe(445566);
+
+    const sentPayload = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(sentPayload.uploadMode).toBe('import');
+    expect(sentPayload.title).toBe('Evening Burn');
+    expect(sentPayload.description).toContain('Strong cadence!');
+    expect(loadGarminConfig().tokens).toEqual({ oauth1: 'o1', oauth2: 'refreshed-o2' });
+
+    await updateGarminActivityDetails({ ...ride, garminActivityId: 445566 });
+    expect(loadGarminConfig().tokens).toEqual({ oauth1: 'o1', oauth2: 'refreshed-o2-v2' });
+  });
+});

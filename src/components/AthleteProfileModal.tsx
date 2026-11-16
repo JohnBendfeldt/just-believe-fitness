@@ -44,8 +44,9 @@ export function AthleteProfileModal({
           <div>
             <h2 className="modal-title">Athlete Stats &amp; Zone Orientation</h2>
             <p className="modal-subtitle">
-              All power bars, heart rate burn zones, workout targets, W/kg, and speed physics orient
-              immediately to your numbers.
+              All power gauges, heart rate burn zones, workout targets, W/kg, and speed physics
+              scale to your profile. Starter defaults (150W FTP, 180 Max HR — roughly{' '}
+              <code>220 − age</code>) are paced conservatively so new riders don&apos;t overexert.
             </p>
           </div>
           <button type="button" className="btn btn-sm" id="close-athlete-modal" onClick={onClose}>
@@ -74,7 +75,13 @@ export function AthleteProfileModal({
                 max={7}
                 value={profile.heightFeet}
                 onChange={(e) =>
-                  updateField('heightFeet', Math.max(4, Math.min(7, Number(e.target.value) || 5)))
+                  updateField(
+                    'heightFeet',
+                    Math.max(
+                      4,
+                      Math.min(7, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.heightFeet)
+                    )
+                  )
                 }
                 aria-label="Height feet"
               />
@@ -104,7 +111,13 @@ export function AthleteProfileModal({
               max={400}
               value={profile.weightLbs}
               onChange={(e) =>
-                updateField('weightLbs', Math.max(75, Math.min(400, Number(e.target.value) || 168)))
+                updateField(
+                  'weightLbs',
+                  Math.max(
+                    75,
+                    Math.min(400, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.weightLbs)
+                  )
+                )
               }
             />
           </div>
@@ -120,7 +133,13 @@ export function AthleteProfileModal({
               max={550}
               value={profile.ftpWatts}
               onChange={(e) =>
-                updateField('ftpWatts', Math.max(60, Math.min(550, Number(e.target.value) || 257)))
+                updateField(
+                  'ftpWatts',
+                  Math.max(
+                    60,
+                    Math.min(550, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.ftpWatts)
+                  )
+                )
               }
             />
           </div>
@@ -136,7 +155,10 @@ export function AthleteProfileModal({
               onChange={(e) =>
                 updateField(
                   'maxHrBpm',
-                  Math.max(120, Math.min(230, Number(e.target.value) || 196))
+                  Math.max(
+                    120,
+                    Math.min(230, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.maxHrBpm)
+                  )
                 )
               }
             />
@@ -153,7 +175,10 @@ export function AthleteProfileModal({
               onChange={(e) =>
                 updateField(
                   'restingHrBpm',
-                  Math.max(32, Math.min(105, Number(e.target.value) || 56))
+                  Math.max(
+                    32,
+                    Math.min(105, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.restingHrBpm)
+                  )
                 )
               }
             />
@@ -238,7 +263,7 @@ export function AthleteProfileModal({
             id="reset-athlete-defaults"
             onClick={() => onChangeProfile({ ...DEFAULT_ATHLETE_PROFILE })}
           >
-            <RotateCcw size={14} /> Reset to JBF Defaults (5&apos;9&quot;, 168#, 257W, 196 HR)
+            <RotateCcw size={14} /> Reset to Starter Defaults (5&apos;8&quot;, 165#, 150W, 180 HR)
           </button>
           <button type="button" className="btn btn-primary" id="save-athlete-done" onClick={onClose}>
             Done
