@@ -195,6 +195,7 @@ export function App() {
   const hudCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const hudVideoRef = useRef<HTMLVideoElement | null>(null);
   const hudStreamAttachedRef = useRef<boolean>(false);
+  const lastAnnouncedBurnRef = useRef<number>(0);
 
   useEffect(() => {
     const onPopState = () => {
@@ -541,17 +542,26 @@ export function App() {
       setElapsedSec((prevElapsed) => {
         const nextElapsed = prevElapsed + 1;
 
-        // Play 3-2-1-GO audio cue on guided interval transitions
+        // Play 10s heads-up, 3-2-1-GO chimes, and pre-rendered Coach Jenny MP3 prompts on interval transitions
         if (!selectedWorkout.isFreeRide && selectedWorkout.segments.length > 0) {
           const vClock = nextElapsed + segmentOffsetSec;
           let acc = 0;
-          for (const seg of selectedWorkout.segments) {
+          for (let i = 0; i < selectedWorkout.segments.length; i++) {
+            const seg = selectedWorkout.segments[i];
             acc += seg.durationSec;
             const diff = acc - vClock;
-            if (diff === 3 || diff === 2 || diff === 1) {
+            if (diff === 10 && seg.durationSec >= 45 && i < selectedWorkout.segments.length - 1) {
+              audioRef.current?.playCoachClip('ten-seconds');
+            } else if (diff === 3 || diff === 2 || diff === 1) {
               audioRef.current?.playTick(false);
             } else if (diff === 0) {
               audioRef.current?.playTick(true);
+              const nextSeg = selectedWorkout.segments[i + 1];
+              if (nextSeg) {
+                audioRef.current?.playSegmentCue(nextSeg.id, nextSeg.cue);
+              } else {
+                audioRef.current?.playCoachClip('workout-complete');
+              }
             }
           }
         }
@@ -597,6 +607,18 @@ export function App() {
     ? hrZoneSeconds[4] + hrZoneSeconds[5]
     : powerZoneSeconds[4] + powerZoneSeconds[5];
   const burnPoints = Math.floor(burnZoneTotalSec / 60);
+
+  // Announce 1st and 12th Burn Point milestones via pre-rendered Coach MP3s
+  useEffect(() => {
+    if (rideState !== 'running') return;
+    if (burnPoints <= lastAnnouncedBurnRef.current) return;
+    lastAnnouncedBurnRef.current = burnPoints;
+    if (burnPoints === 1) {
+      audioRef.current?.playCoachClip('burn-first');
+    } else if (burnPoints === 12) {
+      audioRef.current?.playCoachClip('burn-twelve');
+    }
+  }, [burnPoints, rideState]);
 
   // Keep Picture-in-Picture Canvas continuously updated
   useEffect(() => {
@@ -672,18 +694,42 @@ export function App() {
 
   // Workout Controls
   const handleStartOrResume = () => {
+    audioRef.current?.unlock();
     if (rideState === 'idle') {
+      lastAnnouncedBurnRef.current = 0;
       setPreviewPoints([]);
       setStartedAtMs(Date.now());
       if (!telemetry.bikeConnected && !telemetry.isSimulating) {
         setTelemetry((prev) => ({ ...prev, isSimulating: true }));
         showToast('Ride started with Demo Simulator active — pair your bike anytime!');
       }
+      if (selectedWorkout.isFreeRide) {
+        audioRef.current?.playCoachClip('free-ride-start');
+      } else if (activeSegmentInfo) {
+        audioRef.current?.playSegmentCue(
+          activeSegmentInfo.segment.id,
+          activeSegmentInfo.segment.cue
+        );
+      }
     }
     setRideState('running');
   };
 
+  const handleSkipSegment = () => {
+    if (!activeSegmentInfo) return;
+    setSegmentOffsetSec((prev) => prev + activeSegmentInfo.remainingSec);
+    if (rideState === 'running' && activeSegmentInfo.nextSegment) {
+      audioRef.current?.playTick(true);
+      audioRef.current?.playSegmentCue(
+        activeSegmentInfo.nextSegment.id,
+        activeSegmentInfo.nextSegment.cue
+      );
+    }
+  };
+
   const handleResetWorkout = () => {
+    audioRef.current?.stopVoice();
+    lastAnnouncedBurnRef.current = 0;
     setRideState('idle');
     setElapsedSec(0);
     setSegmentOffsetSec(0);
@@ -1248,9 +1294,7 @@ export function App() {
               type="button"
               id="skip-segment-btn"
               className="btn btn-sm"
-              onClick={() =>
-                setSegmentOffsetSec((prev) => prev + activeSegmentInfo.remainingSec)
-              }
+              onClick={handleSkipSegment}
               title="Skip to next interval block"
             >
               <FastForward size={15} /> Next
@@ -1283,8 +1327,11 @@ export function App() {
             type="button"
             id="toggle-audio-cues-btn"
             className="btn btn-sm"
-            onClick={() => setAudioEnabled((v) => !v)}
-            title={audioEnabled ? 'Mute interval chimes' : 'Enable interval chimes'}
+            onClick={() => {
+              audioRef.current?.unlock();
+              setAudioEnabled((v) => !v);
+            }}
+            title={audioEnabled ? 'Mute coach voice & chimes' : 'Enable coach voice & chimes'}
           >
             {audioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
           </button>
@@ -1606,16 +1653,15 @@ export function App() {
         headlineZone={headlineZone}
         resistanceControl={resistanceControl}
         audioEnabled={audioEnabled}
-        onToggleAudio={() => setAudioEnabled((v) => !v)}
+        onToggleAudio={() => {
+          audioRef.current?.unlock();
+          setAudioEnabled((v) => !v);
+        }}
         isHudPipActive={isHudPipActive}
         onLaunchHudPip={() => void handleLaunchHudPip()}
         onStartOrResume={handleStartOrResume}
         onPause={() => setRideState('paused')}
-        onSkipSegment={() => {
-          if (activeSegmentInfo) {
-            setSegmentOffsetSec((prev) => prev + activeSegmentInfo.remainingSec);
-          }
-        }}
+        onSkipSegment={handleSkipSegment}
         onFinishAndSave={() => void handleFinishAndSave()}
         onResetWorkout={handleResetWorkout}
       />

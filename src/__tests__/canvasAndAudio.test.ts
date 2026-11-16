@@ -150,5 +150,18 @@ describe('Floating PiP Telemetry HUD Canvas & Wake/Audio Services', () => {
     cue.enabled = false;
     cue.playTick(true);
     expect(startSpy).toHaveBeenCalledTimes(2); // Muted no-op
+
+    // Pre-rendered Coach MP3 playback & instant mute
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    cue.enabled = true;
+    cue.unlock();
+    cue.playSegmentCue('w1', 'warmup');
+    expect(playSpy).toHaveBeenCalledTimes(1);
+
+    cue.enabled = false;
+    expect(pauseSpy).toHaveBeenCalled();
+    cue.playCoachClip('burn-first');
+    expect(playSpy).toHaveBeenCalledTimes(1); // Muted no-op
   });
 });

@@ -1,0 +1,221 @@
+{
+  "voice": "en-US-JennyNeural",
+  "rate": "+8%",
+  "pitch": "+3Hz",
+  "volume": "+20%",
+  "generatedAt": "2026-11-16T23:49:36.870275+00:00",
+  "clips": {
+    "free-ride-start": {
+      "path": "/audio/coach/free-ride-start.mp3",
+      "text": "Let's ride! Smooth pedal strokes, find your rhythm, and let's stack those Burn Points!"
+    },
+    "ten-seconds": {
+      "path": "/audio/coach/ten-seconds.mp3",
+      "text": "Ten seconds! Get ready to switch!"
+    },
+    "burn-first": {
+      "path": "/audio/coach/burn-first.mp3",
+      "text": "First Burn Point on the board! Keep that fire going!"
+    },
+    "burn-twelve": {
+      "path": "/audio/coach/burn-twelve.mp3",
+      "text": "Twelve Burn Points! Target crushed! Keep pushing!"
+    },
+    "workout-complete": {
+      "path": "/audio/coach/workout-complete.mp3",
+      "text": "Workout complete! Amazing effort today! Spin your legs out easy and grab some water."
+    },
+    "cue-warmup": {
+      "path": "/audio/coach/cue-warmup.mp3",
+      "text": "Warm-up spin! Smooth, easy pedal strokes as we wake up the legs."
+    },
+    "cue-base": {
+      "path": "/audio/coach/cue-base.mp3",
+      "text": "Base pace! Lock into a steady, strong Green zone rhythm."
+    },
+    "cue-push": {
+      "path": "/audio/coach/cue-push.mp3",
+      "text": "Push pace! Add resistance and drive right into the Orange zone!"
+    },
+    "cue-all-out": {
+      "path": "/audio/coach/cue-all-out.mp3",
+      "text": "All out! Empty the tank, fast legs, let's go!"
+    },
+    "cue-recovery": {
+      "path": "/audio/coach/cue-recovery.mp3",
+      "text": "Active recovery! Dial the gear down, deep breaths, flush out the legs."
+    },
+    "seg-w1": {
+      "path": "/audio/coach/seg-w1.mp3",
+      "text": "Welcome to your twenty-three minute Signature Burn! Smooth warm-up spin, bring that heart rate into Blue and early Green!"
+    },
+    "seg-b1": {
+      "path": "/audio/coach/seg-b1.mp3",
+      "text": "Base pace settle! Challenging but doable, lock into a solid Green zone!"
+    },
+    "seg-p1": {
+      "path": "/audio/coach/seg-p1.mp3",
+      "text": "Two-minute Push pace! Add two to three clicks of resistance and drive into Orange!"
+    },
+    "seg-b2": {
+      "path": "/audio/coach/seg-b2.mp3",
+      "text": "Back to Base! Hold steady Green power while controlling your breathing."
+    },
+    "seg-p2": {
+      "path": "/audio/coach/seg-p2.mp3",
+      "text": "Ninety-second threshold Push! Right around your F T P, let's build those Orange Burn minutes!"
+    },
+    "seg-ao1": {
+      "path": "/audio/coach/seg-ao1.mp3",
+      "text": "Thirty seconds All-Out surge! Empty the tank, fast legs, straight into the Burn Zone!"
+    },
+    "seg-r1": {
+      "path": "/audio/coach/seg-r1.mp3",
+      "text": "Nice work! Active recovery. Dial the resistance down, deep breaths, flush the legs."
+    },
+    "seg-p3": {
+      "path": "/audio/coach/seg-p3.mp3",
+      "text": "Three-minute heavy Push climb! Add heavy gear and drive muscular torque, seated or standing!"
+    },
+    "seg-b3": {
+      "path": "/audio/coach/seg-b3.mp3",
+      "text": "Base flat road! Take off that climb gear and spin briskly in Green."
+    },
+    "seg-p4": {
+      "path": "/audio/coach/seg-p4.mp3",
+      "text": "Sixty-second final Push! Set up the finisher, hold high Orange!"
+    },
+    "seg-ao2": {
+      "path": "/audio/coach/seg-ao2.mp3",
+      "text": "Forty-five second finisher All-Out! Everything left in the legs, finish strong!"
+    },
+    "seg-cd1": {
+      "path": "/audio/coach/seg-cd1.mp3",
+      "text": "Awesome push! Cool-down flush. Easy spin and let that heart rate float down."
+    },
+    "seg-h-wu": {
+      "path": "/audio/coach/seg-h-wu.mp3",
+      "text": "Let's go! Twenty-minute Burn Express! Progressive warm-up, add a click of gear each minute to wake up the legs!"
+    },
+    "seg-h-push-1": {
+      "path": "/audio/coach/seg-h-push-1.mp3",
+      "text": "Round one of five, Push! Sixty seconds right at threshold, let's light it up!"
+    },
+    "seg-h-ao-1": {
+      "path": "/audio/coach/seg-h-ao-1.mp3",
+      "text": "Round one, All-Out! Thirty seconds max snap, go, go, go!"
+    },
+    "seg-h-rec-1": {
+      "path": "/audio/coach/seg-h-rec-1.mp3",
+      "text": "Round one done! Sixty seconds easy spin, catch your breath."
+    },
+    "seg-h-push-2": {
+      "path": "/audio/coach/seg-h-push-2.mp3",
+      "text": "Round two, Push! Back on the gas, drive into Orange!"
+    },
+    "seg-h-ao-2": {
+      "path": "/audio/coach/seg-h-ao-2.mp3",
+      "text": "Round two, All-Out! Thirty seconds fast legs, attack it!"
+    },
+    "seg-h-rec-2": {
+      "path": "/audio/coach/seg-h-rec-2.mp3",
+      "text": "Nice job! Dial it down, smooth recovery spin."
+    },
+    "seg-h-push-3": {
+      "path": "/audio/coach/seg-h-push-3.mp3",
+      "text": "Round three, halfway there! Strong threshold Push, hold that power!"
+    },
+    "seg-h-ao-3": {
+      "path": "/audio/coach/seg-h-ao-3.mp3",
+      "text": "Round three, All-Out! Thirty seconds, push the pace!"
+    },
+    "seg-h-rec-3": {
+      "path": "/audio/coach/seg-h-rec-3.mp3",
+      "text": "Awesome! Easy gear, deep breaths, two rounds left."
+    },
+    "seg-h-push-4": {
+      "path": "/audio/coach/seg-h-push-4.mp3",
+      "text": "Round four, Push! Dig in right here, stack those Burn Points!"
+    },
+    "seg-h-ao-4": {
+      "path": "/audio/coach/seg-h-ao-4.mp3",
+      "text": "Round four, All-Out! Thirty seconds explosive power!"
+    },
+    "seg-h-rec-4": {
+      "path": "/audio/coach/seg-h-rec-4.mp3",
+      "text": "One final round ahead! Spin light and reset."
+    },
+    "seg-h-push-5": {
+      "path": "/audio/coach/seg-h-push-5.mp3",
+      "text": "Final round, five of five! Strong sixty-second Push, set up the finish!"
+    },
+    "seg-h-ao-5": {
+      "path": "/audio/coach/seg-h-ao-5.mp3",
+      "text": "Last All-Out of the day! Thirty seconds, empty the tank all the way to the line!"
+    },
+    "seg-h-rec-5": {
+      "path": "/audio/coach/seg-h-rec-5.mp3",
+      "text": "You crushed all five rounds! Easy recovery spin, catch your breath."
+    },
+    "seg-h-cd": {
+      "path": "/audio/coach/seg-h-cd.mp3",
+      "text": "Smooth cool-down spin! Let your breathing settle, great work today!"
+    },
+    "seg-p-wu": {
+      "path": "/audio/coach/seg-p-wu.mp3",
+      "text": "Welcome to the thirty-minute Power Pyramid! Four-minute prep spin, settle into a smooth cadence."
+    },
+    "seg-p-s1": {
+      "path": "/audio/coach/seg-p-s1.mp3",
+      "text": "Step one, Sweet Spot Base! Controlled Green aerobic power, nice and steady."
+    },
+    "seg-p-s2": {
+      "path": "/audio/coach/seg-p-s2.mp3",
+      "text": "Step two, Threshold Climb! Add heavy resistance and hold strong threshold torque!"
+    },
+    "seg-p-peak": {
+      "path": "/audio/coach/seg-p-peak.mp3",
+      "text": "Pyramid Summit! Two minutes strong right over F T P, crest this climb!"
+    },
+    "seg-p-valley": {
+      "path": "/audio/coach/seg-p-valley.mp3",
+      "text": "You made the summit! Valley recovery spin, grab a sip of water and spin light."
+    },
+    "seg-p-d2": {
+      "path": "/audio/coach/seg-p-d2.mp3",
+      "text": "Step down the pyramid, Fast Threshold! Same Push watts, quicker leg speed!"
+    },
+    "seg-p-d1": {
+      "path": "/audio/coach/seg-p-d1.mp3",
+      "text": "Tempo cruise! Settle into a strong, steady Green rhythm."
+    },
+    "seg-p-fin": {
+      "path": "/audio/coach/seg-p-fin.mp3",
+      "text": "Sixty-second sprint kick! Final surge to the line, give it everything you've got!"
+    },
+    "seg-p-cd": {
+      "path": "/audio/coach/seg-p-cd.mp3",
+      "text": "Phenomenal climb! Cool-down spin, dial the resistance way down."
+    },
+    "seg-e-wu": {
+      "path": "/audio/coach/seg-e-wu.mp3",
+      "text": "Forty-five minute Zone two and three cruise! Easy five-minute warm-up into the Blue zone."
+    },
+    "seg-e-b1": {
+      "path": "/audio/coach/seg-e-b1.mp3",
+      "text": "Aerobic Base block one! Lock in a smooth Green endurance rhythm and enjoy your show!"
+    },
+    "seg-e-p1": {
+      "path": "/audio/coach/seg-e-p1.mp3",
+      "text": "Mid-ride tempo opener! Five-minute brisk Push to wake up those legs!"
+    },
+    "seg-e-b2": {
+      "path": "/audio/coach/seg-e-b2.mp3",
+      "text": "Aerobic Base block two! Smooth conversational Green zone cruise all the way home."
+    },
+    "seg-e-cd": {
+      "path": "/audio/coach/seg-e-cd.mp3",
+      "text": "Final cool-down spin! Easy pedals, great endurance session today!"
+    }
+  }
+}

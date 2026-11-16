@@ -10,7 +10,8 @@
     "test": "vitest run",
     "verify": "npm test && npm run lint && npm run build",
     "preview": "vite preview",
-    "garmin:token": "node scripts/garmin-token.mjs"
+    "garmin:token": "node scripts/garmin-token.mjs",
+    "audio:coach": "python3 scripts/generate-coach-audio.py"
   },
   "dependencies": {
     "garminconnect-js": "^0.11.1",

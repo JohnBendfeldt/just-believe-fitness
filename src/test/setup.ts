@@ -104,6 +104,12 @@ if (typeof URL.revokeObjectURL !== 'function') {
   URL.revokeObjectURL = () => {};
 }
 
+// Stub HTMLMediaElement playback in jsdom so pre-rendered Coach MP3 cues never log unimplemented warnings
+if (typeof HTMLMediaElement !== 'undefined') {
+  HTMLMediaElement.prototype.play = () => Promise.resolve();
+  HTMLMediaElement.prototype.pause = () => {};
+}
+
 beforeEach(() => {
   window.localStorage.clear();
 });
