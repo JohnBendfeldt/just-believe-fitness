@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockState = {
   loginResult: { state: 'authenticated' },
@@ -73,10 +73,20 @@ import { handler as stravaHandler } from '../functions/strava-token.mjs';
 import { handler as garminHandler } from '../functions/garmin-sync.mjs';
 
 describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
+  beforeEach(() => {
+    vi.stubEnv('STRAVA_CLIENT_ID', '');
+    vi.stubEnv('VITE_STRAVA_CLIENT_ID', '');
+    vi.stubEnv('STRAVA_CLIENT_SECRET', '');
+    vi.stubEnv('GARMIN_EMAIL', '');
+    vi.stubEnv('GARMIN_PASSWORD', '');
+    vi.stubEnv('GARMIN_PERSONAL_API_KEY', '');
+  });
+
   afterEach(() => {
     mockState.loginResult = { state: 'authenticated' };
     mockState.tokensLoaded = true;
     mockState.calls = [];
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
@@ -179,5 +189,107 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
       }),
     });
     expect(metaResp.statusCode).toBe(200);
+
+    // 5. Verify pasted local session token JSON statelessly
+    const invalidTokenResp = await garminHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({ action: 'verify_tokens', tokens: '{not-valid-json' }),
+    });
+    expect(invalidTokenResp.statusCode).toBe(400);
+
+    const verifyTokenResp = await garminHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({
+        action: 'verify_tokens',
+        tokens: JSON.stringify({ tokens: mockState.tokens }),
+        email: 'sam@example.com',
+      }),
+    });
+    expect(verifyTokenResp.statusCode).toBe(200);
+    expect(JSON.parse(verifyTokenResp.body).athleteName).toBe('Sam Cyclist');
+    expect(JSON.parse(verifyTokenResp.body).tokens).toEqual(mockState.tokens);
+  });
+
+  it('garmin-sync: exchanges Personal API Key (GCDC_) for Bearer token and pulls biometrics + recent workouts', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/personalapitoken-service/')) {
+        return new Response(JSON.stringify({ access_token: 'garmin-jwt-bearer-1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/userprofile-service/userprofile/settings')) {
+        return new Response(
+          JSON.stringify({
+            displayName: 'Sam Rider',
+            userData: {
+              weight: 79379, // ~175 lbs in grams
+              height: 180.34, // 5'11" in cm
+              maxHeartRate: 189,
+              restingHeartRate: 51,
+              cyclingFtp: 235,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/biometric-service/heartRateZones/v2')) {
+        return new Response(JSON.stringify([{ sport: 'CYCLING', maxHeartRateUsed: 189 }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/activitylist-service/activities/search/activities')) {
+        return new Response(
+          JSON.stringify([
+            {
+              activityId: 55443322,
+              activityName: 'Indoor Interval Spin',
+              activityTypeDTO: { typeKey: 'indoor_cycling' },
+              startTimeLocal: '2026-11-15 18:10:00',
+              duration: 1800,
+              distance: 16093.4,
+              calories: 410,
+              averagePower: 205,
+              normalizedPower: 218,
+              averageHR: 152,
+              maxHR: 179,
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    const resp = await garminHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({
+        action: 'personal_api_sync',
+        apiKey: 'GCDC_test_key_123',
+      }),
+    });
+
+    expect(resp.statusCode).toBe(200);
+    const data = JSON.parse(resp.body);
+    expect(data.athleteName).toBe('Sam Rider');
+    expect(data.importedProfile).toEqual({
+      weightLbs: 175,
+      heightFeet: 5,
+      heightInches: 11,
+      maxHrBpm: 189,
+      restingHrBpm: 51,
+      ftpWatts: 235,
+    });
+    expect(data.recentActivities).toHaveLength(1);
+    expect(data.recentActivities[0]).toMatchObject({
+      activityId: 55443322,
+      name: 'Indoor Interval Spin',
+      avgWatts: 205,
+      avgHr: 152,
+      caloriesKcal: 410,
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
   });
 });

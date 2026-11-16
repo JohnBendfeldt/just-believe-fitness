@@ -274,4 +274,84 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(garminBody.uploadMode).toBe('import');
     expect(garminBody.description).toContain('Awesome local-first spin!');
   });
+
+  it('renders raster PNG brand logo, provides 256x256 Strava PNG icon download, and syncs Garmin Personal API biometrics + history', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/api/garmin-sync') && (!init?.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({ ok: true, hasServerCredentials: false, hasServerPersonalApiKey: false }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/garmin-sync') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            athleteName: 'John Cyclist',
+            importedProfile: {
+              weightLbs: 174,
+              heightFeet: 5,
+              heightInches: 10,
+              maxHrBpm: 189,
+              restingHrBpm: 50,
+              ftpWatts: 235,
+            },
+            recentActivities: [
+              {
+                activityId: 88776655,
+                name: 'Garmin Climb Tempo',
+                typeKey: 'indoor_cycling',
+                startedAtLocal: '2026-11-15 17:30:00',
+                durationSec: 2100,
+                distanceMeters: 16093.4,
+                caloriesKcal: 480,
+                avgWatts: 210,
+                avgHr: 158,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    render(<App />);
+
+    // Verify raster PNG brand logo renders in header
+    const logoImg = document.querySelector('img.brand-logo-img') as HTMLImageElement | null;
+    expect(logoImg).not.toBeNull();
+    expect(logoImg?.getAttribute('src')).toBe('/jbf-logo-192.png');
+
+    // Open Rides & Sync modal
+    fireEvent.click(document.getElementById('open-history-btn')!);
+    expect(document.getElementById('history-strava-modal')).toBeInTheDocument();
+
+    // Verify Strava PNG App Icon download link is exposed inside Configure Strava
+    fireEvent.click(document.getElementById('toggle-strava-setup-btn')!);
+    const stravaIconLink = document.getElementById('download-strava-app-icon') as HTMLAnchorElement | null;
+    expect(stravaIconLink).not.toBeNull();
+    expect(stravaIconLink?.getAttribute('href')).toBe('/jbf-strava-icon.png');
+    expect(stravaIconLink?.getAttribute('download')).toBe('jbf-strava-icon.png');
+
+    // Open Configure Garmin, enter Personal API key, and sync profile + Garmin history
+    fireEvent.click(document.getElementById('toggle-garmin-setup-btn')!);
+    const keyInput = document.getElementById('garmin-personal-key-input') as HTMLInputElement;
+    fireEvent.change(keyInput, { target: { value: 'GCDC_unit_test_key' } });
+
+    await act(async () => {
+      fireEvent.click(document.getElementById('sync-garmin-personal-api-btn')!);
+    });
+
+    await waitFor(() => {
+      const chip = document.getElementById('athlete-stats-chip');
+      expect(chip?.textContent).toContain('174#');
+      expect(chip?.textContent).toContain('235W FTP');
+      expect(chip?.textContent).toContain('189 HR');
+      expect(
+        document.querySelector('a[href="https://connect.garmin.com/modern/activity/88776655"]')
+      ).not.toBeNull();
+    });
+  });
 });

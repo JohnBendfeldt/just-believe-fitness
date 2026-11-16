@@ -135,9 +135,35 @@ export interface StravaConfig {
   athleteId?: number;
 }
 
+export interface GarminImportedProfile {
+  weightLbs?: number;
+  heightFeet?: number;
+  heightInches?: number;
+  maxHrBpm?: number;
+  restingHrBpm?: number;
+  ftpWatts?: number;
+}
+
+export interface GarminRemoteActivity {
+  activityId: number;
+  name: string;
+  typeKey: string;
+  startedAtLocal: string;
+  durationSec: number;
+  distanceMeters: number;
+  caloriesKcal: number;
+  avgWatts?: number;
+  normalizedWatts?: number;
+  avgHr?: number;
+  maxHr?: number;
+}
+
 export interface GarminConfig {
   email?: string;
   athleteName?: string;
   tokens?: Record<string, unknown>;
   connectedAtIso?: string;
+  personalApiKey?: string;
+  recentActivities?: GarminRemoteActivity[];
+  lastPersonalSyncAtIso?: string;
 }

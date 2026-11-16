@@ -9,9 +9,11 @@ import {
 } from '../services/strava';
 import {
   loginGarminConnect,
+  syncGarminPersonalApi,
   updateGarminActivityDetails,
   uploadRideToGarmin,
   verifyGarminConnectMfa,
+  verifyGarminSessionTokens,
 } from '../services/garminConnect';
 import { loadGarminConfig, loadStravaConfig, saveGarminConfig, saveStravaConfig } from '../services/storage';
 import { makeSampleRide } from '../test/fixtures';
@@ -221,5 +223,58 @@ describe('Garmin Connect SSO, 2FA/MFA, Duplicate-Safe Import & Rolling Tokens', 
 
     await updateGarminActivityDetails({ ...ride, garminActivityId: 445566 });
     expect(loadGarminConfig().tokens).toEqual({ oauth1: 'o1', oauth2: 'refreshed-o2-v2' });
+  });
+
+  it('verifies pasted Garmin session tokens and syncs Personal API biometrics/history without overwriting each other', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            athleteName: 'Jordan Rider',
+            importedProfile: {
+              weightLbs: 172,
+              maxHrBpm: 187,
+              ftpWatts: 225,
+            },
+            recentActivities: [
+              {
+                activityId: 332211,
+                name: 'Garmin Zwift Spin',
+                typeKey: 'indoor_cycling',
+                startedAtLocal: '2026-11-15 08:00:00',
+                durationSec: 2400,
+                distanceMeters: 18500,
+                caloriesKcal: 520,
+                avgWatts: 198,
+                avgHr: 150,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            connected: true,
+            athleteName: 'Jordan Rider',
+            tokens: { oauth1: 'local-o1', oauth2: 'local-o2' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+
+    const personalRes = await syncGarminPersonalApi('GCDC_demo_key');
+    expect(personalRes.importedProfile.ftpWatts).toBe(225);
+    expect(personalRes.recentActivities).toHaveLength(1);
+    expect(loadGarminConfig().personalApiKey).toBe('GCDC_demo_key');
+
+    const tokenCfg = await verifyGarminSessionTokens('{"oauth1":"local-o1","oauth2":"local-o2"}');
+    expect(tokenCfg.tokens).toEqual({ oauth1: 'local-o1', oauth2: 'local-o2' });
+    // Existing Personal API key and recent activities remain intact
+    expect(loadGarminConfig().personalApiKey).toBe('GCDC_demo_key');
+    expect(loadGarminConfig().recentActivities).toHaveLength(1);
   });
 });

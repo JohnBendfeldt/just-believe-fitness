@@ -5,6 +5,8 @@ import {
   GarminRateLimitError,
 } from 'garminconnect-js';
 
+const PERSONAL_API_BASE = 'https://personal.connectapi.garmin.com';
+
 function jsonResponse(statusCode, payload) {
   return {
     statusCode,
@@ -45,6 +47,150 @@ function extractActivityIdFromUploadResult(raw) {
   return undefined;
 }
 
+function normalizeTokenPayload(rawInput) {
+  let parsed = rawInput;
+  if (typeof parsed === 'string') {
+    const trimmed = parsed.trim();
+    if (!trimmed) return null;
+    parsed = JSON.parse(trimmed);
+  }
+  if (
+    parsed &&
+    typeof parsed === 'object' &&
+    !Array.isArray(parsed) &&
+    parsed.tokens &&
+    typeof parsed.tokens === 'object' &&
+    !Array.isArray(parsed.tokens)
+  ) {
+    parsed = parsed.tokens;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function extractPersonalApiBearerToken(rawText) {
+  const trimmed = String(rawText || '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed === 'string') return parsed.trim();
+    if (parsed && typeof parsed === 'object') {
+      const candidate =
+        parsed.access_token || parsed.token || parsed.jwt || parsed.accessToken || '';
+      return String(candidate).trim();
+    }
+  } catch {
+    // Plain JWT or quoted string response
+  }
+  return trimmed.replace(/^["']|["']$/g, '').trim();
+}
+
+async function fetchPersonalApiJson(path, bearerToken) {
+  const resp = await fetch(`${PERSONAL_API_BASE}${path}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${bearerToken}`,
+      Accept: 'application/json',
+    },
+  });
+  if (!resp.ok) return null;
+  return resp.json();
+}
+
+function buildImportedProfileFromPersonalApi(settings, hrZonesRaw) {
+  const imported = {};
+  const userData =
+    settings && typeof settings === 'object' && settings.userData && typeof settings.userData === 'object'
+      ? settings.userData
+      : settings || {};
+
+  const rawWeight = Number(userData.weight);
+  if (Number.isFinite(rawWeight) && rawWeight > 0) {
+    const weightLbs =
+      rawWeight > 1000
+        ? Math.round((rawWeight / 1000) * 2.20462262)
+        : rawWeight >= 25 && rawWeight <= 300
+          ? Math.round(rawWeight * 2.20462262)
+          : 0;
+    if (weightLbs >= 70 && weightLbs <= 450) {
+      imported.weightLbs = weightLbs;
+    }
+  }
+
+  const rawHeight = Number(userData.height);
+  if (Number.isFinite(rawHeight) && rawHeight >= 100 && rawHeight <= 240) {
+    const totalInches = Math.round(rawHeight / 2.54);
+    imported.heightFeet = Math.floor(totalInches / 12);
+    imported.heightInches = totalInches % 12;
+  }
+
+  const rawMaxHr = Number(userData.maxHeartRate);
+  if (Number.isFinite(rawMaxHr) && rawMaxHr >= 120 && rawMaxHr <= 230) {
+    imported.maxHrBpm = Math.round(rawMaxHr);
+  }
+
+  const rawRestingHr = Number(
+    userData.restingHeartRate ?? userData.minHeartRate ?? settings?.restingHeartRate
+  );
+  if (Number.isFinite(rawRestingHr) && rawRestingHr >= 30 && rawRestingHr <= 110) {
+    imported.restingHrBpm = Math.round(rawRestingHr);
+  }
+
+  const rawFtp = Number(
+    userData.cyclingFtp ??
+      userData.ftp ??
+      userData.functionalThresholdPower ??
+      settings?.cyclingFtp ??
+      settings?.ftp
+  );
+  if (Number.isFinite(rawFtp) && rawFtp >= 50 && rawFtp <= 600) {
+    imported.ftpWatts = Math.round(rawFtp);
+  }
+
+  const zoneEntry = Array.isArray(hrZonesRaw)
+    ? hrZonesRaw.find((z) => z?.sport === 'CYCLING') || hrZonesRaw[0]
+    : hrZonesRaw;
+
+  if (zoneEntry && typeof zoneEntry === 'object') {
+    if (!imported.maxHrBpm) {
+      const zoneMax = Number(zoneEntry.maxHeartRateUsed ?? zoneEntry.zone5Ceiling);
+      if (Number.isFinite(zoneMax) && zoneMax >= 120 && zoneMax <= 230) {
+        imported.maxHrBpm = Math.round(zoneMax);
+      }
+    }
+    if (!imported.restingHrBpm) {
+      const zoneRest = Number(zoneEntry.restingHeartRateUsed);
+      if (Number.isFinite(zoneRest) && zoneRest >= 30 && zoneRest <= 110) {
+        imported.restingHrBpm = Math.round(zoneRest);
+      }
+    }
+  }
+
+  return imported;
+}
+
+function mapPersonalApiActivities(rawActivities) {
+  if (!Array.isArray(rawActivities)) return [];
+  return rawActivities
+    .filter((item) => item && typeof item.activityId === 'number')
+    .slice(0, 10)
+    .map((item) => ({
+      activityId: item.activityId,
+      name: item.activityName || 'Garmin Workout',
+      typeKey: item.activityTypeDTO?.typeKey || 'cycling',
+      startedAtLocal: item.startTimeLocal || item.startTimeGMT || '',
+      durationSec: Math.round(Number(item.duration) || 0),
+      distanceMeters: Number(item.distance) || 0,
+      caloriesKcal: Math.round(Number(item.calories) || 0),
+      avgWatts: item.averagePower ? Math.round(Number(item.averagePower)) : undefined,
+      normalizedWatts: item.normalizedPower ? Math.round(Number(item.normalizedPower)) : undefined,
+      avgHr: item.averageHR ? Math.round(Number(item.averageHR)) : undefined,
+      maxHr: item.maxHR ? Math.round(Number(item.maxHR)) : undefined,
+    }));
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -54,7 +200,8 @@ export async function handler(event) {
     const hasServerCredentials = Boolean(
       process.env.GARMIN_EMAIL && process.env.GARMIN_PASSWORD
     );
-    return jsonResponse(200, { ok: true, hasServerCredentials });
+    const hasServerPersonalApiKey = Boolean(process.env.GARMIN_PERSONAL_API_KEY);
+    return jsonResponse(200, { ok: true, hasServerCredentials, hasServerPersonalApiKey });
   }
 
   if (event.httpMethod !== 'POST') {
@@ -76,7 +223,7 @@ export async function handler(event) {
       }
 
       const { getCurrent, store } = createMemoryBackedStore(null);
-      const client = new GarminClient({ tokenStore: store, loginDelayMs: 600 });
+      const client = new GarminClient({ tokenStore: store });
       const loginResult = await client.login(email, password);
 
       if (loginResult && loginResult.state === 'mfa_required') {
@@ -134,6 +281,113 @@ export async function handler(event) {
       });
     }
 
+    if (action === 'verify_tokens') {
+      let normalizedTokens;
+      try {
+        normalizedTokens = normalizeTokenPayload(payload.tokens);
+      } catch {
+        return jsonResponse(400, {
+          error: 'Invalid Garmin session token JSON format.',
+        });
+      }
+
+      if (!normalizedTokens) {
+        return jsonResponse(400, {
+          error: 'Paste valid Garmin OAuth session token JSON.',
+        });
+      }
+
+      const { getCurrent, store } = createMemoryBackedStore(normalizedTokens);
+      const client = new GarminClient({ tokenStore: store, loginDelayMs: 0 });
+      const loaded = await client.loadTokens();
+      if (!loaded) {
+        return jsonResponse(400, {
+          error: 'Invalid or expired Garmin session token JSON.',
+        });
+      }
+
+      const garmin = new Garmin(client);
+      let athleteName = (payload.email || '').trim() || 'Garmin Athlete';
+      try {
+        const full = await garmin.fullName();
+        if (full) athleteName = full;
+      } catch (err) {
+        if (err instanceof GarminAuthError) throw err;
+      }
+
+      return jsonResponse(200, {
+        ok: true,
+        connected: true,
+        athleteName,
+        tokens: getCurrent() || client.getTokens(),
+      });
+    }
+
+    if (action === 'personal_api_sync') {
+      const apiKey = String(payload.apiKey || process.env.GARMIN_PERSONAL_API_KEY || '').trim();
+      if (!apiKey) {
+        return jsonResponse(400, {
+          error: 'Enter your Garmin Personal API Key (GCDC_...) or set GARMIN_PERSONAL_API_KEY.',
+        });
+      }
+
+      const tokenResp = await fetch(
+        `${PERSONAL_API_BASE}/personalapitoken-service/personal-api/personal-api-key/token`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `ApiKey ${apiKey}`,
+            Accept: 'application/json, text/plain, */*',
+          },
+        }
+      );
+
+      if (!tokenResp.ok) {
+        const status = tokenResp.status === 401 || tokenResp.status === 403 ? 401 : 502;
+        return jsonResponse(status, {
+          error:
+            'Garmin Personal API key was rejected or expired. Check your GCDC_ key under Garmin Connect -> Profile & Account -> Settings -> Personal API Key.',
+        });
+      }
+
+      const rawTokenText = await tokenResp.text();
+      const bearerToken = extractPersonalApiBearerToken(rawTokenText);
+      if (!bearerToken) {
+        return jsonResponse(502, {
+          error: 'Garmin Personal API did not return a Bearer token.',
+        });
+      }
+
+      const [settingsResult, hrZonesResult, activitiesResult] = await Promise.allSettled([
+        fetchPersonalApiJson('/userprofile-service/userprofile/settings', bearerToken),
+        fetchPersonalApiJson('/biometric-service/heartRateZones/v2', bearerToken),
+        fetchPersonalApiJson(
+          '/activitylist-service/activities/search/activities?start=0&limit=10',
+          bearerToken
+        ),
+      ]);
+
+      const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
+      const hrZones = hrZonesResult.status === 'fulfilled' ? hrZonesResult.value : null;
+      const rawActivities = activitiesResult.status === 'fulfilled' ? activitiesResult.value : null;
+
+      const importedProfile = buildImportedProfileFromPersonalApi(settings, hrZones);
+      const recentActivities = mapPersonalApiActivities(rawActivities);
+      const athleteName =
+        settings?.displayName ||
+        settings?.userName ||
+        rawActivities?.[0]?.ownerFullName ||
+        rawActivities?.[0]?.ownerDisplayName ||
+        'Garmin Athlete';
+
+      return jsonResponse(200, {
+        ok: true,
+        athleteName,
+        importedProfile,
+        recentActivities,
+      });
+    }
+
     if (action === 'upload') {
       const { tokens, tcxXml, filename, title, description, uploadMode, startedAtIso } = payload;
 
@@ -142,11 +396,12 @@ export async function handler(event) {
       }
 
       const { getCurrent, store } = createMemoryBackedStore(tokens || null);
-      const client = new GarminClient({ tokenStore: store, loginDelayMs: 600 });
+      let client = new GarminClient({ tokenStore: store, loginDelayMs: 0 });
 
       const hasValidSession = await client.loadTokens();
       if (!hasValidSession) {
         if (process.env.GARMIN_EMAIL && process.env.GARMIN_PASSWORD) {
+          client = new GarminClient({ tokenStore: store });
           const envLogin = await client.login(
             process.env.GARMIN_EMAIL,
             process.env.GARMIN_PASSWORD
@@ -234,7 +489,7 @@ export async function handler(event) {
         return jsonResponse(400, { error: 'Missing Garmin activityId.' });
       }
       const { getCurrent, store } = createMemoryBackedStore(tokens || null);
-      const client = new GarminClient({ tokenStore: store });
+      const client = new GarminClient({ tokenStore: store, loginDelayMs: 0 });
       if (!(await client.loadTokens())) {
         return jsonResponse(401, { error: 'Garmin session expired. Please reconnect Garmin.' });
       }
@@ -258,7 +513,8 @@ export async function handler(event) {
     }
     if (err instanceof GarminRateLimitError) {
       return jsonResponse(429, {
-        error: 'Garmin temporarily rate-limited sign-in. Wait a minute and try again.',
+        error:
+          'Garmin SSO is temporarily rate-limiting logins from shared cloud IPs (30-60 min cooldown). Pause password retries and either paste a local Session Token (run `npm run garmin:token` on your computer) for ride uploads, or use your Garmin Personal API Key (GCDC_) for profile & history sync.',
       });
     }
     return jsonResponse(500, {

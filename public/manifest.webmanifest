@@ -1,7 +1,7 @@
 {
   "name": "Just Believe Fitness",
   "short_name": "JBF",
-  "description": "JBF 5-zone indoor cycling studio with Burn Points, direct Echelon EX-3 & BLE heart rate telemetry, YouTube PiP, and Strava sync.",
+  "description": "JBF 5-zone indoor cycling studio with Burn Points, direct Bluetooth for all Echelon & FTMS stationary bikes plus BLE heart rate, YouTube PiP, and Garmin + Strava sync.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0e14",
@@ -9,9 +9,21 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/jb-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/jbf-logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/jbf-strava-icon.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/jbf-logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

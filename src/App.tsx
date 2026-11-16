@@ -20,6 +20,7 @@ import {
 import type {
   AthleteProfile,
   GarminConfig,
+  GarminImportedProfile,
   LiveTelemetry,
   SavedRide,
   StravaConfig,
@@ -921,15 +922,13 @@ export function App() {
       {/* Top Studio Header + Athlete Stats Orientation Chip */}
       <header className="topbar">
         <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            <div className="brand-bars">
-              <span style={{ height: '6px', background: 'var(--zone-1)' }} />
-              <span style={{ height: '9px', background: 'var(--zone-2)' }} />
-              <span style={{ height: '13px', background: 'var(--zone-3)' }} />
-              <span style={{ height: '17px', background: 'var(--zone-4)' }} />
-              <span style={{ height: '20px', background: 'var(--zone-5)' }} />
-            </div>
-          </div>
+          <img
+            src="/jbf-logo-192.png"
+            alt="Just Believe Fitness"
+            className="brand-logo-img"
+            width={38}
+            height={38}
+          />
           <div>
             <h1 className="brand-title">Just Believe Fitness</h1>
             <div className="brand-sub">JBF Studio · Any Bike &amp; BLE HR</div>
@@ -1021,7 +1020,7 @@ export function App() {
               setIsHistoryModalOpen(true);
             }}
           >
-            <History size={15} /> Rides ({savedRides.length})
+            <History size={15} /> Rides &amp; Sync ({savedRides.length})
           </button>
         </div>
       </header>
@@ -1609,6 +1608,23 @@ export function App() {
         onSaveGarminConfig={(next) => {
           setGarminConfig(next);
           saveGarminConfig(next);
+        }}
+        onImportAthleteStats={(imported: GarminImportedProfile) => {
+          const current = profileRef.current;
+          const nextProfile: AthleteProfile = {
+            ...current,
+            ...(imported.weightLbs !== undefined ? { weightLbs: imported.weightLbs } : {}),
+            ...(imported.heightFeet !== undefined ? { heightFeet: imported.heightFeet } : {}),
+            ...(imported.heightInches !== undefined
+              ? { heightInches: imported.heightInches }
+              : {}),
+            ...(imported.maxHrBpm !== undefined ? { maxHrBpm: imported.maxHrBpm } : {}),
+            ...(imported.restingHrBpm !== undefined
+              ? { restingHrBpm: imported.restingHrBpm }
+              : {}),
+            ...(imported.ftpWatts !== undefined ? { ftpWatts: imported.ftpWatts } : {}),
+          };
+          handleUpdateProfile(nextProfile);
         }}
         onUploadRide={(ride, target) => void handleCloudUploadRide(ride, target)}
         onUpdateRideMeta={handleUpdateRideMeta}

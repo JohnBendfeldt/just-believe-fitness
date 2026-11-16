@@ -1,4 +1,9 @@
-import type { GarminConfig, SavedRide } from '../types/fitness';
+import type {
+  GarminConfig,
+  GarminImportedProfile,
+  GarminRemoteActivity,
+  SavedRide,
+} from '../types/fitness';
 import { buildRideTcxXml } from './tcxExporter';
 import { buildRideSummaryDescription } from './strava';
 import { loadGarminConfig, saveGarminConfig } from './storage';
@@ -15,6 +20,10 @@ interface GarminSyncApiResponse {
   athleteName?: string;
   tokens?: Record<string, unknown>;
   activityId?: number;
+  hasServerCredentials?: boolean;
+  hasServerPersonalApiKey?: boolean;
+  importedProfile?: GarminImportedProfile;
+  recentActivities?: GarminRemoteActivity[];
 }
 
 async function postGarminSync(body: Record<string, unknown>): Promise<GarminSyncApiResponse> {
@@ -38,6 +47,28 @@ async function postGarminSync(body: Record<string, unknown>): Promise<GarminSync
   return data;
 }
 
+export async function fetchGarminServerStatus(): Promise<{
+  ok: boolean;
+  hasServerCredentials: boolean;
+  hasServerPersonalApiKey: boolean;
+}> {
+  const resp = await fetch(GARMIN_SYNC_ENDPOINT, { method: 'GET' });
+  const contentType = resp.headers.get('content-type') || '';
+  if (!resp.ok || !contentType.includes('application/json')) {
+    return {
+      ok: false,
+      hasServerCredentials: false,
+      hasServerPersonalApiKey: false,
+    };
+  }
+  const data = (await resp.json()) as GarminSyncApiResponse;
+  return {
+    ok: Boolean(data.ok),
+    hasServerCredentials: Boolean(data.hasServerCredentials),
+    hasServerPersonalApiKey: Boolean(data.hasServerPersonalApiKey),
+  };
+}
+
 export async function loginGarminConnect(
   email: string,
   password: string
@@ -59,9 +90,11 @@ export async function loginGarminConnect(
     };
   }
 
+  const existing = loadGarminConfig();
   const config: GarminConfig = {
+    ...existing,
     email: email.trim(),
-    athleteName: data.athleteName || email.trim(),
+    athleteName: data.athleteName || existing.athleteName || email.trim(),
     tokens: data.tokens,
     connectedAtIso: new Date().toISOString(),
   };
@@ -81,14 +114,79 @@ export async function verifyGarminConnectMfa(
     email: email.trim(),
   });
 
+  const existing = loadGarminConfig();
   const config: GarminConfig = {
+    ...existing,
     email: email.trim(),
-    athleteName: data.athleteName || email.trim(),
+    athleteName: data.athleteName || existing.athleteName || email.trim(),
     tokens: data.tokens,
     connectedAtIso: new Date().toISOString(),
   };
   saveGarminConfig(config);
   return config;
+}
+
+export async function verifyGarminSessionTokens(
+  rawTokenJson: string,
+  email?: string
+): Promise<GarminConfig> {
+  const trimmed = rawTokenJson.trim();
+  if (!trimmed) {
+    throw new Error('Paste your Garmin session token JSON before verifying.');
+  }
+
+  const existing = loadGarminConfig();
+  const effectiveEmail = (email || existing.email || '').trim();
+  const data = await postGarminSync({
+    action: 'verify_tokens',
+    tokens: trimmed,
+    email: effectiveEmail,
+  });
+
+  const config: GarminConfig = {
+    ...existing,
+    ...(effectiveEmail ? { email: effectiveEmail } : {}),
+    athleteName: data.athleteName || existing.athleteName || effectiveEmail || 'Garmin Athlete',
+    tokens: data.tokens,
+    connectedAtIso: new Date().toISOString(),
+  };
+  saveGarminConfig(config);
+  return config;
+}
+
+export async function syncGarminPersonalApi(apiKey?: string): Promise<{
+  config: GarminConfig;
+  athleteName: string;
+  importedProfile: GarminImportedProfile;
+  recentActivities: GarminRemoteActivity[];
+}> {
+  const existing = loadGarminConfig();
+  const effectiveKey = (apiKey ?? existing.personalApiKey ?? '').trim();
+
+  const data = await postGarminSync({
+    action: 'personal_api_sync',
+    ...(effectiveKey ? { apiKey: effectiveKey } : {}),
+  });
+
+  const importedProfile = data.importedProfile || {};
+  const recentActivities = Array.isArray(data.recentActivities) ? data.recentActivities : [];
+  const athleteName = data.athleteName || existing.athleteName || 'Garmin Athlete';
+
+  const config: GarminConfig = {
+    ...existing,
+    athleteName,
+    ...(effectiveKey ? { personalApiKey: effectiveKey } : {}),
+    recentActivities,
+    lastPersonalSyncAtIso: new Date().toISOString(),
+  };
+  saveGarminConfig(config);
+
+  return {
+    config,
+    athleteName,
+    importedProfile,
+    recentActivities,
+  };
 }
 
 export async function uploadRideToGarmin(

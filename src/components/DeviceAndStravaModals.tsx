@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Bluetooth,
   Camera,
   CheckCircle2,
+  Copy,
   Download,
   ExternalLink,
   Flame,
   Heart,
+  KeyRound,
   Play,
+  RefreshCw,
   ShieldCheck,
   Trash2,
   UploadCloud,
@@ -15,6 +18,7 @@ import {
 } from 'lucide-react';
 import type {
   GarminConfig,
+  GarminImportedProfile,
   LiveTelemetry,
   SavedRide,
   StravaConfig,
@@ -23,8 +27,11 @@ import type {
 import { ZONE_PALETTE, formatDuration, metersToMiles } from '../utils/zones';
 import { buildStravaAuthorizeUrl } from '../services/strava';
 import {
+  fetchGarminServerStatus,
   loginGarminConnect,
+  syncGarminPersonalApi,
   verifyGarminConnectMfa,
+  verifyGarminSessionTokens,
 } from '../services/garminConnect';
 import { RidePhotoStudio } from './RidePhotoStudio';
 
@@ -258,6 +265,7 @@ interface HistoryAndStravaModalProps {
   uploadStatusText: string;
   onSaveStravaConfig: (next: StravaConfig) => void;
   onSaveGarminConfig: (next: GarminConfig) => void;
+  onImportAthleteStats?: (imported: GarminImportedProfile) => void;
   onUploadRide: (ride: SavedRide, target: CloudUploadTarget) => void;
   onUpdateRideMeta: (updated: SavedRide) => Promise<void> | void;
   onSyncRemoteMeta: (updated: SavedRide) => Promise<void> | void;
@@ -278,6 +286,7 @@ export function HistoryAndStravaModal({
   uploadStatusText,
   onSaveStravaConfig,
   onSaveGarminConfig,
+  onImportAthleteStats,
   onUploadRide,
   onUpdateRideMeta,
   onSyncRemoteMeta,
@@ -290,19 +299,40 @@ export function HistoryAndStravaModal({
   const [clientSecret, setClientSecret] = useState(stravaConfig.clientSecret);
   const [showStravaSetup, setShowStravaSetup] = useState(false);
 
-  // Garmin Connect SSO & MFA State
+  // Garmin Connect SSO, MFA, Token Paste & Personal API State
   const [showGarminSetup, setShowGarminSetup] = useState(false);
   const [garminEmail, setGarminEmail] = useState(garminConfig.email || '');
   const [garminPassword, setGarminPassword] = useState('');
   const [garminMfaState, setGarminMfaState] = useState<unknown | null>(null);
   const [garminMfaCode, setGarminMfaCode] = useState('');
   const [garminAuthBusy, setGarminAuthBusy] = useState(false);
+  const [garminTokenJson, setGarminTokenJson] = useState('');
+  const [showGarminTokenPaste, setShowGarminTokenPaste] = useState(false);
+  const [garminPersonalKey, setGarminPersonalKey] = useState(garminConfig.personalApiKey || '');
+  const [hasServerPersonalKey, setHasServerPersonalKey] = useState(false);
+  const [garminPersonalBusy, setGarminPersonalBusy] = useState(false);
   const [showPhotoStudio, setShowPhotoStudio] = useState(true);
+
+  useEffect(() => {
+    if (!isOpen || !showGarminSetup) return;
+    let active = true;
+    void fetchGarminServerStatus()
+      .then((status) => {
+        if (active) setHasServerPersonalKey(status.hasServerPersonalApiKey);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isOpen, showGarminSetup]);
 
   if (!isOpen) return null;
 
   const isStravaConnected = Boolean(stravaConfig.accessToken);
   const isGarminConnected = Boolean(garminConfig.tokens);
+  const isPersonalApiLinked = Boolean(
+    garminConfig.personalApiKey || garminConfig.lastPersonalSyncAtIso
+  );
   const callbackDomain = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 
   const handleConnectStrava = () => {
@@ -365,7 +395,65 @@ export function HistoryAndStravaModal({
   const handleDisconnectGarmin = () => {
     onSaveGarminConfig({});
     setGarminMfaState(null);
+    setGarminPersonalKey('');
+    setGarminTokenJson('');
     onNotify('Disconnected Garmin Connect.');
+  };
+
+  const handleSyncPersonalApi = async () => {
+    setGarminPersonalBusy(true);
+    try {
+      const res = await syncGarminPersonalApi(garminPersonalKey);
+      onSaveGarminConfig(res.config);
+      const importedEntries: string[] = [];
+      if (res.importedProfile.weightLbs !== undefined) {
+        importedEntries.push(`${res.importedProfile.weightLbs} lbs`);
+      }
+      if (res.importedProfile.maxHrBpm !== undefined) {
+        importedEntries.push(`${res.importedProfile.maxHrBpm} Max HR`);
+      }
+      if (res.importedProfile.ftpWatts !== undefined) {
+        importedEntries.push(`${res.importedProfile.ftpWatts}W FTP`);
+      }
+      if (Object.keys(res.importedProfile).length > 0) {
+        onImportAthleteStats?.(res.importedProfile);
+      }
+      const summary = importedEntries.length > 0 ? ` (${importedEntries.join(', ')})` : '';
+      onNotify(
+        `Synced Garmin Personal API for ${res.athleteName}: ${res.recentActivities.length} recent workouts loaded${summary}.`
+      );
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Garmin Personal API sync failed.');
+    } finally {
+      setGarminPersonalBusy(false);
+    }
+  };
+
+  const handleVerifyGarminTokens = async () => {
+    if (!garminTokenJson.trim()) return;
+    setGarminAuthBusy(true);
+    try {
+      const cfg = await verifyGarminSessionTokens(garminTokenJson, garminEmail);
+      onSaveGarminConfig(cfg);
+      setGarminTokenJson('');
+      setShowGarminTokenPaste(false);
+      setShowGarminSetup(false);
+      onNotify(`Garmin upload session verified as ${cfg.athleteName}!`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Garmin session token verification failed.');
+    } finally {
+      setGarminAuthBusy(false);
+    }
+  };
+
+  const handleCopyGarminTokens = async () => {
+    if (!garminConfig.tokens) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(garminConfig.tokens));
+      onNotify('Copied Garmin session token JSON to clipboard.');
+    } catch {
+      onNotify('Could not copy automatically — export tokens via `npm run garmin:token`.');
+    }
   };
 
   const orderedZones: ZoneId[] = [5, 4, 3, 2, 1];
@@ -648,12 +736,28 @@ export function HistoryAndStravaModal({
                   Garmin Connect:{' '}
                   {isGarminConnected ? (
                     <span style={{ color: '#0EA5E9' }}>
-                      Connected ({garminConfig.athleteName || garminConfig.email})
+                      Upload Ready ({garminConfig.athleteName || garminConfig.email})
+                    </span>
+                  ) : isPersonalApiLinked ? (
+                    <span style={{ color: '#12B981' }}>
+                      Profile &amp; History Synced ({garminConfig.athleteName || 'Personal API'})
                     </span>
                   ) : (
                     <span style={{ color: 'var(--text-muted)' }}>Not Connected</span>
                   )}
                 </strong>
+                {isGarminConnected && isPersonalApiLinked && (
+                  <span
+                    style={{
+                      marginLeft: '8px',
+                      fontSize: '0.72rem',
+                      color: '#12B981',
+                      fontWeight: 600,
+                    }}
+                  >
+                    · Personal API Linked
+                  </span>
+                )}
               </div>
               <button
                 type="button"
@@ -670,19 +774,82 @@ export function HistoryAndStravaModal({
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '10px',
-                  marginTop: '8px',
+                  gap: '12px',
+                  marginTop: '10px',
                 }}
               >
+                {/* Section A: Official Garmin Personal API (GCDC_... · Profile & History, Zero Rate Limits) */}
+                <div
+                  style={{
+                    background: 'rgba(18, 185, 129, 0.08)',
+                    border: '1px solid rgba(18, 185, 129, 0.28)',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#34D399' }}>
+                    <KeyRound size={13} style={{ verticalAlign: '-2px', marginRight: '5px' }} />
+                    Garmin Personal API Key (Profile &amp; History Sync · No SSO Rate Limits)
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Uses Garmin&apos;s official read-only Personal API (<code>GCDC_...</code>) to
+                    import your weight, height, Max HR, and recent Garmin activities without
+                    hitting <code>sso.garmin.com</code>.
+                    {hasServerPersonalKey &&
+                      ' Server GARMIN_PERSONAL_API_KEY detected in environment — leave blank to use it or override below.'}
+                  </p>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '8px',
+                      flexWrap: 'wrap',
+                      alignItems: 'flex-end',
+                    }}
+                  >
+                    <div className="field" style={{ flex: '1 1 240px' }}>
+                      <label htmlFor="garmin-personal-key-input">
+                        Garmin Personal API Key (<code>GCDC_...</code>)
+                      </label>
+                      <input
+                        id="garmin-personal-key-input"
+                        type="password"
+                        placeholder={
+                          hasServerPersonalKey
+                            ? 'Using server GARMIN_PERSONAL_API_KEY (or paste override)'
+                            : 'GCDC_...'
+                        }
+                        value={garminPersonalKey}
+                        onChange={(e) => setGarminPersonalKey(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      id="sync-garmin-personal-api-btn"
+                      className="btn btn-sm"
+                      disabled={
+                        garminPersonalBusy || (!garminPersonalKey.trim() && !hasServerPersonalKey)
+                      }
+                      onClick={() => void handleSyncPersonalApi()}
+                    >
+                      <RefreshCw size={14} />
+                      {garminPersonalBusy ? 'Syncing...' : 'Sync Profile & Garmin History'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Section B: Workout Upload Connection (Garmin SSO or Local Session Token Paste) */}
                 <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                   <ShieldCheck
                     size={13}
                     style={{ verticalAlign: '-2px', marginRight: '4px', color: '#0EA5E9' }}
                   />
-                  Signs in directly with Garmin SSO via your private Netlify function and stores{' '}
-                  <strong>only rolling OAuth session tokens</strong> in this browser (your Garmin
-                  password is never saved). When both Garmin and Strava are linked, JBF uploads in
-                  import mode so Garmin won&apos;t double-post a duplicate to Strava!
+                  For <strong>pushing new JBF workouts</strong> to Garmin Connect (write access),
+                  sign in via Garmin SSO below or paste a local session token if cloud IPs hit a
+                  429 cooldown. Only rolling OAuth tokens are stored in this browser. When both
+                  Garmin and Strava are linked, JBF uploads in import mode to prevent duplicates.
                 </p>
 
                 {!garminMfaState ? (
@@ -755,7 +922,26 @@ export function HistoryAndStravaModal({
                       </button>
                     </>
                   )}
+                  <button
+                    type="button"
+                    id="toggle-garmin-token-paste-btn"
+                    className="btn btn-sm"
+                    onClick={() => setShowGarminTokenPaste((v) => !v)}
+                  >
+                    {showGarminTokenPaste
+                      ? 'Hide Token Paste'
+                      : 'Paste Session Token (Bypass Cloud 429)'}
+                  </button>
                   {isGarminConnected && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => void handleCopyGarminTokens()}
+                    >
+                      <Copy size={13} /> Copy Session Token
+                    </button>
+                  )}
+                  {(isGarminConnected || isPersonalApiLinked) && (
                     <button
                       type="button"
                       className="btn btn-danger btn-sm"
@@ -765,6 +951,57 @@ export function HistoryAndStravaModal({
                     </button>
                   )}
                 </div>
+
+                {showGarminTokenPaste && (
+                  <div
+                    style={{
+                      background: 'rgba(14, 165, 233, 0.08)',
+                      border: '1px solid rgba(14, 165, 233, 0.28)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                    }}
+                  >
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      If Garmin SSO rate-limits Netlify&apos;s cloud IP, run{' '}
+                      <code>npm run garmin:token</code> on your computer (uses your home IP) and
+                      paste the resulting single-line JSON below:
+                    </p>
+                    <div className="field">
+                      <label htmlFor="garmin-token-json-input">Garmin Session Token JSON</label>
+                      <textarea
+                        id="garmin-token-json-input"
+                        rows={3}
+                        placeholder='{"oauth1":...,"oauth2":...}'
+                        value={garminTokenJson}
+                        onChange={(e) => setGarminTokenJson(e.target.value)}
+                        style={{
+                          width: '100%',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.75rem',
+                          background: 'var(--bg-canvas)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--hairline-strong)',
+                          borderRadius: '8px',
+                          padding: '8px',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        id="verify-garmin-token-btn"
+                        className="btn btn-garmin btn-sm"
+                        disabled={garminAuthBusy || !garminTokenJson.trim()}
+                        onClick={() => void handleVerifyGarminTokens()}
+                      >
+                        {garminAuthBusy ? 'Verifying...' : 'Verify & Link Session Token'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -826,6 +1063,21 @@ export function HistoryAndStravaModal({
                   2. Paste your Client ID &amp; Client Secret below (stored only in this browser)
                   and tap <strong>Connect with Strava</strong>.
                 </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <a
+                    href="/jbf-strava-icon.png"
+                    download="jbf-strava-icon.png"
+                    id="download-strava-app-icon"
+                    className="btn btn-sm"
+                  >
+                    <Download size={14} /> Download JBF App Icon (.PNG · 256×256)
+                  </a>
+                  <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                    Upload this PNG on Strava&apos;s &ldquo;Update App Icon&rdquo; page (SVGs are
+                    rejected).
+                  </span>
+                </div>
 
                 <div className="form-grid">
                   <div className="field">
@@ -946,6 +1198,58 @@ export function HistoryAndStravaModal({
             ))
           )}
         </div>
+
+        {/* Recent Garmin Connect History (Synced via Official Garmin Personal API) */}
+        {garminConfig.recentActivities && garminConfig.recentActivities.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <h3 className="panel-heading">
+              Recent Garmin Connect Activities ({garminConfig.recentActivities.length})
+            </h3>
+            {garminConfig.recentActivities.map((act) => (
+              <div className="history-item" key={act.activityId}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                    {act.name}{' '}
+                    <span
+                      style={{
+                        fontSize: '0.74rem',
+                        color: '#38BDF8',
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      · {act.typeKey.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <div
+                    className="tabular"
+                    style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--text-secondary)',
+                      marginTop: '2px',
+                    }}
+                  >
+                    {act.startedAtLocal
+                      ? new Date(act.startedAtLocal.replace(' ', 'T')).toLocaleDateString()
+                      : 'Recent'}{' '}
+                    · {formatDuration(act.durationSec)} ·{' '}
+                    {metersToMiles(act.distanceMeters).toFixed(2)} mi
+                    {act.avgWatts ? ` · Avg ${act.avgWatts}W` : ''}
+                    {act.avgHr ? ` · ${act.avgHr} bpm` : ''}
+                    {act.caloriesKcal > 0 ? ` · ${act.caloriesKcal} kcal` : ''}
+                  </div>
+                </div>
+                <a
+                  href={`https://connect.garmin.com/modern/activity/${act.activityId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-garmin btn-sm"
+                >
+                  Open in Garmin <ExternalLink size={13} />
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
