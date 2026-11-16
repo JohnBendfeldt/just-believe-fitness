@@ -417,6 +417,26 @@ button {
   border-radius: var(--radius-sm);
 }
 
+.segment-callout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  text-align: left;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.segment-callout-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--hairline-strong);
+}
+
+.focus-launch-btn {
+  border-color: rgba(249, 115, 22, 0.42);
+  color: #fed7aa;
+}
+
 .transport-controls {
   display: flex;
   align-items: center;
@@ -1227,6 +1247,218 @@ button {
 }
 
 /* ============================================================================
+ * Focused Workout Modal (Instructions + Play/Pause + 4-Grid Cockpit)
+ * ============================================================================ */
+
+.focus-modal-backdrop {
+  background: rgba(4, 6, 10, 0.92);
+  padding: 10px;
+}
+
+.focus-modal-card {
+  width: min(860px, 100%);
+  max-height: calc(100dvh - 20px);
+  overflow-y: auto;
+  background: var(--bg-canvas);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 28px 68px rgba(0, 0, 0, 0.9);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.focus-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.focus-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.focus-workout-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline-strong);
+  background: var(--bg-elevated-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.focus-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.focus-instructions-card {
+  background: var(--surface-gradient);
+  box-shadow: var(--surface-inset);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.focus-cue-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.focus-cue-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.focus-cue-pill {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.88;
+}
+
+.focus-cue-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 2.8vw, 1.65rem);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.02;
+}
+
+.focus-cue-timers {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.focus-timer-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.focus-timer-label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.focus-timer-val {
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 2.5vw, 1.6rem);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.focus-instructions-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.focus-coaching-note {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.focus-targets-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.focus-target-chip {
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--text-secondary);
+}
+
+.focus-target-chip strong {
+  color: var(--text-primary);
+}
+
+.focus-next-preview {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.focus-next-preview strong {
+  color: var(--text-secondary);
+}
+
+.focus-progress-track {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.focus-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.35s linear;
+}
+
+.focus-transport-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.focus-play-btn {
+  flex: 1 1 170px;
+  min-height: 42px;
+  font-size: 0.9rem;
+}
+
+.focus-pause-active {
+  background: var(--bg-elevated-3);
+  border-color: rgba(255, 255, 255, 0.24);
+  font-weight: 700;
+}
+
+.focus-four-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* ============================================================================
  * Responsive Breakpoints
  * - >= 600px (Phone Landscape, Tablet, Desktop): 3-Column Gauges so rotating
  *   to landscape NEVER stretches rows 1-wide across the screen.
@@ -1453,6 +1685,53 @@ button {
     grid-template-columns: 90px 1fr 1fr;
     font-size: 0.69rem;
   }
+
+  /* Focus Mode on Phone Portrait: Zero-scroll edge-to-edge 4-grid + instructions */
+  .focus-modal-backdrop {
+    padding: 6px;
+  }
+
+  .focus-modal-card {
+    padding: 8px;
+    gap: 8px;
+    max-height: calc(100dvh - 12px);
+  }
+
+  .focus-hide-xs {
+    display: none;
+  }
+
+  .focus-instructions-body {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .focus-coaching-note {
+    font-size: 0.8rem;
+  }
+
+  .focus-targets-row {
+    font-size: 0.66rem;
+    gap: 4px;
+  }
+
+  .focus-next-preview {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .focus-play-btn {
+    min-height: 38px;
+    font-size: 0.84rem;
+  }
+
+  .focus-four-grid {
+    gap: 8px;
+  }
+
+  .focus-four-grid .dial-ring-stage {
+    max-width: 146px;
+  }
 }
 
 /* Phone Landscape Optimization: Always 3 Columns + Sleek Chrome so ALL stats fit on one screen */
@@ -1607,5 +1886,35 @@ button {
 
   .stat-tile-val {
     font-size: 1.12rem;
+  }
+
+  /* Focus Mode in Phone Landscape: 4-across single row under slim instructions + Play/Pause */
+  .focus-modal-card {
+    width: 100%;
+    padding: 6px 8px;
+    gap: 6px;
+  }
+
+  .focus-cue-banner {
+    padding: 5px 10px;
+  }
+
+  .focus-instructions-body {
+    padding: 6px 10px;
+    gap: 5px;
+  }
+
+  .focus-coaching-note {
+    font-size: 0.76rem;
+  }
+
+  .focus-play-btn {
+    min-height: 32px;
+    font-size: 0.8rem;
+  }
+
+  .focus-four-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
   }
 }

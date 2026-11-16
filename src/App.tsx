@@ -5,6 +5,7 @@ import {
   Flame,
   Gauge,
   History,
+  Maximize2,
   Pause,
   PictureInPicture2,
   Play,
@@ -68,6 +69,8 @@ import { renderTelemetryHudCanvas } from './services/pipHud';
 import { ScreenWakeManager, WorkoutAudioCue } from './services/wakeAndAudio';
 import { ZoneMetricCard } from './components/ZoneMetricCard';
 import { ZoneSpeedometerCard } from './components/ZoneSpeedometerCard';
+import { RideStatsQuadCard } from './components/RideStatsQuadCard';
+import { FocusRideModal } from './components/FocusRideModal';
 import { LiveZoneGraph } from './components/LiveZoneGraph';
 import { YouTubeDeck, type YouTubeLayoutMode } from './components/YouTubeDeck';
 import { AthleteProfileModal } from './components/AthleteProfileModal';
@@ -145,6 +148,7 @@ export function App() {
   const [isHudPipActive, setIsHudPipActive] = useState<boolean>(false);
 
   // Modals, History, Strava, Audio, Toast
+  const [isFocusModalOpen, setIsFocusModalOpen] = useState<boolean>(false);
   const [isAthleteModalOpen, setIsAthleteModalOpen] = useState<boolean>(false);
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState<boolean>(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
@@ -956,18 +960,28 @@ export function App() {
           </select>
 
           {activeSegmentInfo ? (
-            <span className="segment-target-callout tabular">
-              Block {activeSegmentInfo.index + 1}/{activeSegmentInfo.totalSegments} · Target{' '}
-              {activeSegmentInfo.segment.cadenceRange[0]}–
-              {activeSegmentInfo.segment.cadenceRange[1]} RPM
-              {activeSegmentInfo.nextSegment
-                ? ` · Next: ${activeSegmentInfo.nextSegment.label}`
-                : ''}
-            </span>
+            <button
+              type="button"
+              className="segment-target-callout segment-callout-btn tabular"
+              onClick={() => setIsFocusModalOpen(true)}
+              title="Open Focused Workout Mode with full instructions & 4-grid"
+            >
+              <span>
+                <strong>Block {activeSegmentInfo.index + 1}/{activeSegmentInfo.totalSegments}:</strong>{' '}
+                {activeSegmentInfo.segment.coachingNote}
+              </span>
+              <Maximize2 size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
+            </button>
           ) : (
-            <span className="segment-target-callout">
-              Open Ride · Ride at your own pace while watching YouTube
-            </span>
+            <button
+              type="button"
+              className="segment-target-callout segment-callout-btn"
+              onClick={() => setIsFocusModalOpen(true)}
+              title="Open Focused Workout Mode"
+            >
+              <span>Open Ride · Tap Focus for distraction-free 4-grid cockpit</span>
+              <Maximize2 size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
+            </button>
           )}
         </div>
 
@@ -994,6 +1008,16 @@ export function App() {
             </button>
           </div>
 
+          <button
+            type="button"
+            id="open-focus-mode-btn"
+            className="btn btn-sm focus-launch-btn"
+            onClick={() => setIsFocusModalOpen(true)}
+            title="Pop out Focused 4-Grid Modal with Workout Instructions & Play/Pause"
+          >
+            <Maximize2 size={14} /> Focus
+          </button>
+
           {rideState !== 'running' ? (
             <button
               type="button"
@@ -1001,7 +1025,7 @@ export function App() {
               className="btn btn-primary"
               onClick={handleStartOrResume}
             >
-              <Play size={16} /> {rideState === 'paused' ? 'Resume' : 'Start Workout'}
+              <Play size={16} /> {rideState === 'paused' ? 'Resume' : 'Start'}
             </button>
           ) : (
             <button
@@ -1204,46 +1228,16 @@ export function App() {
 
           {/* In 2-column layouts (Phone Portrait & Split YouTube), Cell #4 packs Speed, Distance, Calories, Avg W, & Burn Time right beside Heart Rate so ALL stats sit in one 2x2 view */}
           {gaugeMode === 'rings' && (
-            <section
-              className="metric-card compact-telemetry-quad tabular"
-              id="compact-all-stats-card"
-              aria-label="Ride computer stats"
-            >
-              <header className="metric-zone-header dial-zone-header" style={{ background: '#232B38', color: '#CBD5E1' }}>
-                <span className="dial-header-title">Ride Stats</span>
-                <span className="dial-header-zone" style={{ color: '#fb923c' }}>
-                  ★ {burnPoints} BURN
-                </span>
-              </header>
-
-              <div className="quad-grid">
-                <div className="quad-cell">
-                  <span className="quad-label">Speed</span>
-                  <span className="quad-val">{telemetry.speedMph.toFixed(1)}</span>
-                  <span className="quad-sub">mph</span>
-                </div>
-                <div className="quad-cell">
-                  <span className="quad-label">Distance</span>
-                  <span className="quad-val">{metersToMiles(distanceMeters).toFixed(2)}</span>
-                  <span className="quad-sub">mi ({(distanceMeters / 1000).toFixed(1)} km)</span>
-                </div>
-                <div className="quad-cell">
-                  <span className="quad-label">Calories</span>
-                  <span className="quad-val">{Math.round(caloriesKcal)}</span>
-                  <span className="quad-sub">kcal</span>
-                </div>
-                <div className="quad-cell">
-                  <span className="quad-label">Avg / NP</span>
-                  <span className="quad-val">{avgRideWatts}W</span>
-                  <span className="quad-sub">NP {npRideWatts}W</span>
-                </div>
-              </div>
-
-              <div className="quad-burn-footer">
-                <span>Burn Zone (Z4+Z5)</span>
-                <strong>{formatDuration(burnZoneTotalSec)}</strong>
-              </div>
-            </section>
+            <RideStatsQuadCard
+              className="compact-telemetry-quad"
+              speedMph={telemetry.speedMph}
+              distanceMeters={distanceMeters}
+              caloriesKcal={caloriesKcal}
+              avgRideWatts={avgRideWatts}
+              npRideWatts={npRideWatts}
+              burnPoints={burnPoints}
+              burnZoneTotalSec={burnZoneTotalSec}
+            />
           )}
         </div>
       </main>
@@ -1338,6 +1332,49 @@ export function App() {
       />
 
       {/* Modals */}
+      <FocusRideModal
+        isOpen={isFocusModalOpen}
+        onClose={() => setIsFocusModalOpen(false)}
+        workouts={WORKOUT_TEMPLATES}
+        selectedWorkout={selectedWorkout}
+        onSelectWorkoutId={(id) => {
+          setSelectedWorkoutId(id);
+          setSegmentOffsetSec(0);
+        }}
+        activeSegmentInfo={activeSegmentInfo}
+        rideState={rideState}
+        elapsedSec={elapsedSec}
+        burnPoints={burnPoints}
+        burnZoneTotalSec={burnZoneTotalSec}
+        distanceMeters={distanceMeters}
+        caloriesKcal={caloriesKcal}
+        avgRideWatts={avgRideWatts}
+        npRideWatts={npRideWatts}
+        telemetry={telemetry}
+        profile={profile}
+        powerZones={powerZones}
+        cadenceZones={cadenceZones}
+        hrZones={hrZones}
+        activePowerZone={activePowerZone}
+        activeCadenceZone={activeCadenceZone}
+        activeHrZone={activeHrZone}
+        headlineZone={headlineZone}
+        resistanceControl={resistanceControl}
+        audioEnabled={audioEnabled}
+        onToggleAudio={() => setAudioEnabled((v) => !v)}
+        isHudPipActive={isHudPipActive}
+        onLaunchHudPip={() => void handleLaunchHudPip()}
+        onStartOrResume={handleStartOrResume}
+        onPause={() => setRideState('paused')}
+        onSkipSegment={() => {
+          if (activeSegmentInfo) {
+            setSegmentOffsetSec((prev) => prev + activeSegmentInfo.remainingSec);
+          }
+        }}
+        onFinishAndSave={() => void handleFinishAndSave()}
+        onResetWorkout={handleResetWorkout}
+      />
+
       <AthleteProfileModal
         isOpen={isAthleteModalOpen}
         profile={profile}
