@@ -231,7 +231,7 @@ export function FocusRideModal({
           </div>
         </header>
 
-        {/* Workout Instructions + Targets + Play/Pause Card Directly Above the 4-Grid */}
+        {/* Workout Instructions + Targets Card Directly Above Transport & 4-Grid */}
         <section
           className="focus-instructions-card"
           style={{
@@ -273,7 +273,10 @@ export function FocusRideModal({
               </div>
               <div className="focus-timer-block">
                 <span className="focus-timer-label">Burn</span>
-                <span className="focus-timer-val" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <span
+                  className="focus-timer-val"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                >
                   <Flame size={16} /> {burnPoints}
                 </span>
               </div>
@@ -289,22 +292,17 @@ export function FocusRideModal({
 
                 <div className="focus-targets-row tabular">
                   <span className="focus-target-chip">
-                    <strong>Power:</strong> {activeSegmentInfo.targets.minWatts}–
-                    {activeSegmentInfo.targets.maxWatts}W
+                    <strong>{activeSegmentInfo.targets.minWatts}–{activeSegmentInfo.targets.maxWatts}W</strong>
                   </span>
                   <span className="focus-target-chip">
-                    <strong>Cadence:</strong> {activeSegmentInfo.segment.cadenceRange[0]}–
-                    {activeSegmentInfo.segment.cadenceRange[1]} RPM
+                    <strong>{activeSegmentInfo.segment.cadenceRange[0]}–{activeSegmentInfo.segment.cadenceRange[1]}</strong> RPM
                   </span>
                   <span className="focus-target-chip">
-                    <strong>EX-3 Gear:</strong> Res{' '}
-                    {activeSegmentInfo.targets.suggestedResistanceLow}–
-                    {activeSegmentInfo.targets.suggestedResistanceHigh}
+                    Gear <strong>{activeSegmentInfo.targets.suggestedResistanceLow}–{activeSegmentInfo.targets.suggestedResistanceHigh}</strong>
                   </span>
                   {activeSegmentInfo.nextSegment && (
                     <span className="focus-next-preview">
-                      Next: <strong>{activeSegmentInfo.nextSegment.label}</strong> (
-                      {formatDuration(activeSegmentInfo.nextSegment.durationSec)})
+                      Next: <strong>{activeSegmentInfo.nextSegment.label}</strong>
                     </span>
                   )}
                 </div>
@@ -321,74 +319,74 @@ export function FocusRideModal({
               </>
             ) : (
               <p className="focus-coaching-note">
-                Ride at your own pace — stack <strong>Burn Points</strong> for every minute in{' '}
+                Ride at your own pace — earn 1 <strong>Burn Point</strong> per minute in{' '}
                 <strong>Orange (≥ {hrZones[3].minValue} bpm / ≥ {powerZones[3].minValue}W)</strong>{' '}
                 or <strong>Red</strong>.
               </p>
             )}
-
-            {/* Prominent Play / Pause / Skip / Save Controls right under the instructions */}
-            <div className="focus-transport-bar">
-              {rideState !== 'running' ? (
-                <button
-                  type="button"
-                  id="focus-play-resume-btn"
-                  className="btn btn-primary focus-play-btn"
-                  onClick={onStartOrResume}
-                >
-                  <Play size={17} />
-                  {rideState === 'paused' ? 'Resume Workout' : 'Play / Start Workout'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  id="focus-pause-btn"
-                  className="btn focus-play-btn focus-pause-active"
-                  onClick={onPause}
-                >
-                  <Pause size={17} /> Pause Workout
-                </button>
-              )}
-
-              {activeSegmentInfo && activeSegmentInfo.nextSegment && rideState !== 'idle' && (
-                <button
-                  type="button"
-                  id="focus-next-block-btn"
-                  className="btn btn-sm"
-                  onClick={onSkipSegment}
-                  title="Skip to next interval block"
-                >
-                  <FastForward size={15} /> Next Block
-                </button>
-              )}
-
-              {(rideState !== 'idle' || elapsedSec > 0) && (
-                <>
-                  <button
-                    type="button"
-                    id="focus-save-ride-btn"
-                    className="btn btn-strava btn-sm"
-                    onClick={() => {
-                      onClose();
-                      onFinishAndSave();
-                    }}
-                  >
-                    <Square size={14} /> Finish &amp; Save
-                  </button>
-                  <button
-                    type="button"
-                    id="focus-reset-ride-btn"
-                    className="btn btn-sm"
-                    onClick={onResetWorkout}
-                    title="Reset workout timer"
-                  >
-                    <RotateCcw size={14} />
-                  </button>
-                </>
-              )}
-            </div>
           </div>
         </section>
+
+        {/* Dedicated Always-Visible Play / Pause / Block Transport Bar */}
+        <div className="focus-transport-dock">
+          {rideState !== 'running' ? (
+            <button
+              type="button"
+              id="focus-play-resume-btn"
+              className="btn btn-primary focus-play-btn"
+              onClick={onStartOrResume}
+            >
+              <Play size={18} fill="currentColor" />
+              {rideState === 'paused' ? 'Resume Workout' : 'Start Workout'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              id="focus-pause-btn"
+              className="btn focus-play-btn focus-pause-active"
+              onClick={onPause}
+            >
+              <Pause size={18} /> Pause Workout
+            </button>
+          )}
+
+          {activeSegmentInfo && activeSegmentInfo.nextSegment && rideState !== 'idle' && (
+            <button
+              type="button"
+              id="focus-next-block-btn"
+              className="btn focus-secondary-btn"
+              onClick={onSkipSegment}
+              title="Skip to next interval block"
+            >
+              <FastForward size={16} /> Next
+            </button>
+          )}
+
+          {(rideState !== 'idle' || elapsedSec > 0) && (
+            <>
+              <button
+                type="button"
+                id="focus-save-ride-btn"
+                className="btn btn-strava focus-secondary-btn"
+                onClick={() => {
+                  onClose();
+                  onFinishAndSave();
+                }}
+              >
+                <Square size={15} /> Save
+              </button>
+              <button
+                type="button"
+                id="focus-reset-ride-btn"
+                className="btn focus-icon-btn"
+                onClick={onResetWorkout}
+                title="Reset workout timer"
+              >
+                <RotateCcw size={15} />
+              </button>
+            </>
+          )}
+        </div>
 
         {/* Dedicated 4-Grid Telemetry Cockpit (Power, Cadence + Gear, Heart Rate, Ride Stats) */}
         <div className="focus-four-grid">
@@ -414,10 +412,10 @@ export function FocusRideModal({
             title="Cadence"
             valueDisplay={`${Math.round(telemetry.cadenceRpm)}`}
             unit="RPM"
-            primaryBadge={`EX-3 RES ${telemetry.resistance}/32`}
+            primaryBadge={`RES ${telemetry.resistance}/32`}
             secondarySub={
               activeSegmentInfo
-                ? `Target ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]}`
+                ? `Goal ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]}`
                 : 'Spin Rhythm'
             }
             zones={cadenceZones}

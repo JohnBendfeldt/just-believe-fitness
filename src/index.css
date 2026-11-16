@@ -1247,7 +1247,7 @@ button {
 }
 
 /* ============================================================================
- * Focused Workout Modal (Instructions + Play/Pause + 4-Grid Cockpit)
+ * Focused Workout Modal (Instructions + Prominent Transport Dock + 4-Grid)
  * ============================================================================ */
 
 .focus-modal-backdrop {
@@ -1259,6 +1259,7 @@ button {
   width: min(860px, 100%);
   max-height: calc(100dvh - 20px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg-canvas);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-lg);
@@ -1274,6 +1275,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .focus-topbar-left {
@@ -1308,9 +1310,9 @@ button {
   box-shadow: var(--surface-inset);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-md);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
 }
 
 .focus-cue-banner {
@@ -1320,6 +1322,7 @@ button {
   flex-wrap: wrap;
   gap: 6px 12px;
   padding: 8px 12px;
+  border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
@@ -1339,7 +1342,7 @@ button {
 
 .focus-cue-title {
   font-family: var(--font-display);
-  font-size: clamp(1.25rem, 2.8vw, 1.65rem);
+  font-size: clamp(1.2rem, 2.8vw, 1.65rem);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.02em;
@@ -1368,23 +1371,23 @@ button {
 
 .focus-timer-val {
   font-family: var(--font-display);
-  font-size: clamp(1.25rem, 2.5vw, 1.6rem);
+  font-size: clamp(1.2rem, 2.5vw, 1.6rem);
   font-weight: 800;
   line-height: 1;
 }
 
 .focus-instructions-body {
-  padding: 10px 12px;
+  padding: 9px 12px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 
 .focus-coaching-note {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.32;
   color: var(--text-primary);
 }
 
@@ -1401,7 +1404,7 @@ button {
   background: rgba(255, 255, 255, 0.055);
   border: 1px solid var(--hairline);
   border-radius: 6px;
-  padding: 3px 8px;
+  padding: 2px 7px;
   color: var(--text-secondary);
 }
 
@@ -1432,30 +1435,57 @@ button {
   transition: width 0.35s linear;
 }
 
-.focus-transport-bar {
+/* Dedicated High-Visibility Transport Dock between Instructions & 4-Grid */
+.focus-transport-dock {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 8px;
-  padding-top: 2px;
+  flex-shrink: 0;
 }
 
 .focus-play-btn {
-  flex: 1 1 170px;
-  min-height: 42px;
-  font-size: 0.9rem;
+  flex: 1 1 auto;
+  min-height: 46px;
+  font-size: 0.96rem;
+  font-weight: 800;
+  letter-spacing: 0.015em;
+}
+
+.focus-play-btn.btn-primary {
+  box-shadow: 0 8px 22px -6px rgba(249, 115, 22, 0.6);
 }
 
 .focus-pause-active {
-  background: var(--bg-elevated-3);
-  border-color: rgba(255, 255, 255, 0.24);
-  font-weight: 700;
+  background: #1f2735;
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fef3c7;
+  font-weight: 800;
+}
+
+.focus-pause-active:hover {
+  background: #283244;
+  border-color: rgba(251, 191, 36, 0.8);
+}
+
+.focus-secondary-btn {
+  min-height: 46px;
+  padding: 0 14px;
+  font-size: 0.84rem;
+  flex-shrink: 0;
+}
+
+.focus-icon-btn {
+  min-height: 46px;
+  width: 46px;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 .focus-four-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  flex-shrink: 0;
 }
 
 /* ============================================================================
@@ -1686,51 +1716,112 @@ button {
     font-size: 0.69rem;
   }
 
-  /* Focus Mode on Phone Portrait: Zero-scroll edge-to-edge 4-grid + instructions */
+  /* Focus Mode on Phone Portrait: Zero-scroll edge-to-edge 4-grid + instructions + prominent Start/Pause dock */
   .focus-modal-backdrop {
-    padding: 6px;
+    padding: 5px;
   }
 
   .focus-modal-card {
-    padding: 8px;
-    gap: 8px;
-    max-height: calc(100dvh - 12px);
+    padding: 7px;
+    gap: 6px;
+    max-height: calc(100dvh - 10px);
   }
 
   .focus-hide-xs {
     display: none;
   }
 
+  .focus-cue-banner {
+    padding: 6px 10px;
+    gap: 4px 10px;
+  }
+
+  .focus-cue-title {
+    font-size: clamp(1.1rem, 4.6vw, 1.35rem);
+  }
+
+  .focus-timer-val {
+    font-size: clamp(1.1rem, 4.4vw, 1.32rem);
+  }
+
   .focus-instructions-body {
-    padding: 8px 10px;
-    gap: 6px;
+    padding: 7px 10px;
+    gap: 5px;
   }
 
   .focus-coaching-note {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
+    line-height: 1.28;
   }
 
   .focus-targets-row {
-    font-size: 0.66rem;
+    font-size: 0.65rem;
     gap: 4px;
   }
 
-  .focus-next-preview {
-    margin-left: 0;
-    width: 100%;
+  .focus-transport-dock {
+    gap: 6px;
   }
 
   .focus-play-btn {
-    min-height: 38px;
-    font-size: 0.84rem;
+    min-height: 42px;
+    font-size: 0.92rem;
+  }
+
+  .focus-secondary-btn {
+    min-height: 42px;
+    padding: 0 11px;
+    font-size: 0.78rem;
+  }
+
+  .focus-icon-btn {
+    min-height: 42px;
+    width: 42px;
   }
 
   .focus-four-grid {
-    gap: 8px;
+    gap: 6px;
+  }
+
+  .focus-four-grid .dial-body {
+    padding: 4px 7px 6px;
+    gap: 3px;
   }
 
   .focus-four-grid .dial-ring-stage {
-    max-width: 146px;
+    max-width: 118px;
+  }
+
+  .focus-four-grid .dial-value {
+    font-size: clamp(1.85rem, 8.2vw, 2.2rem);
+  }
+
+  .focus-four-grid .dial-meta-row {
+    gap: 5px;
+  }
+
+  .focus-four-grid .stepper-btn {
+    width: 25px;
+    height: 25px;
+    font-size: 0.88rem;
+  }
+
+  .focus-four-grid .quad-grid {
+    padding: 6px 7px 4px;
+    gap: 5px;
+  }
+
+  .focus-four-grid .quad-cell {
+    padding: 5px 7px;
+  }
+
+  .focus-four-grid .quad-val {
+    font-size: 1.25rem;
+  }
+
+  .focus-four-grid .quad-burn-footer {
+    margin: 0 7px 7px;
+    padding: 5px 8px;
   }
 }
 
@@ -1888,11 +1979,11 @@ button {
     font-size: 1.12rem;
   }
 
-  /* Focus Mode in Phone Landscape: 4-across single row under slim instructions + Play/Pause */
+  /* Focus Mode in Phone Landscape: 4-across single row under slim instructions + Play/Pause dock */
   .focus-modal-card {
     width: 100%;
     padding: 6px 8px;
-    gap: 6px;
+    gap: 5px;
   }
 
   .focus-cue-banner {
@@ -1900,17 +1991,32 @@ button {
   }
 
   .focus-instructions-body {
-    padding: 6px 10px;
-    gap: 5px;
+    padding: 5px 10px 6px;
+    gap: 4px;
   }
 
   .focus-coaching-note {
     font-size: 0.76rem;
   }
 
+  .focus-transport-dock {
+    gap: 6px;
+  }
+
   .focus-play-btn {
-    min-height: 32px;
-    font-size: 0.8rem;
+    min-height: 34px;
+    font-size: 0.82rem;
+  }
+
+  .focus-secondary-btn {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 0.76rem;
+  }
+
+  .focus-icon-btn {
+    min-height: 34px;
+    width: 34px;
   }
 
   .focus-four-grid {
