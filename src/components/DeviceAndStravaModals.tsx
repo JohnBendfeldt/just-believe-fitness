@@ -32,7 +32,7 @@ interface DeviceModalProps {
   isOpen: boolean;
   telemetry: LiveTelemetry;
   bleSupported: boolean;
-  onConnectBike: () => void;
+  onConnectBike: (acceptAllDevices?: boolean) => void;
   onDisconnectBike: () => void;
   onConnectHr: (acceptAllDevices?: boolean) => void;
   onDisconnectHr: () => void;
@@ -60,8 +60,9 @@ export function DeviceConnectionModal({
           <div>
             <h2 className="modal-title">Direct Bluetooth Sensors</h2>
             <p className="modal-subtitle">
-              Pairs directly with your Echelon EX-3 and any Bluetooth heart rate strap, armband, or
-              watch — no middleman bridge app to drop out.
+              Pairs directly with any Echelon bike, FTMS smart bike or trainer, power pedals, or
+              cadence pod — plus any Bluetooth heart rate monitor — with zero bridge apps or
+              paywalls.
             </p>
           </div>
           <button type="button" className="btn btn-sm" id="close-device-modal" onClick={onClose}>
@@ -84,9 +85,9 @@ export function DeviceConnectionModal({
           </div>
         )}
 
-        {/* Echelon EX-3 Card */}
-        <div className="history-item">
-          <div style={{ flex: '1 1 260px' }}>
+        {/* Universal Stationary Bike Card (All Echelon Models + Other Bike Brands) */}
+        <div className="history-item" style={{ alignItems: 'flex-start' }}>
+          <div style={{ flex: '1 1 280px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
               <span
                 className={`status-dot ${
@@ -98,11 +99,34 @@ export function DeviceConnectionModal({
                       : ''
                 }`}
               />
-              Echelon EX-3 Bike ({telemetry.bikeName || 'Not Paired'})
+              Stationary Bike ({telemetry.bikeName || 'Echelon · FTMS · Power · Cadence'})
             </div>
+            <p style={{ margin: '5px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              <strong>Echelon Bikes:</strong> Connect Sport, Sport-s, EX-15, Prime, EX-1, EX-3,
+              EX-4s, EX-5, EX-5s, EX-7s, EX-8s &amp; GT+ (auto-detects flywheel curve &amp; knob vs.
+              motorized resistance).
+            </p>
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Plug in the EX-3 so the blue light flashes, and make sure the Echelon Fit app is
-              force-closed so the bike is free to pair directly.
+              <strong>Other Brands:</strong> Works with standard Bluetooth FTMS bikes &amp; trainers
+              (Schwinn IC4, Bowflex C6, Yesoul, Merach, Domyos, Keiser M3i, Stages, Wattbike,
+              Concept2 BikeErg, Renpho, Wahoo KICKR, Tacx, Zwift Ride), power pedals
+              (Assioma/Rally), or any spin bike with a BLE cadence sensor.
+            </p>
+            <p
+              style={{
+                margin: '6px 0 0',
+                padding: '6px 9px',
+                borderRadius: '8px',
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid var(--hairline)',
+                fontSize: '0.74rem',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <strong>Tip:</strong> Force-close the official Echelon/brand app (and put built-in{' '}
+              <code>s</code>-series screens in sleep/freestyle) so Bluetooth is free. Avoid updating
+              firmware in the official Echelon app so your bike stays unlocked for direct offline
+              Bluetooth.
             </p>
           </div>
           {telemetry.bikeConnected ? (
@@ -115,16 +139,28 @@ export function DeviceConnectionModal({
               Disconnect
             </button>
           ) : (
-            <button
-              type="button"
-              id="connect-bike-btn"
-              className="btn btn-primary"
-              disabled={!bleSupported || telemetry.bikeStatus === 'connecting'}
-              onClick={onConnectBike}
-            >
-              <Bluetooth size={16} />
-              {telemetry.bikeStatus === 'connecting' ? 'Scanning...' : 'Pair Echelon EX-3'}
-            </button>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                id="connect-bike-btn"
+                className="btn btn-primary"
+                disabled={!bleSupported || telemetry.bikeStatus === 'connecting'}
+                onClick={() => onConnectBike(false)}
+              >
+                <Bluetooth size={16} />
+                {telemetry.bikeStatus === 'connecting' ? 'Scanning...' : 'Pair Bike'}
+              </button>
+              <button
+                type="button"
+                id="connect-bike-all-btn"
+                className="btn btn-sm"
+                disabled={!bleSupported || telemetry.bikeStatus === 'connecting'}
+                onClick={() => onConnectBike(true)}
+                title="Show all nearby Bluetooth devices if your bike uses a custom name"
+              >
+                Scan All BLE
+              </button>
+            </div>
           )}
         </div>
 
@@ -189,8 +225,9 @@ export function DeviceConnectionModal({
           <div style={{ flex: '1 1 260px' }}>
             <div style={{ fontWeight: 700 }}>Interactive Ride Simulator</div>
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Stream realistic EX-3 resistance, cadence, watts, and heart rate off-bike to preview
-              color shifts, Burn Points, PiP HUD, photo stat cards, and Garmin/Strava export.
+              Stream realistic stationary bike gear, cadence, watts, and heart rate off-bike to
+              preview color shifts, Burn Points, PiP HUD, photo stat cards, and Garmin/Strava
+              export.
             </p>
           </div>
           <button

@@ -1,11 +1,12 @@
-import type { PowerCurveType } from '../../types/fitness';
+import type { BikeFamilyId, PowerCurveType } from '../../types/fitness';
 
 /**
- * Empirical Echelon EX-3 / EX-4s / EX-5 32-level magnetic resistance power lookup tables.
+ * Empirical 32-level magnetic resistance power lookup tables across Echelon stationary bikes.
  * Columns represent 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 RPM.
  *
- * - EX3_VECTOR_TABLE: Calibrated with dual-sided power meter pedals on the 33-lb flywheel EX-series frame.
- * - ECHELON_OFFICIAL_TABLE: Matches Echelon Fit app Freeride output numbers.
+ * - EX3_VECTOR_TABLE: Calibrated with dual-sided power meter pedals on the 31-33 lb flywheel EX-series frame (EX-3, EX-4s, EX-5, EX-5s, EX-7s, EX-8s).
+ * - SPORT_COMPACT_TABLE: Calibrated for the 15 lb (7 kg) forward-flywheel compact frame (Connect Sport, Sport-s, EX-15, EX-1, Connect Prime, GT+), where max gear 32 aligns with EX-3 gear ~26-27.
+ * - ECHELON_OFFICIAL_TABLE: Matches classic Echelon Fit app Freeride output numbers.
  */
 const EX3_VECTOR_TABLE: readonly (readonly number[])[] = [
   [0, 1.0, 2.2, 4.8, 9.5, 13.6, 16.7, 22.6, 26.3, 29.2, 47.0],
@@ -41,6 +42,42 @@ const EX3_VECTOR_TABLE: readonly (readonly number[])[] = [
   [0, 10.5, 43.0, 95.0, 157.1, 158.4, 238.3, 318.1, 398.0, 477.8, 557.7],
   [0, 12.5, 48.0, 99.3, 162.2, 164.1, 257.2, 350.3, 443.4, 536.5, 629.6],
   [0, 13.0, 53.0, 102.0, 170.3, 194.8, 292.4, 389.9, 487.5, 585.0, 682.6],
+];
+
+const SPORT_COMPACT_TABLE: readonly (readonly number[])[] = [
+  [0, 0.9, 2.0, 4.2, 8.2, 11.8, 15.0, 19.5, 23.0, 26.5, 34.0],
+  [0, 0.9, 2.0, 4.2, 8.2, 11.8, 15.0, 19.5, 23.0, 26.5, 34.0],
+  [0, 1.1, 2.5, 4.8, 9.0, 12.6, 16.2, 21.0, 25.0, 29.0, 36.5],
+  [0, 1.2, 3.0, 5.5, 9.8, 13.6, 17.5, 22.6, 27.0, 31.8, 39.5],
+  [0, 1.4, 3.5, 6.2, 10.8, 14.8, 19.0, 24.5, 29.4, 34.8, 43.0],
+  [0, 1.5, 4.0, 7.0, 11.8, 16.0, 20.6, 26.6, 32.0, 38.0, 46.8],
+  [0, 1.7, 4.5, 7.8, 12.9, 17.4, 22.4, 28.9, 34.8, 41.5, 51.0],
+  [0, 1.8, 5.0, 8.6, 14.0, 19.0, 24.4, 31.4, 37.8, 45.2, 55.5],
+  [0, 2.0, 5.5, 9.5, 15.3, 20.8, 26.6, 34.1, 41.2, 49.4, 60.5],
+  [0, 2.1, 6.1, 10.5, 16.7, 22.7, 29.0, 37.0, 44.8, 53.8, 65.8],
+  [0, 2.3, 6.7, 11.6, 18.2, 24.8, 31.6, 40.2, 48.8, 58.6, 71.5],
+  [0, 2.5, 7.3, 12.7, 19.8, 27.0, 34.4, 43.8, 53.2, 64.0, 78.0],
+  [0, 2.7, 8.0, 13.9, 21.6, 29.4, 37.5, 47.8, 58.0, 69.8, 85.0],
+  [0, 2.9, 8.7, 15.2, 23.6, 32.0, 41.0, 52.2, 63.4, 76.2, 92.8],
+  [0, 3.1, 9.5, 16.6, 25.8, 35.0, 44.8, 57.0, 69.2, 83.2, 101.2],
+  [0, 3.3, 10.3, 18.2, 28.2, 38.2, 49.0, 62.4, 75.8, 91.0, 110.5],
+  [0, 3.6, 11.2, 19.9, 30.8, 41.8, 53.6, 68.2, 82.8, 99.5, 120.8],
+  [0, 3.9, 12.1, 21.8, 33.6, 45.6, 58.6, 74.6, 90.6, 108.8, 132.0],
+  [0, 4.2, 13.1, 23.8, 36.6, 49.8, 64.0, 81.5, 99.0, 118.8, 144.0],
+  [0, 4.5, 14.2, 26.0, 39.8, 54.2, 69.8, 89.0, 108.2, 129.8, 157.0],
+  [0, 4.8, 15.4, 28.4, 43.4, 59.0, 76.0, 97.0, 118.0, 141.5, 171.0],
+  [0, 5.2, 16.7, 31.0, 47.2, 64.2, 82.8, 105.6, 128.5, 154.0, 186.0],
+  [0, 5.6, 18.1, 33.8, 51.4, 69.8, 90.0, 114.8, 139.8, 167.4, 201.8],
+  [0, 6.0, 19.6, 36.8, 55.8, 75.8, 97.8, 124.6, 151.6, 181.4, 218.2],
+  [0, 6.5, 21.2, 40.0, 60.6, 82.2, 106.0, 135.0, 164.0, 196.0, 235.2],
+  [0, 7.0, 22.9, 43.4, 65.6, 89.0, 114.6, 145.8, 176.8, 211.0, 252.6],
+  [0, 7.5, 24.7, 47.0, 70.8, 96.0, 123.6, 157.0, 190.0, 226.4, 270.4],
+  [0, 8.1, 26.6, 50.8, 76.2, 103.2, 132.8, 168.4, 203.4, 242.0, 288.4],
+  [0, 8.7, 28.6, 54.8, 81.8, 110.6, 142.2, 180.0, 217.0, 257.8, 306.4],
+  [0, 9.3, 30.7, 59.0, 87.6, 118.2, 151.8, 191.6, 230.6, 273.6, 324.4],
+  [0, 9.9, 32.8, 63.2, 93.4, 125.8, 161.4, 203.2, 244.2, 289.4, 342.4],
+  [0, 10.5, 35.0, 67.5, 99.2, 133.4, 171.0, 214.8, 257.8, 305.2, 360.4],
+  [0, 11.2, 37.2, 71.8, 105.0, 141.0, 180.6, 226.4, 271.4, 321.0, 378.4],
 ];
 
 const ECHELON_OFFICIAL_TABLE: readonly (readonly number[])[] = [
@@ -79,15 +116,38 @@ const ECHELON_OFFICIAL_TABLE: readonly (readonly number[])[] = [
   [0, 13.0, 53.0, 102.0, 170.3, 242.0, 320.0, 427.9, 475.2, 570.0, 625.0],
 ];
 
+export function resolveEffectivePowerCurve(
+  curve: PowerCurveType = 'auto',
+  bikeFamily?: BikeFamilyId | null
+): Exclude<PowerCurveType, 'auto'> {
+  if (curve !== 'auto') {
+    return curve;
+  }
+  if (bikeFamily === 'echelon-sport-knob') {
+    return 'sport-compact';
+  }
+  return 'ex3-vector';
+}
+
 export function calculateEchelonWatts(
   resistance: number,
   cadenceRpm: number,
   curve: PowerCurveType = 'ex3-vector',
-  wattGain = 1.0
+  wattGain = 1.0,
+  bikeFamily?: BikeFamilyId | null,
+  maxResistance = 32
 ): number {
   if (cadenceRpm <= 0) return 0;
-  const level = Math.max(0, Math.min(32, Math.round(resistance)));
-  const table = curve === 'ex3-vector' ? EX3_VECTOR_TABLE : ECHELON_OFFICIAL_TABLE;
+  const scaledResistance =
+    maxResistance > 32 ? Math.round((resistance / maxResistance) * 32) : resistance;
+  const level = Math.max(0, Math.min(32, Math.round(scaledResistance)));
+  const resolvedCurve = resolveEffectivePowerCurve(curve, bikeFamily);
+  const table =
+    resolvedCurve === 'ex3-vector'
+      ? EX3_VECTOR_TABLE
+      : resolvedCurve === 'sport-compact'
+        ? SPORT_COMPACT_TABLE
+        : ECHELON_OFFICIAL_TABLE;
   const row = table[level];
 
   const bucket = Math.floor(cadenceRpm / 10);
@@ -106,21 +166,22 @@ export function calculateEchelonWatts(
 }
 
 /**
- * Recommends an Echelon EX-3 resistance level (1-32) that produces `targetWatts`
- * at a given `cadenceRpm` using the selected power curve.
+ * Recommends a 1-32 magnetic resistance level that produces `targetWatts`
+ * at a given `cadenceRpm` using the selected or auto-detected bike power curve.
  */
-export function suggestEx3Resistance(
+export function suggestBikeResistance(
   targetWatts: number,
   cadenceRpm: number,
   curve: PowerCurveType = 'ex3-vector',
-  wattGain = 1.0
+  wattGain = 1.0,
+  bikeFamily?: BikeFamilyId | null
 ): number {
   const effectiveCadence = cadenceRpm >= 45 ? cadenceRpm : 85;
   let bestLevel = 1;
   let smallestDiff = Infinity;
 
   for (let level = 1; level <= 32; level++) {
-    const w = calculateEchelonWatts(level, effectiveCadence, curve, wattGain);
+    const w = calculateEchelonWatts(level, effectiveCadence, curve, wattGain, bikeFamily);
     const diff = Math.abs(w - targetWatts);
     if (diff < smallestDiff) {
       smallestDiff = diff;
@@ -129,3 +190,5 @@ export function suggestEx3Resistance(
   }
   return bestLevel;
 }
+
+export const suggestEx3Resistance = suggestBikeResistance;

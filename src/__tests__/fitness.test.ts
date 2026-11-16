@@ -9,6 +9,7 @@ import {
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
   feetInchesToCm,
+  formatBikeGearBadge,
   formatDuration,
   formatHeightImperial,
   getCadenceZones,
@@ -23,6 +24,8 @@ import {
 } from '../utils/zones';
 import {
   calculateEchelonWatts,
+  resolveEffectivePowerCurve,
+  suggestBikeResistance,
   suggestEx3Resistance,
 } from '../services/ble/echelonPowerCurve';
 import {
@@ -37,7 +40,7 @@ import {
   toggleBrowserFullscreen,
 } from '../utils/fullscreen';
 import { buildYouTubeEmbedSrc } from '../utils/youtube';
-import type { AthleteProfile } from '../types/fitness';
+import type { AthleteProfile, LiveTelemetry } from '../types/fitness';
 
 describe('Safe Generic Starter Athlete Defaults & Unit Conversions', () => {
   it('starts with safe, conservative recreational defaults (Rider, 5\'8", 165#, 150W FTP, 180 Max HR) so new riders do not overexert', () => {
@@ -148,23 +151,104 @@ describe('Safe Generic Starter Athlete Defaults & Unit Conversions', () => {
   });
 });
 
-describe('Echelon EX-3 Power Curves & Guided Workout Templates', () => {
-  it('calculates monotonic watts across both EX-3 Vector and Echelon Freeride curves', () => {
+describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts', () => {
+  it('calculates monotonic watts across EX-Series Heavy, Sport/EX-15 Compact, and Classic Freeride curves with auto-detection', () => {
     expect(calculateEchelonWatts(20, 0, 'ex3-vector')).toBe(0);
+    expect(calculateEchelonWatts(20, 0, 'sport-compact')).toBe(0);
     expect(calculateEchelonWatts(20, 0, 'echelon-official')).toBe(0);
+
+    // Auto curve resolves to sport-compact on manual-knob Echelon Sport/EX-15/Prime/GT+ and ex3-vector otherwise
+    expect(resolveEffectivePowerCurve('auto', 'echelon-sport-knob')).toBe('sport-compact');
+    expect(resolveEffectivePowerCurve('auto', 'echelon-ex-motorized')).toBe('ex3-vector');
+    expect(resolveEffectivePowerCurve('auto', null)).toBe('ex3-vector');
+    expect(resolveEffectivePowerCurve('sport-compact', 'echelon-ex-motorized')).toBe('sport-compact');
 
     const low = calculateEchelonWatts(16, 80, 'ex3-vector');
     const high = calculateEchelonWatts(24, 90, 'ex3-vector');
     expect(high).toBeGreaterThan(low);
 
+    // Compact 15-lb flywheel (Connect Sport / EX-15) produces realistic lower top-end watts than 33-lb EX-3/EX-5
+    const sportMax85 = calculateEchelonWatts(32, 85, 'auto', 1.0, 'echelon-sport-knob');
+    const ex3Max85 = calculateEchelonWatts(32, 85, 'auto', 1.0, 'echelon-ex-motorized');
+    expect(sportMax85).toBeGreaterThan(220);
+    expect(sportMax85).toBeLessThan(340);
+    expect(ex3Max85).toBeGreaterThan(sportMax85 + 150);
+
+    // Sport/EX-15 recommends a slightly higher 1-32 knob gear than EX-3 to hit the same target watts
+    const ex3Gear = suggestBikeResistance(160, 88, 'auto', 1.0, 'echelon-ex-motorized');
+    const sportGear = suggestBikeResistance(160, 88, 'auto', 1.0, 'echelon-sport-knob');
+    expect(sportGear).toBeGreaterThanOrEqual(ex3Gear);
+    expect(suggestEx3Resistance(150, 88, 'ex3-vector', 1.0)).toBeGreaterThanOrEqual(16);
+
+    // FTMS 0-100 resistance scale normalizes proportionally when directWatts are absent
+    const ftms50 = calculateEchelonWatts(50, 85, 'ex3-vector', 1.0, 'ftms-bike', 100);
+    const echelon16 = calculateEchelonWatts(16, 85, 'ex3-vector', 1.0, 'echelon-ex-motorized', 32);
+    expect(ftms50).toBe(echelon16);
+
     // Watt gain scales output proportionally
     const scaled = calculateEchelonWatts(20, 85, 'ex3-vector', 1.1);
     const unscaled = calculateEchelonWatts(20, 85, 'ex3-vector', 1.0);
     expect(scaled).toBeGreaterThan(unscaled);
+  });
 
-    const gear = suggestEx3Resistance(150, 88, 'ex3-vector', 1.0);
-    expect(gear).toBeGreaterThanOrEqual(16);
-    expect(gear).toBeLessThanOrEqual(25);
+  it('formats adaptive gauge gear badges for motorized Echelon, manual knob Echelon, FTMS 0-100, Power Pedals, and Cadence pods', () => {
+    const baseTelemetry: LiveTelemetry = {
+      powerWatts: 150,
+      cadenceRpm: 88,
+      resistance: 21,
+      heartRateBpm: 145,
+      speedMph: 18.5,
+      distanceMeters: 1200,
+      bikeConnected: false,
+      bikeName: null,
+      bikeStatus: 'disconnected',
+      hrConnected: false,
+      hrName: null,
+      hrStatus: 'disconnected',
+      isSimulating: true,
+    };
+
+    expect(formatBikeGearBadge(baseTelemetry)).toBe('GEAR 21/32');
+    expect(
+      formatBikeGearBadge({
+        ...baseTelemetry,
+        bikeConnected: true,
+        bikeFamily: 'echelon-ex-motorized',
+        bikeShortLabel: 'EX-5',
+      })
+    ).toBe('EX-5 RES 21/32');
+    expect(
+      formatBikeGearBadge({
+        ...baseTelemetry,
+        bikeConnected: true,
+        bikeFamily: 'echelon-sport-knob',
+        resistance: 24,
+      })
+    ).toBe('KNOB 24/32');
+    expect(
+      formatBikeGearBadge({
+        ...baseTelemetry,
+        bikeConnected: true,
+        bikeFamily: 'ftms-bike',
+        resistance: 65,
+        bikeMaxResistance: 100,
+      })
+    ).toBe('RES 65/100');
+    expect(
+      formatBikeGearBadge({
+        ...baseTelemetry,
+        bikeConnected: true,
+        bikeFamily: 'power-meter-bike',
+      })
+    ).toBe('DIRECT POWER');
+    expect(
+      formatBikeGearBadge({
+        ...baseTelemetry,
+        bikeConnected: true,
+        bikeFamily: 'cadence-bike',
+        resistance: 18,
+      })
+    ).toBe('EST GEAR 18/32');
   });
 
   it('validates all workout templates, durations, cues, and dynamic segment targets without prohibited terms', () => {

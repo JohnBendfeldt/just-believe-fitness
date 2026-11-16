@@ -34,14 +34,21 @@ export const DEFAULT_YOUTUBE_PRESETS: YouTubePreset[] = [
   },
 ];
 
+const VALID_POWER_CURVES = new Set(['auto', 'ex3-vector', 'sport-compact', 'echelon-official']);
+
 export function loadAthleteProfile(): AthleteProfile {
   try {
     const raw = localStorage.getItem(ATHLETE_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_ATHLETE_PROFILE };
     const parsed = JSON.parse(raw) as Partial<AthleteProfile>;
+    const powerCurve =
+      parsed.powerCurve && VALID_POWER_CURVES.has(parsed.powerCurve)
+        ? parsed.powerCurve
+        : DEFAULT_ATHLETE_PROFILE.powerCurve;
     return {
       ...DEFAULT_ATHLETE_PROFILE,
       ...parsed,
+      powerCurve,
     };
   } catch {
     return { ...DEFAULT_ATHLETE_PROFILE };

@@ -24,6 +24,7 @@ import {
   ZONE_PALETTE,
   computeWattsPerKg,
   cueDisplayLabel,
+  formatBikeGearBadge,
   formatDuration,
 } from '../utils/zones';
 import { isBrowserFullscreen, toggleBrowserFullscreen } from '../utils/fullscreen';
@@ -438,7 +439,7 @@ export function FocusRideModal({
             title="Cadence"
             valueDisplay={`${Math.round(telemetry.cadenceRpm)}`}
             unit="RPM"
-            primaryBadge={`RES ${telemetry.resistance}/32`}
+            primaryBadge={formatBikeGearBadge(telemetry)}
             secondarySub={
               activeSegmentInfo
                 ? `Goal ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]}`

@@ -2,6 +2,7 @@ import type { AthleteProfile, LiveTelemetry, ZoneDefinition } from '../types/fit
 import {
   computeSegmentedGaugeProgress,
   computeWattsPerKg,
+  formatBikeGearBadge,
   formatDuration,
   getCadenceZones,
   getHrZones,
@@ -226,7 +227,7 @@ export function renderTelemetryHudCanvas(
       label: 'CADENCE',
       value: `${Math.round(telemetry.cadenceRpm)}`,
       unit: 'RPM',
-      sub: `EX-3 RES ${telemetry.resistance}/32`,
+      sub: formatBikeGearBadge(telemetry),
       zones: cadenceZones,
       active: activeCadence,
       isLive: telemetry.cadenceRpm > 0,

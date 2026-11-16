@@ -85,7 +85,7 @@ ${trackpointsXml}
         </Extensions>
       </Lap>
       <Creator xsi:type="Device_t">
-        <Name>Just Believe Fitness (Echelon EX-3)</Name>
+        <Name>${escapeXml(`Just Believe Fitness (${ride.bikeLabel || 'Indoor Bike'})`)}</Name>
         <UnitId>0</UnitId>
         <ProductID>0</ProductID>
         <Version>

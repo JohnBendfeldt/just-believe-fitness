@@ -1,6 +1,13 @@
 export type ZoneId = 1 | 2 | 3 | 4 | 5;
 
-export type PowerCurveType = 'ex3-vector' | 'echelon-official';
+export type PowerCurveType = 'auto' | 'ex3-vector' | 'sport-compact' | 'echelon-official';
+
+export type BikeFamilyId =
+  | 'echelon-ex-motorized'
+  | 'echelon-sport-knob'
+  | 'ftms-bike'
+  | 'power-meter-bike'
+  | 'cadence-bike';
 
 export interface AthleteProfile {
   name: string;
@@ -39,6 +46,10 @@ export interface LiveTelemetry {
   bikeConnected: boolean;
   bikeName: string | null;
   bikeStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+  bikeFamily?: BikeFamilyId | null;
+  bikeShortLabel?: string | null;
+  bikeHasMotorizedResistance?: boolean;
+  bikeMaxResistance?: number;
   hrConnected: boolean;
   hrName: string | null;
   hrStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -86,6 +97,7 @@ export interface SavedRide {
   title: string;
   notes?: string;
   workoutName: string;
+  bikeLabel?: string;
   startedAtIso: string;
   endedAtIso: string;
   durationSec: number;

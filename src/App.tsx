@@ -32,6 +32,7 @@ import {
   cueDisplayLabel,
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
+  formatBikeGearBadge,
   formatDuration,
   formatHeightImperial,
   getCadenceZones,
@@ -44,7 +45,7 @@ import {
 } from './utils/zones';
 import {
   calculateEchelonWatts,
-  suggestEx3Resistance,
+  suggestBikeResistance,
 } from './services/ble/echelonPowerCurve';
 import { EchelonBikeConnection } from './services/ble/echelonBle';
 import { GarminHeartRateConnection } from './services/ble/garminHrBle';
@@ -273,12 +274,20 @@ export function App() {
   // Instantiate BLE Connection Managers
   useEffect(() => {
     const bikeConn = new EchelonBikeConnection({
-      onReading: ({ cadenceRpm, resistance, directWatts }) => {
+      onReading: ({ cadenceRpm, resistance, directWatts, maxResistance }) => {
         const p = profileRef.current;
+        const model = bikeConn.getModelProfile();
         const watts =
           typeof directWatts === 'number'
             ? Math.round(directWatts * p.wattGain)
-            : calculateEchelonWatts(resistance, cadenceRpm, p.powerCurve, p.wattGain);
+            : calculateEchelonWatts(
+                resistance,
+                cadenceRpm,
+                p.powerCurve,
+                p.wattGain,
+                model?.family,
+                maxResistance ?? 32
+              );
         const speedMps = estimateIndoorSpeedMps(watts, p);
         setTelemetry((prev) => ({
           ...prev,
@@ -286,14 +295,19 @@ export function App() {
           resistance,
           powerWatts: watts,
           speedMph: mpsToMph(speedMps),
+          bikeMaxResistance: maxResistance ?? prev.bikeMaxResistance ?? 32,
         }));
       },
-      onStatusChange: (status, deviceName, message) => {
+      onStatusChange: (status, deviceName, message, modelProfile) => {
         setTelemetry((prev) => ({
           ...prev,
           bikeStatus: status,
           bikeConnected: status === 'connected',
           bikeName: deviceName,
+          bikeFamily: modelProfile?.family ?? null,
+          bikeShortLabel: modelProfile?.shortLabel ?? null,
+          bikeHasMotorizedResistance: modelProfile?.hasMotorizedResistance ?? false,
+          bikeMaxResistance: status === 'connected' ? prev.bikeMaxResistance ?? 32 : 32,
           isSimulating: status === 'connected' ? false : prev.isSimulating,
         }));
         if (message) showToast(message);
@@ -333,11 +347,17 @@ export function App() {
     saveAthleteProfile(next);
     setTelemetry((prev) => {
       if (prev.cadenceRpm <= 0 && prev.powerWatts <= 0) return prev;
+      if (prev.bikeConnected && prev.bikeFamily === 'power-meter-bike') {
+        const speedMps = estimateIndoorSpeedMps(prev.powerWatts, next);
+        return { ...prev, speedMph: mpsToMph(speedMps) };
+      }
       const watts = calculateEchelonWatts(
         prev.resistance,
         prev.cadenceRpm,
         next.powerCurve,
-        next.wattGain
+        next.wattGain,
+        prev.bikeFamily,
+        prev.bikeMaxResistance ?? 32
       );
       const speedMps = estimateIndoorSpeedMps(watts, next);
       return {
@@ -393,7 +413,7 @@ export function App() {
           segment: seg,
           remainingSec,
           nextSegment: nextSeg,
-          targets: getSegmentTargetsForAthlete(seg, profile),
+          targets: getSegmentTargetsForAthlete(seg, profile, telemetry.bikeFamily),
         };
       }
       cursor += seg.durationSec;
@@ -405,7 +425,7 @@ export function App() {
       segment: lastSeg,
       remainingSec: 0,
       nextSegment: null,
-      targets: getSegmentTargetsForAthlete(lastSeg, profile),
+      targets: getSegmentTargetsForAthlete(lastSeg, profile, telemetry.bikeFamily),
     };
   })();
 
@@ -605,7 +625,7 @@ export function App() {
       setStartedAtMs(Date.now());
       if (!telemetry.bikeConnected && !telemetry.isSimulating) {
         setTelemetry((prev) => ({ ...prev, isSimulating: true }));
-        showToast('Ride started with Demo Simulator active — pair Echelon EX-3 anytime!');
+        showToast('Ride started with Demo Simulator active — pair your bike anytime!');
       }
     }
     setRideState('running');
@@ -648,10 +668,15 @@ export function App() {
       : 0;
     const maxHr = hrArr.length ? Math.max(...hrArr) : 0;
 
+    const bikeLabel = telemetry.bikeConnected
+      ? bikeBleRef.current?.getModelProfile()?.displayName || telemetry.bikeName || 'Indoor Bike'
+      : 'Indoor Bike';
+
     const ride: SavedRide = {
       id: `ride-${Date.now()}`,
       title: `${selectedWorkout.name}`,
       workoutName: selectedWorkout.name,
+      bikeLabel,
       startedAtIso: new Date(startedAtMs ?? Date.now() - elapsedSec * 1000).toISOString(),
       endedAtIso: new Date().toISOString(),
       durationSec: elapsedSec,
@@ -684,7 +709,7 @@ export function App() {
   // Simulator Effort Preset Helper (orients directly to Athlete's FTP)
   const applySimulatorEffort = (ftpMultiplier: number, targetCadence: number) => {
     const desiredWatts = Math.round(profile.ftpWatts * ftpMultiplier);
-    const recRes = suggestEx3Resistance(
+    const recRes = suggestBikeResistance(
       desiredWatts,
       targetCadence,
       profile.powerCurve,
@@ -697,11 +722,12 @@ export function App() {
     }
   };
 
-  // Resistance +/- Stepper Handler (works on both real EX-3 and Simulator)
+  // Resistance +/- Stepper Handler (works on motorized BLE bikes, cadence-pod virtual gear, and Simulator)
   const adjustResistance = (delta: number) => {
-    const nextLevel = Math.max(1, Math.min(32, telemetry.resistance + delta));
+    const upperBound = telemetry.bikeMaxResistance ?? 32;
+    const nextLevel = Math.max(1, Math.min(upperBound, telemetry.resistance + delta));
     if (telemetry.isSimulating) {
-      setSimResistance(nextLevel);
+      setSimResistance(Math.min(32, nextLevel));
     }
     if (telemetry.bikeConnected) {
       void bikeBleRef.current?.setResistanceLevel(nextLevel);
@@ -710,7 +736,9 @@ export function App() {
         nextLevel,
         telemetry.cadenceRpm,
         profile.powerCurve,
-        profile.wattGain
+        profile.wattGain,
+        telemetry.bikeFamily,
+        upperBound
       );
       setTelemetry((prev) => ({
         ...prev,
@@ -858,7 +886,12 @@ export function App() {
   const isAnySensorLive =
     telemetry.powerWatts > 0 || telemetry.heartRateBpm > 0 || rideState === 'running';
 
-  const resistanceControl = (
+  const showResistanceStepper =
+    !telemetry.bikeConnected ||
+    Boolean(telemetry.bikeHasMotorizedResistance) ||
+    telemetry.bikeFamily === 'cadence-bike';
+
+  const resistanceControl = showResistanceStepper ? (
     <div className="resistance-stepper">
       <button
         type="button"
@@ -879,7 +912,7 @@ export function App() {
         +
       </button>
     </div>
-  );
+  ) : null;
 
   const ActiveGaugeComponent = gaugeMode === 'rings' ? ZoneSpeedometerCard : ZoneMetricCard;
 
@@ -899,7 +932,7 @@ export function App() {
           </div>
           <div>
             <h1 className="brand-title">Just Believe Fitness</h1>
-            <div className="brand-sub">JBF Studio · Direct EX-3 &amp; BLE HR</div>
+            <div className="brand-sub">JBF Studio · Any Bike &amp; BLE HR</div>
           </div>
         </div>
 
@@ -940,8 +973,8 @@ export function App() {
             <Bluetooth size={15} />
             {telemetry.bikeConnected
               ? telemetry.hrConnected
-                ? 'EX-3 + HR'
-                : 'EX-3 Connected'
+                ? `${telemetry.bikeShortLabel || 'Bike'} + HR`
+                : `${telemetry.bikeShortLabel || 'Bike'} Connected`
               : telemetry.hrConnected
                 ? telemetry.hrName || 'HR Connected'
                 : 'Pair Sensors'}
@@ -1245,7 +1278,7 @@ export function App() {
 
           <div className="sim-sliders tabular">
             <label className="sim-slider-label">
-              EX-3 Res {simResistance}
+              Gear {simResistance}
               <input
                 id="sim-resistance-slider"
                 type="range"
@@ -1298,7 +1331,7 @@ export function App() {
           />
         )}
 
-        {/* Primary Color-Coded Displays: Power, Cadence + EX-3 Gear, Heart Rate (+ 4th All-Stats Tile in 2-col Portrait/Split) */}
+        {/* Primary Color-Coded Displays: Power, Cadence + Bike Gear, Heart Rate (+ 4th All-Stats Tile in 2-col Portrait/Split) */}
         <div className={`metrics-grid ${gaugeMode === 'rings' ? 'rings-mode' : 'bars-mode'}`}>
           <ActiveGaugeComponent
             id="power-metric-card"
@@ -1318,7 +1351,7 @@ export function App() {
             title="Cadence"
             valueDisplay={`${Math.round(telemetry.cadenceRpm)}`}
             unit="RPM"
-            primaryBadge={`EX-3 RES ${telemetry.resistance}/32`}
+            primaryBadge={formatBikeGearBadge(telemetry)}
             secondarySub={
               activeSegmentInfo
                 ? `Target ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]}`
@@ -1534,12 +1567,14 @@ export function App() {
         isOpen={isDeviceModalOpen}
         telemetry={telemetry}
         bleSupported={EchelonBikeConnection.isSupported()}
-        onConnectBike={() => {
-          void bikeBleRef.current?.requestAndConnect().catch((err: unknown) => {
-            if (err instanceof Error && err.name !== 'NotFoundError') {
-              showToast(err.message);
-            }
-          });
+        onConnectBike={(acceptAllDevices) => {
+          void bikeBleRef.current
+            ?.requestAndConnect({ acceptAllDevices })
+            .catch((err: unknown) => {
+              if (err instanceof Error && err.name !== 'NotFoundError') {
+                showToast(err.message);
+              }
+            });
         }}
         onDisconnectBike={() => bikeBleRef.current?.disconnect()}
         onConnectHr={(acceptAllDevices) => {

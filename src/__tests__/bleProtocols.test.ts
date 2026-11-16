@@ -1,10 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  CYCLING_POWER_MEASUREMENT,
+  CYCLING_POWER_SERVICE,
+  CYCLING_SPEED_CADENCE_SERVICE,
+  CSC_MEASUREMENT,
   ECHELON_COMM_SERVICE,
   ECHELON_NOTIFY_1_CHAR,
   ECHELON_WRITE_CHAR,
   EchelonBikeConnection,
+  FTMS_CONTROL_POINT,
+  FTMS_INDOOR_BIKE_DATA,
+  FTMS_SERVICE,
+  StationaryBikeConnection,
   computeEchelonUnlockResponse,
+  detectBikeModelProfile,
+  parseCpsMeasurement,
+  parseCscMeasurement,
   type EchelonRawReading,
 } from '../services/ble/echelonBle';
 import {
@@ -193,6 +204,220 @@ describe('Echelon EX-3 & Standard FTMS/CPS Web Bluetooth Protocols', () => {
       directWatts: 168,
     });
 
+    conn.disconnect();
+  });
+
+  it('auto-detects all Echelon bike models (motorized EX vs manual-knob Sport/EX-15/Prime/GT+) and major third-party FTMS/Power/Cadence brands', () => {
+    expect(StationaryBikeConnection).toBe(EchelonBikeConnection);
+
+    // Manual-knob compact Echelon bikes -> sport-compact curve & hasMotorizedResistance: false
+    const sport = detectBikeModelProfile('ECH-SPORT-1920', 'echelon');
+    expect(sport.family).toBe('echelon-sport-knob');
+    expect(sport.hasMotorizedResistance).toBe(false);
+    expect(sport.recommendedCurve).toBe('sport-compact');
+
+    const sportS = detectBikeModelProfile('ECH-SPORT-S-04', 'echelon');
+    expect(sportS.family).toBe('echelon-sport-knob');
+    expect(sportS.hasBuiltInScreen).toBe(true);
+
+    expect(detectBikeModelProfile('ECH-EX15-088', 'echelon').shortLabel).toBe('EX-15');
+    expect(detectBikeModelProfile('ECH-PRIME-12', 'echelon').shortLabel).toBe('Prime');
+    expect(detectBikeModelProfile('ECH-GT-55', 'echelon').shortLabel).toBe('GT+');
+    expect(detectBikeModelProfile('ECH-EX1-03', 'echelon').family).toBe('echelon-sport-knob');
+
+    // Motorized Echelon EX-series -> ex3-vector curve & hasMotorizedResistance: true
+    const ex5s = detectBikeModelProfile('ECH-EX5S-101', 'echelon');
+    expect(ex5s.family).toBe('echelon-ex-motorized');
+    expect(ex5s.hasMotorizedResistance).toBe(true);
+    expect(ex5s.hasBuiltInScreen).toBe(true);
+    expect(detectBikeModelProfile('ECH-EX4S-22', 'echelon').shortLabel).toBe('EX-4s');
+    expect(detectBikeModelProfile('ECH-EX7S-01', 'echelon').shortLabel).toBe('EX-7s');
+    expect(detectBikeModelProfile('ECH-EX8S-09', 'echelon').shortLabel).toBe('EX-8s');
+
+    // Third-party FTMS, Power Meter, and Cadence bikes
+    expect(detectBikeModelProfile('IC Bike', 'ftms', false).displayName).toBe('Schwinn IC4');
+    expect(detectBikeModelProfile('Bowflex C6', 'ftms', false).shortLabel).toBe('C6');
+    expect(detectBikeModelProfile('YESOUL-S3', 'ftms', false).shortLabel).toBe('Yesoul');
+    expect(detectBikeModelProfile('MERACH-S26', 'ftms', true).hasMotorizedResistance).toBe(true);
+    expect(detectBikeModelProfile('KICKR CORE 4412', 'ftms', true).shortLabel).toBe('KICKR');
+    expect(detectBikeModelProfile('Assioma DUO', 'cps').family).toBe('power-meter-bike');
+    expect(detectBikeModelProfile('Wahoo CADENCE', 'csc').family).toBe('cadence-bike');
+  });
+
+  it('suppresses motorized 0xB1 resistance writes on manual-knob Echelon Connect Sport while still reading live knob resistance', async () => {
+    const writeChar = new MockGattCharacteristic();
+    const notifyChar = new MockGattCharacteristic();
+
+    const mockSport = {
+      name: 'ECH-SPORT-774',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      gatt: {
+        connected: true,
+        disconnect: vi.fn(),
+        connect: vi.fn(async () => ({
+          getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+            if (uuid === ECHELON_COMM_SERVICE) {
+              return {
+                getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                  if (cUuid === ECHELON_WRITE_CHAR) return writeChar;
+                  if (cUuid === ECHELON_NOTIFY_1_CHAR) return notifyChar;
+                  throw new Error('Not present');
+                }),
+              };
+            }
+            throw new Error('Unexpected service');
+          }),
+        })),
+      },
+    };
+
+    const requestSpy = vi.fn(async (_opts?: RequestDeviceOptions) => mockSport);
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: { requestDevice: requestSpy },
+    });
+
+    const conn = new StationaryBikeConnection({
+      onReading: () => {},
+      onStatusChange: () => {},
+    });
+
+    await conn.requestAndConnect({ acceptAllDevices: true });
+    expect((requestSpy.mock.calls[0]?.[0] as { acceptAllDevices?: boolean })?.acceptAllDevices).toBe(
+      true
+    );
+    expect(conn.getModelProfile()?.family).toBe('echelon-sport-knob');
+    expect(conn.getModelProfile()?.hasMotorizedResistance).toBe(false);
+
+    await conn.setResistanceLevel(20);
+    const b1Sent = writeChar.writtenPayloads.find((p) => p[0] === 0xf0 && p[1] === 0xb1);
+    expect(b1Sent).toBeUndefined();
+
+    conn.disconnect();
+  });
+
+  it('supports FTMS 0-100 resistance scale + 0x2AD9 control point, CPS crank-revolution cadence (with 16-bit wraparound), and CSC cadence pods', async () => {
+    // 1. Direct unit check of CPS 0x2A63 crank cadence with 16-bit counter wraparound
+    const cpsBuf1 = new DataView(new ArrayBuffer(8));
+    cpsBuf1.setUint16(0, 0x0020, true); // Crank Revolution Data Present
+    cpsBuf1.setInt16(2, 185, true); // 185W
+    cpsBuf1.setUint16(4, 65535, true); // revs near uint16 max
+    cpsBuf1.setUint16(6, 65000, true); // time1024 near uint16 max
+    const s1 = parseCpsMeasurement(cpsBuf1, null);
+    expect(s1?.watts).toBe(185);
+    expect(s1?.cadenceRpm).toBeNull();
+
+    const cpsBuf2 = new DataView(new ArrayBuffer(8));
+    cpsBuf2.setUint16(0, 0x0020, true);
+    cpsBuf2.setInt16(2, 192, true);
+    cpsBuf2.setUint16(4, 1, true); // +2 crank revolutions across 65536 rollover
+    cpsBuf2.setUint16(6, (65000 + 1365) & 0xffff, true); // ~1.333s -> ~90 RPM
+    const s2 = parseCpsMeasurement(cpsBuf2, s1!.nextSample);
+    expect(s2?.watts).toBe(192);
+    expect(s2?.cadenceRpm).toBe(90);
+
+    // 2. Direct unit check of CSC 0x2A5B cadence pod
+    const csc1 = parseCscMeasurement(
+      new DataView(new Uint8Array([0x02, 10, 0, 0, 4]).buffer),
+      null
+    );
+    const csc2 = parseCscMeasurement(
+      new DataView(new Uint8Array([0x02, 12, 0, 0, 8]).buffer), // +2 revs in 1024 ticks (1.0s) = 120 RPM
+      csc1!.nextSample
+    );
+    expect(csc2?.cadenceRpm).toBe(120);
+
+    // 3. Controllable FTMS bike (0x2AD2 + 0x2AD9) + 100-level resistance
+    const ftmsDataChar = new MockGattCharacteristic();
+    const ftmsCtrlChar = new MockGattCharacteristic();
+    let mode: 'ftms' | 'cps' | 'csc' = 'ftms';
+    const cpsChar = new MockGattCharacteristic();
+    const cscChar = new MockGattCharacteristic();
+
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: {
+        requestDevice: vi.fn(async () => ({
+          name: mode === 'ftms' ? 'IC Bike' : mode === 'cps' ? 'Assioma UNO' : 'Magene S3+',
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          gatt: {
+            connected: true,
+            disconnect: vi.fn(),
+            connect: vi.fn(async () => ({
+              getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+                if (mode === 'ftms' && uuid === FTMS_SERVICE) {
+                  return {
+                    getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                      if (cUuid === FTMS_INDOOR_BIKE_DATA) return ftmsDataChar;
+                      if (cUuid === FTMS_CONTROL_POINT) return ftmsCtrlChar;
+                      throw new Error('Unknown FTMS char');
+                    }),
+                  };
+                }
+                if (mode === 'cps' && uuid === CYCLING_POWER_SERVICE) {
+                  return {
+                    getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                      if (cUuid === CYCLING_POWER_MEASUREMENT) return cpsChar;
+                      throw new Error('Unknown CPS char');
+                    }),
+                  };
+                }
+                if (mode === 'csc' && uuid === CYCLING_SPEED_CADENCE_SERVICE) {
+                  return {
+                    getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                      if (cUuid === CSC_MEASUREMENT) return cscChar;
+                      throw new Error('Unknown CSC char');
+                    }),
+                  };
+                }
+                throw new Error('Service not on this device');
+              }),
+            })),
+          },
+        })),
+      },
+    });
+
+    const readings: EchelonRawReading[] = [];
+    const conn = new StationaryBikeConnection({
+      onReading: (r) => readings.push(r),
+      onStatusChange: () => {},
+    });
+
+    await conn.requestAndConnect();
+    expect(conn.getModelProfile()?.displayName).toBe('Schwinn IC4');
+    expect(conn.getModelProfile()?.hasMotorizedResistance).toBe(true);
+
+    // Emit Schwinn IC4 0-100 resistance (level 68, 86 rpm, 175W)
+    const ic4Buf = new ArrayBuffer(8);
+    const ic4Dv = new DataView(ic4Buf);
+    ic4Dv.setUint16(0, 0x0065, true);
+    ic4Dv.setUint16(2, 172, true); // 86 rpm
+    ic4Dv.setInt16(4, 68, true); // 68/100 resistance
+    ic4Dv.setInt16(6, 175, true);
+    ftmsDataChar.emitNotification(new Uint8Array(ic4Buf));
+    expect(readings.at(-1)).toEqual({
+      cadenceRpm: 86,
+      resistance: 68,
+      directWatts: 175,
+      maxResistance: 100,
+    });
+
+    // Write target resistance to FTMS Control Point (0x00 Request Control, then 0x04 Set Resistance)
+    await conn.setResistanceLevel(72);
+    expect(ftmsCtrlChar.writtenPayloads[0]).toEqual(new Uint8Array([0x00]));
+    expect(ftmsCtrlChar.writtenPayloads[1]).toEqual(new Uint8Array([0x04, 72]));
+    conn.disconnect();
+
+    // Test CSC Cadence-only spin bike fallback (0x1816)
+    mode = 'csc';
+    await conn.requestAndConnect();
+    expect(conn.getModelProfile()?.family).toBe('cadence-bike');
+    cscChar.emitNotification(new Uint8Array([0x02, 1, 0, 0, 4]));
+    cscChar.emitNotification(new Uint8Array([0x02, 3, 0, 0, 8])); // +2 revs in 1.0s => 120 RPM
+    expect(readings.at(-1)?.cadenceRpm).toBe(120);
     conn.disconnect();
   });
 });

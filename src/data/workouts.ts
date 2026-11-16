@@ -1,5 +1,10 @@
-import type { AthleteProfile, WorkoutSegment, WorkoutTemplate } from '../types/fitness';
-import { suggestEx3Resistance } from '../services/ble/echelonPowerCurve';
+import type {
+  AthleteProfile,
+  BikeFamilyId,
+  WorkoutSegment,
+  WorkoutTemplate,
+} from '../types/fitness';
+import { suggestBikeResistance } from '../services/ble/echelonPowerCurve';
 
 export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
   {
@@ -44,7 +49,7 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
         targetZone: 4,
         ftpPctRange: [0.92, 1.04],
         cadenceRange: [85, 96],
-        coachingNote: 'Add 2–3 clicks of EX-3 resistance and drive into Orange.',
+        coachingNote: 'Add 2–3 clicks of resistance and drive into Orange.',
       },
       {
         id: 'b2',
@@ -94,7 +99,7 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
         targetZone: 4,
         ftpPctRange: [0.92, 1.05],
         cadenceRange: [68, 78],
-        coachingNote: 'Heavy EX-3 knob turn — muscular seated/standing climb.',
+        coachingNote: 'Heavy resistance turn — muscular seated/standing climb.',
       },
       {
         id: 'b3',
@@ -200,7 +205,7 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
   },
   {
     id: 'ex3-power-pyramid-30',
-    name: '30-Min EX-3 Power Pyramid',
+    name: '30-Min Power Pyramid',
     subtitle: 'Sustained FTP climbs & tempo blocks calibrated to your Athlete FTP',
     category: 'climb',
     segments: [
@@ -362,7 +367,8 @@ export function getTotalWorkoutDurationSec(workout: WorkoutTemplate): number {
 
 export function getSegmentTargetsForAthlete(
   segment: WorkoutSegment,
-  profile: AthleteProfile
+  profile: AthleteProfile,
+  bikeFamily?: BikeFamilyId | null
 ): {
   minWatts: number;
   maxWatts: number;
@@ -375,17 +381,19 @@ export function getSegmentTargetsForAthlete(
   const midWatts = Math.round((minWatts + maxWatts) / 2);
   const midCadence = Math.round((segment.cadenceRange[0] + segment.cadenceRange[1]) / 2);
 
-  const suggestedResistanceLow = suggestEx3Resistance(
+  const suggestedResistanceLow = suggestBikeResistance(
     minWatts,
     midCadence,
     profile.powerCurve,
-    profile.wattGain
+    profile.wattGain,
+    bikeFamily
   );
-  const suggestedResistanceHigh = suggestEx3Resistance(
+  const suggestedResistanceHigh = suggestBikeResistance(
     maxWatts,
     midCadence,
     profile.powerCurve,
-    profile.wattGain
+    profile.wattGain,
+    bikeFamily
   );
 
   return {

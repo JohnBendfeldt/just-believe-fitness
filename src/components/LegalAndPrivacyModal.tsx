@@ -127,8 +127,9 @@ export function LegalAndPrivacyModal({
               <p>
                 Just Believe Fitness uses your browser&apos;s native{' '}
                 <strong>Web Bluetooth API</strong> to communicate directly between your device and
-                your Echelon EX-3 bike or Bluetooth heart rate monitor. Live sensor telemetry is
-                processed in memory on your device and is never streamed to us.
+                your Bluetooth stationary bike, smart trainer, power meter, cadence sensor, or
+                heart rate monitor. Live sensor telemetry is processed in memory on your device and
+                is never streamed to us.
               </p>
             </section>
 

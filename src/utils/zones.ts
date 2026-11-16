@@ -1,4 +1,10 @@
-import type { AthleteProfile, EffortCue, ZoneDefinition, ZoneId } from '../types/fitness';
+import type {
+  AthleteProfile,
+  EffortCue,
+  LiveTelemetry,
+  ZoneDefinition,
+  ZoneId,
+} from '../types/fitness';
 
 export const DEFAULT_ATHLETE_PROFILE: AthleteProfile = {
   name: 'Rider',
@@ -8,7 +14,7 @@ export const DEFAULT_ATHLETE_PROFILE: AthleteProfile = {
   ftpWatts: 150,
   maxHrBpm: 180,
   restingHrBpm: 65,
-  powerCurve: 'ex3-vector',
+  powerCurve: 'auto',
   wattGain: 1.0,
 };
 
@@ -517,4 +523,27 @@ export function computeNormalizedPower(wattsSeries: number[]): number {
   }
   if (count === 0) return 0;
   return Math.round(Math.pow(fourthPowerSum / count, 0.25));
+}
+
+export function formatBikeGearBadge(telemetry: LiveTelemetry): string {
+  const maxRes = telemetry.bikeMaxResistance ?? 32;
+  if (!telemetry.bikeConnected) {
+    return `GEAR ${telemetry.resistance}/${maxRes}`;
+  }
+  switch (telemetry.bikeFamily) {
+    case 'power-meter-bike':
+      return 'DIRECT POWER';
+    case 'cadence-bike':
+      return `EST GEAR ${telemetry.resistance}/32`;
+    case 'echelon-sport-knob':
+      return `KNOB ${telemetry.resistance}/32`;
+    case 'ftms-bike':
+      return `RES ${telemetry.resistance}/${maxRes}`;
+    case 'echelon-ex-motorized': {
+      const prefix = (telemetry.bikeShortLabel || 'ECH').toUpperCase();
+      return `${prefix} RES ${telemetry.resistance}/32`;
+    }
+    default:
+      return `RES ${telemetry.resistance}/${maxRes}`;
+  }
 }

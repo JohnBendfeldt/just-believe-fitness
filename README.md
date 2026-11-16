@@ -1,43 +1,31 @@
 # Just Believe Fitness (JBF)
 
-A 5-zone color-coded indoor cycling studio PWA built for **Android phones/tablets** and desktop Chrome — connecting **directly** to an **Echelon EX-3** bike and **Garmin** heart rate broadcast over Web Bluetooth with **zero middleman bridge app**.
+A **100% local-first, privacy-first** 5-zone color-coded indoor cycling studio PWA built for **Android phones/tablets** and desktop Chrome — connecting **directly** to **any Echelon stationary bike**, **standard FTMS smart bikes & trainers**, **Bluetooth power pedals**, or **BLE cadence sensors**, plus **any Bluetooth heart rate monitor**, with **zero accounts, zero paywalls, and zero middleman bridge apps**.
 
-## Highlights
+## Supported Stationary Bikes & Sensors
 
-- **Athlete-Oriented Telemetry Display:** Enter your height, weight, FTP, and Max HR (pre-configured for `5'9"`, `168 lbs`, `257W` FTP, `196 bpm` Max HR) and every 5-zone speedometer arc, bar gauge, target Watt block, `W/kg` badge, aerodynamic speed estimate, and Burn Zone threshold immediately calibrates to you.
-- **Direct Echelon EX-3 Bluetooth (`0bf669f1...`):** Speaks Echelon's GATT protocol directly (both classic handshake and post-update `0xF0 0xE0` challenge-response + 2s keepalive + auto-reconnect) and computes live Watts via the Vector-pedal-calibrated EX-3 32-level power curve.
-- **Direct Garmin Heart Rate (`0x180D` / `0x2A37`):** Pairs directly with Garmin watches in *Broadcast Heart Rate* mode or any BLE HRM strap.
-- **JBF 5-Zone Ring Grid & Segmented Bar Modes:** Switch anytime between the **2×2 / 4-Up Speedometer Ring Grid** (rounded 5-zone arcs around Power, Heart Rate, Cadence, and EX-3 Gear) and **Horizontal Zone Bar Cards**, complete with a solid color-changing Effort Ribbon, **Burn Points** counter (minutes in Orange Zone 4 + Red Zone 5), and a live color-coded rolling timeline graph.
-- **YouTube + Picture-in-Picture Two Ways:**
-  1. **Built-in YouTube Split Cinema & Corner PiP Mini-Player** right inside the studio (keeps Android Chrome in the foreground with Screen Wake Lock active).
-  2. **Pop-Out Telemetry HUD PiP** (`HUD PiP` button) streaming live 5-zone speedometer rings into a floating Picture-in-Picture overlay on top of the native YouTube app.
-- **Local History + `.TCX` Export + 1-Click Strava Push:** Saves 1-second streams locally in IndexedDB, downloads Garmin/Strava `.TCX` files (with `<Watts>`, `<Cadence>`, `<HeartRateBpm>`), and uploads directly to Strava via OAuth 2.0 (`POST /api/v3/uploads`).
+- **All Echelon Smart Connect Bikes (`0bf669f0` / `0bf669f1`):**
+  - **Motorized EX-Series (`31–33 lb` Heavy Flywheel + App Stepper Control):** **EX-3**, **EX-4s**, **EX-5**, **EX-5s**, **EX-7s**, **EX-8s**.
+  - **Compact / Manual-Knob Series (`15 lb` Flywheel + Live Digital 1–32 Sensor):** **Connect Sport**, **Sport-s**, **EX-15**, **Connect Prime**, **EX-1 / EX-1LE**, **GT+**.
+  - Speaks both classic handshake and `0xF0 0xE0` BCD challenge-response firmware offline, and automatically selects the matching flywheel power curve and resistance UI. *(Tip: Avoid installing post-July 2025 firmware updates inside the official Echelon app so your bike's Bluetooth remains unlocked offline.)*
+- **Other Stationary Bike Brands (Standard Bluetooth FTMS `0x1826`, Cycling Power `0x1818`, & Cadence `0x1816`):**
+  - **FTMS Bikes & Trainers (`0x2AD2` + optional `0x2AD9` resistance control):** **Schwinn IC4 / 800IC**, **Bowflex C6**, **Yesoul**, **Merach**, **Domyos**, **Keiser M3i** (with converter), **Stages**, **Wattbike**, **Concept2 BikeErg (`PM5`)**, **Renpho AI Bike**, **Zycle**, **Joroto**, **Wahoo KICKR**, **Garmin Tacx**, **Zwift Ride / Hub**, **Saris**, **Elite**, **JetBlack**.
+  - **Power Meter Pedals & Cranks (`0x2A63` watts + crank cadence):** **Favero Assioma**, **Garmin Rally / Vector**, **4iiii**, **Stages**, **Quarq**, **Magene**.
+  - **Bluetooth Cadence Pods (`0x2A5B`):** **Wahoo RPM**, **Garmin Cadence**, **Magene**, **Coospo** on any mechanical spin bike (with on-screen virtual gear estimation).
+- **Universal BLE Heart Rate (`0x180D` / `0x2A37`):** Works with **Polar**, **Wahoo TICKR**, **WHOOP**, **COROS**, **Coospo**, **Scosche**, **Suunto**, **Garmin** (*Broadcast Heart Rate*), and any standard BLE strap, armband, or watch.
 
-## Quick Start (Local Development)
+## Studio Highlights
+
+- **Safe Starter Defaults & Instant Athlete Calibration:** Starts with approachable recreational defaults (`5'8"`, `165 lbs`, `150W` FTP, `180 bpm` Max HR) and recalibrates every 5-zone speedometer arc, bar gauge, interval target, `W/kg` badge, and Burn Zone threshold to your profile.
+- **Full-Screen Focus Cockpit, Ring Grid & Bar Modes:** Switch between **Speedometer Rings**, **Horizontal Zone Bars**, and **Full-Screen Focus Mode** (guided interval coaching + dedicated Play/Pause transport + 4-grid telemetry).
+- **YouTube Split Cinema + Native PiP Telemetry HUD:** Watch YouTube side-by-side or pop out a live 5-zone Picture-in-Picture HUD overlay.
+- **Post-Ride Photo Stat Studio + Zwift-Style Garmin & Strava Sync:** Composite `1080×1350` camera/selfie/studio stat cards, export `.TCX` files, and push workouts to **Garmin Connect**, **Strava**, or **Both** (with automatic duplicate prevention).
+- **Privacy First (`/privacy` & `/terms`):** Workouts and profiles stay in your browser's `localStorage` and `IndexedDB` unless you explicitly sync a ride.
+
+## Development & Release Verification
 
 ```bash
 npm install
 npm run dev
+npm run verify   # Runs Vitest suite + oxlint + TypeScript + Vite production build
 ```
-
-Run tests & production typecheck/build:
-
-```bash
-npm test
-npm run build
-```
-
-## Deploying to Netlify & Running on Your Android Phone/Tablet
-
-This repo includes a pre-configured `netlify.toml` (Node 24, `dist` publish directory, Web Bluetooth + Picture-in-Picture `Permissions-Policy` headers, SPA routing, and a `/api/strava-token` Netlify Function for CORS-free Strava OAuth):
-
-1. **Import into Netlify:** In Netlify, click **Add new site → Import an existing project → GitHub** and select `JohnBendfeldt/just-believe-fitness`. Netlify will automatically detect `netlify.toml` (`npm run build` → `dist`).
-2. **Install on Android:** Open your `https://<your-site>.netlify.app` URL in **Chrome on Android** and tap **Menu (⋮) → Add to Home screen / Install app**.
-3. **Pairing Your Echelon EX-3:** Plug in the bike (flashing blue light) and make sure the official Echelon Fit app is force-closed so it isn't holding the Bluetooth connection. Tap **Pair Sensors → Pair Echelon EX-3**.
-4. **Pairing Your Garmin Watch:** On your watch, open **Settings → Sensors / Wrist Heart Rate → Broadcast Heart Rate** and press Start, then tap **Pair Sensors → Pair Garmin HR**.
-
-## Connecting 1-Click Strava Sync
-
-1. Visit [https://www.strava.com/settings/api](https://www.strava.com/settings/api) and create a personal API application (starts immediately in Single-Player Mode for your account).
-2. Set **Authorization Callback Domain** to your Netlify hostname (e.g. `your-site-name.netlify.app`, without `https://`).
-3. Either add `VITE_STRAVA_CLIENT_ID`, `STRAVA_CLIENT_ID`, and `STRAVA_CLIENT_SECRET` in **Netlify → Site configuration → Environment variables**, *or* paste your **Client ID** and **Client Secret** directly inside **Rides → Configure Strava** and tap **Connect with Strava**.

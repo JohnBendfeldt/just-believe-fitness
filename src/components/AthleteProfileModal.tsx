@@ -185,14 +185,18 @@ export function AthleteProfileModal({
           </div>
 
           <div className="field">
-            <label htmlFor="athlete-power-curve">Echelon EX-3 Power Curve</label>
+            <label htmlFor="athlete-power-curve">Bike Power Curve (Non-Power-Meter)</label>
             <select
               id="athlete-power-curve"
               value={profile.powerCurve}
               onChange={(e) => updateField('powerCurve', e.target.value as PowerCurveType)}
             >
-              <option value="ex3-vector">EX-3 Vector Pedal Calibrated (Recommended)</option>
-              <option value="echelon-official">Echelon App Freeride Curve</option>
+              <option value="auto">Auto-Detect by Paired Bike (Recommended)</option>
+              <option value="ex3-vector">Echelon EX-3 / EX-4s / EX-5 / EX-8s (Heavy Flywheel)</option>
+              <option value="sport-compact">
+                Echelon Connect Sport / EX-15 / Prime / GT+ (Compact)
+              </option>
+              <option value="echelon-official">Echelon App Classic Freeride Curve</option>
             </select>
           </div>
 

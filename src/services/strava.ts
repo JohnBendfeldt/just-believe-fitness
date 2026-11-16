@@ -157,8 +157,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 export function buildRideSummaryDescription(ride: SavedRide): string {
+  const bikeTag = ride.bikeLabel || 'Indoor Bike';
   const statsLine = [
-    `Just Believe Fitness (JBF) · Echelon EX-3`,
+    `Just Believe Fitness (JBF) · ${bikeTag}`,
     `Burn Points: ${ride.burnPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
     ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
     `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,

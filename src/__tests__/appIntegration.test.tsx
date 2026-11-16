@@ -34,9 +34,17 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     fireEvent.change(ftpInput, { target: { value: '220' } });
     expect(chip?.textContent).toContain('220W FTP');
 
+    // Verify Bike Power Curve defaults to 'auto' and allows selecting 'sport-compact'
+    const curveSelect = document.getElementById('athlete-power-curve') as HTMLSelectElement;
+    expect(curveSelect).not.toBeNull();
+    expect(curveSelect.value).toBe('auto');
+    fireEvent.change(curveSelect, { target: { value: 'sport-compact' } });
+    expect(curveSelect.value).toBe('sport-compact');
+
     // Reset back to safe starter defaults
     fireEvent.click(document.getElementById('reset-athlete-defaults')!);
     expect(chip?.textContent).toContain('150W FTP');
+    expect(curveSelect.value).toBe('auto');
 
     fireEvent.click(document.getElementById('save-athlete-done')!);
     expect(document.getElementById('athlete-profile-modal')).not.toBeInTheDocument();
@@ -93,13 +101,19 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(document.getElementById('focus-workout-modal')).not.toBeInTheDocument();
   });
 
-  it('exposes universal Bluetooth Heart Rate pairing + Scan All BLE in DeviceConnectionModal', () => {
+  it('exposes universal Stationary Bike (all Echelon + FTMS/Power/Cadence brands) & Bluetooth HR pairing in DeviceConnectionModal', () => {
     render(<App />);
 
     fireEvent.click(document.getElementById('open-sensors-btn')!);
     const modal = document.getElementById('device-connection-modal');
     expect(modal).toBeInTheDocument();
+    expect(modal?.textContent).toContain('Connect Sport');
+    expect(modal?.textContent).toContain('Schwinn IC4');
+    expect(modal?.textContent).toContain('Keiser M3i');
+    expect(modal?.textContent).toContain('Wahoo KICKR');
     expect(modal?.textContent).toContain('any Bluetooth HR sensor');
+    expect(document.getElementById('connect-bike-btn')).toBeInTheDocument();
+    expect(document.getElementById('connect-bike-all-btn')).toBeInTheDocument();
     expect(document.getElementById('connect-hr-btn')).toBeInTheDocument();
     expect(document.getElementById('connect-hr-all-btn')).toBeInTheDocument();
 

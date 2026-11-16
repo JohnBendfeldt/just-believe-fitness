@@ -243,10 +243,11 @@ function drawStudioDarkArtwork(ctx: CanvasRenderingContext2D, ride: SavedRide): 
   ctx.font = '800 170px "Barlow Condensed", system-ui, sans-serif';
   ctx.fillText('JUST BELIEVE', SHARE_CARD_WIDTH / 2, 470);
 
+  const bikeTag = (ride.bikeLabel || 'Indoor Bike').toUpperCase();
   ctx.fillStyle = avgZone.color;
   ctx.font = '800 32px "JetBrains Mono", monospace';
   ctx.fillText(
-    `ECHELON EX-3 · ${ride.avgWkg.toFixed(2)} W/KG · NP ${ride.normalizedWatts}W`,
+    `${bikeTag} · ${ride.avgWkg.toFixed(2)} W/KG · NP ${ride.normalizedWatts}W`,
     SHARE_CARD_WIDTH / 2,
     535
   );
