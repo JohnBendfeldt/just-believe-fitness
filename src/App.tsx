@@ -86,6 +86,8 @@ import { ZoneSpeedometerCard } from './components/ZoneSpeedometerCard';
 import { RideStatsQuadCard } from './components/RideStatsQuadCard';
 import { FocusRideModal } from './components/FocusRideModal';
 import { LiveZoneGraph } from './components/LiveZoneGraph';
+import { IntervalTargetCard } from './components/IntervalTargetCard';
+import { ZoneTimeCard } from './components/ZoneDistributionList';
 import { YouTubeDeck, type YouTubeLayoutMode } from './components/YouTubeDeck';
 import { AthleteProfileModal } from './components/AthleteProfileModal';
 import {
@@ -135,6 +137,7 @@ export function App() {
     ...EMPTY_ZONE_SECONDS,
   });
   const [trackPoints, setTrackPoints] = useState<TrackPoint[]>([]);
+  const [previewPoints, setPreviewPoints] = useState<TrackPoint[]>([]);
   const [segmentOffsetSec, setSegmentOffsetSec] = useState<number>(0);
 
   // Live Telemetry State
@@ -471,6 +474,53 @@ export function App() {
     return () => window.clearInterval(id);
   }, [telemetry.isSimulating, simResistance, simCadence]);
 
+  // When the simulator is switched off, clear the values it was feeding so gauges, stats and
+  // the timeline don't stay frozen on the last simulated reading. Real sensors are left alone.
+  const wasSimulatingRef = useRef(false);
+  useEffect(() => {
+    if (wasSimulatingRef.current && !telemetry.isSimulating) {
+      setTelemetry((prev) => ({
+        ...prev,
+        powerWatts: prev.bikeConnected ? prev.powerWatts : 0,
+        cadenceRpm: prev.bikeConnected ? prev.cadenceRpm : 0,
+        speedMph: prev.bikeConnected ? prev.speedMph : 0,
+        heartRateBpm: prev.hrConnected ? prev.heartRateBpm : 0,
+      }));
+      simCurrentHrRef.current = profileRef.current.restingHrBpm + 24;
+    }
+    wasSimulatingRef.current = telemetry.isSimulating;
+  }, [telemetry.isSimulating]);
+
+  // Pre-ride preview: while idle, stream live/simulated readings into a rolling buffer so the
+  // timeline reacts to Simulate or a paired bike before Start. Never saved or counted in stats.
+  useEffect(() => {
+    if (rideState !== 'idle') return;
+    if (!telemetry.isSimulating && !telemetry.bikeConnected && !telemetry.hrConnected) {
+      setPreviewPoints([]);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const t = telemetryRef.current;
+      const p = profileRef.current;
+      if (t.powerWatts <= 0 && t.heartRateBpm <= 0) return;
+      const point: TrackPoint = {
+        timestampMs: Date.now(),
+        elapsedSec: 0,
+        powerWatts: t.powerWatts,
+        cadenceRpm: t.cadenceRpm,
+        resistance: t.resistance,
+        heartRateBpm: t.heartRateBpm,
+        speedMps: 0,
+        distanceMeters: 0,
+        caloriesKcal: 0,
+        hrZone: resolveZone(t.heartRateBpm, getHrZones(p.maxHrBpm)).zone,
+        powerZone: resolveZone(t.powerWatts, getPowerZones(p.ftpWatts)).zone,
+      };
+      setPreviewPoints((prev) => [...prev.slice(-239), point]);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [rideState, telemetry.isSimulating, telemetry.bikeConnected, telemetry.hrConnected]);
+
   // 1-Second Active Workout Recording & Interval Cue Loop
   useEffect(() => {
     if (rideState !== 'running') return;
@@ -623,6 +673,7 @@ export function App() {
   // Workout Controls
   const handleStartOrResume = () => {
     if (rideState === 'idle') {
+      setPreviewPoints([]);
       setStartedAtMs(Date.now());
       if (!telemetry.bikeConnected && !telemetry.isSimulating) {
         setTelemetry((prev) => ({ ...prev, isSimulating: true }));
@@ -918,7 +969,9 @@ export function App() {
   const ActiveGaugeComponent = gaugeMode === 'rings' ? ZoneSpeedometerCard : ZoneMetricCard;
 
   return (
-    <div className={`app-shell mode-${gaugeMode}`}>
+    <div
+      className={`app-shell mode-${gaugeMode}${ytLayoutMode === 'split' ? ' yt-split' : ''}`}
+    >
       {/* Top Studio Header + Athlete Stats Orientation Chip */}
       <header className="topbar">
         <div className="brand-lockup">
@@ -1393,6 +1446,18 @@ export function App() {
               burnZoneTotalSec={burnZoneTotalSec}
             />
           )}
+
+          {/* Cells #5 & #6 fill the second row beside Ride Stats (hidden in Split YouTube / compact layouts via CSS) */}
+          {gaugeMode === 'rings' && ytLayoutMode !== 'split' && (
+            <>
+              <IntervalTargetCard className="cockpit-extra-card" info={activeSegmentInfo} />
+              <ZoneTimeCard
+                className="cockpit-extra-card"
+                hasHrStream={hasHrStream}
+                zoneSeconds={hasHrStream ? hrZoneSeconds : powerZoneSeconds}
+              />
+            </>
+          )}
         </div>
       </main>
 
@@ -1438,7 +1503,7 @@ export function App() {
 
       {/* Live Garmin-Style Color-Coded Timeline Graph + 5-Zone Distribution */}
       <LiveZoneGraph
-        points={trackPoints}
+        points={rideState === 'idle' ? previewPoints : trackPoints}
         profile={profile}
         hrZoneSeconds={hrZoneSeconds}
         powerZoneSeconds={powerZoneSeconds}

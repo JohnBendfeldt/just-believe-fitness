@@ -495,13 +495,67 @@ button {
   gap: 10px;
 }
 
-/* Hide 4th compact telemetry quad when in 3-column mode (full secondary strip shows below) */
-.compact-telemetry-quad {
-  display: none;
+/* The Ride Stats quad is part of the Rings cockpit on every width; media queries below
+   hide it only in the stacked-YouTube and short-landscape layouts. */
+.cockpit-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
 }
 
-.studio-workspace.split-youtube .compact-telemetry-quad {
+.interval-body {
+  padding: 0;
+  gap: 0;
+}
+
+.interval-name {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px 0;
+  min-width: 0;
+}
+
+.interval-name strong {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.interval-cue {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.interval-clock {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.1;
+  padding: 0 12px;
+}
+
+.interval-next span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.interval-next {
+  gap: 8px;
+}
+
+.zone-time-card .zone-dist-list {
+  width: 100%;
 }
 
 .metric-card {
@@ -890,6 +944,12 @@ button {
 }
 
 /* Live Color-Coded Rolling Graph & Zone Distribution */
+.graph-zone-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
 .graph-panel {
   background: var(--surface-gradient);
   box-shadow: var(--surface-inset);
@@ -2339,3 +2399,51 @@ button {
   color: var(--text-primary);
 }
 
+
+/* ============================================================================
+ * Rings cockpit, row 2: Ride Stats + Interval + Time in Zones fill the grid.
+ * The 5-tile secondary strip and the graph's zone column would only duplicate
+ * these, so they step aside whenever the cards are visible.
+ * ============================================================================ */
+@media (min-width: 600px) {
+  .app-shell.mode-rings .secondary-strip.rings-secondary {
+    display: none;
+  }
+
+  .app-shell.mode-rings:not(.yt-split) .graph-zone-col {
+    display: none;
+  }
+
+  .app-shell.mode-rings:not(.yt-split) .graph-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Stacked YouTube (quad is hidden there), so bring the strip back */
+@media (min-width: 600px) and (max-width: 1080px) {
+  .app-shell.mode-rings.yt-split .secondary-strip.rings-secondary {
+    display: grid;
+  }
+}
+
+/* Phone portrait: 2x2 cockpit only; extras would orphan a row */
+@media (max-width: 599px) {
+  .cockpit-extra-card {
+    display: none;
+  }
+}
+
+/* Short landscape phones: compact layout keeps the strip, no extra cards */
+@media (orientation: landscape) and (max-height: 540px) {
+  .cockpit-extra-card {
+    display: none;
+  }
+
+  .app-shell.mode-rings .secondary-strip.rings-secondary {
+    display: grid;
+  }
+
+  .app-shell.mode-rings:not(.yt-split) .graph-zone-col {
+    display: flex;
+  }
+}

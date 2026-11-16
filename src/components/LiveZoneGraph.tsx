@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AthleteProfile, TrackPoint, ZoneId } from '../types/fitness';
+import { ZoneDistributionList } from './ZoneDistributionList';
 import {
-  ZONE_PALETTE,
-  formatDuration,
   getHrZones,
   getPowerZones,
   resolveZone,
@@ -193,11 +192,6 @@ export function LiveZoneGraph({
   }, [points, profile, mode, canvasWidth]);
 
   const activeZoneTotals = hasHrStream ? hrZoneSeconds : powerZoneSeconds;
-  const totalTrackedSec = Math.max(
-    1,
-    Object.values(activeZoneTotals).reduce((a, b) => a + b, 0)
-  );
-  const orderedZones: ZoneId[] = [5, 4, 3, 2, 1];
 
   return (
     <section className="graph-panel" id="telemetry-timeline-panel">
@@ -244,7 +238,7 @@ export function LiveZoneGraph({
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px' }}>
+      <div className="graph-zone-col">
         <div className="graph-header" style={{ marginBottom: 0 }}>
           <h2 className="panel-heading">
             Time in {hasHrStream ? 'HR' : 'Power'} Zones
@@ -254,31 +248,7 @@ export function LiveZoneGraph({
           </span>
         </div>
 
-        <div className="zone-dist-list">
-          {orderedZones.map((zId) => {
-            const secs = activeZoneTotals[zId] || 0;
-            const pct = Math.min(100, Math.round((secs / totalTrackedSec) * 100));
-            const pal = ZONE_PALETTE[zId];
-            return (
-              <div className="zone-dist-row" key={zId}>
-                <span className="zone-dist-name">
-                  <span className="zone-swatch" style={{ backgroundColor: pal.color }} />
-                  Zone {zId}
-                </span>
-                <div className="zone-dist-track">
-                  <div
-                    className="zone-dist-fill"
-                    style={{
-                      width: `${secs > 0 ? Math.max(4, pct) : 0}%`,
-                      backgroundColor: pal.color,
-                    }}
-                  />
-                </div>
-                <span className="zone-dist-time tabular">{formatDuration(secs)}</span>
-              </div>
-            );
-          })}
-        </div>
+        <ZoneDistributionList zoneSeconds={activeZoneTotals} />
       </div>
     </section>
   );
