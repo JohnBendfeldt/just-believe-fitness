@@ -27,16 +27,17 @@ npm test
 npm run build
 ```
 
-## Running on Your Android Phone or Tablet
+## Deploying to Netlify & Running on Your Android Phone/Tablet
 
-Web Bluetooth (`navigator.bluetooth`) requires a secure context (`https://` or `http://localhost`):
+This repo includes a pre-configured `netlify.toml` (Node 24, `dist` publish directory, Web Bluetooth + Picture-in-Picture `Permissions-Policy` headers, SPA routing, and a `/api/strava-token` Netlify Function for CORS-free Strava OAuth):
 
-1. **Zero-Config Private Cloud Deploy (Recommended):** Connect this private GitHub repo (`JohnBendfeldt/just-believe-fitness`) to **Cloudflare Pages**, **Vercel**, or **Netlify** (free tiers support private repos with automatic `https://` SSL). Open your `https://...` URL in **Chrome on Android** and tap **Menu (⋮) → Add to Home screen / Install app**.
-2. **Pairing Your Echelon EX-3:** Plug in the bike (flashing blue light) and make sure the official Echelon Fit app is force-closed so it isn't holding the Bluetooth connection. Tap **Pair Sensors → Pair Echelon EX-3**.
-3. **Pairing Your Garmin Watch:** On your watch, open **Settings → Sensors / Wrist Heart Rate → Broadcast Heart Rate** and press Start, then tap **Pair Sensors → Pair Garmin HR**.
+1. **Import into Netlify:** In Netlify, click **Add new site → Import an existing project → GitHub** and select `JohnBendfeldt/just-believe-fitness`. Netlify will automatically detect `netlify.toml` (`npm run build` → `dist`).
+2. **Install on Android:** Open your `https://<your-site>.netlify.app` URL in **Chrome on Android** and tap **Menu (⋮) → Add to Home screen / Install app**.
+3. **Pairing Your Echelon EX-3:** Plug in the bike (flashing blue light) and make sure the official Echelon Fit app is force-closed so it isn't holding the Bluetooth connection. Tap **Pair Sensors → Pair Echelon EX-3**.
+4. **Pairing Your Garmin Watch:** On your watch, open **Settings → Sensors / Wrist Heart Rate → Broadcast Heart Rate** and press Start, then tap **Pair Sensors → Pair Garmin HR**.
 
 ## Connecting 1-Click Strava Sync
 
 1. Visit [https://www.strava.com/settings/api](https://www.strava.com/settings/api) and create a personal API application (starts immediately in Single-Player Mode for your account).
-2. Set **Authorization Callback Domain** to your app's hostname (e.g. `localhost` locally or your deployed `*.pages.dev` / `*.vercel.app` domain).
-3. In JB Fitness, open **Rides → Configure Strava**, paste your **Client ID** and **Client Secret**, and tap **Connect with Strava**.
+2. Set **Authorization Callback Domain** to your Netlify hostname (e.g. `your-site-name.netlify.app`, without `https://`).
+3. Either add `VITE_STRAVA_CLIENT_ID`, `STRAVA_CLIENT_ID`, and `STRAVA_CLIENT_SECRET` in **Netlify → Site configuration → Environment variables**, *or* paste your **Client ID** and **Client Secret** directly inside **Rides → Configure Strava** and tap **Connect with Strava**.

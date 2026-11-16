@@ -4,6 +4,7 @@ import { loadStravaConfig, saveStravaConfig } from './storage';
 
 const STRAVA_AUTH_URL = 'https://www.strava.com/oauth/authorize';
 const STRAVA_TOKEN_URL = 'https://www.strava.com/oauth/token';
+const NETLIFY_TOKEN_PROXY = '/api/strava-token';
 const STRAVA_UPLOADS_URL = 'https://www.strava.com/api/v3/uploads';
 
 interface StravaTokenResponse {
@@ -27,6 +28,43 @@ interface StravaUploadStatusResponse {
   activity_id: number | null;
 }
 
+async function postStravaTokenRequest(body: Record<string, string>): Promise<StravaTokenResponse> {
+  // Prefer Netlify serverless function when deployed on Netlify (avoids CORS & supports Netlify env vars)
+  try {
+    const proxyResp = await fetch(NETLIFY_TOKEN_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const contentType = proxyResp.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      if (!proxyResp.ok) {
+        const errText = await proxyResp.text();
+        throw new Error(`Strava token request failed (${proxyResp.status}): ${errText}`);
+      }
+      return (await proxyResp.json()) as StravaTokenResponse;
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Strava token request failed')) {
+      throw err;
+    }
+    // Fall back to direct Strava endpoint when running locally without Netlify Functions
+  }
+
+  const directResp = await fetch(STRAVA_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!directResp.ok) {
+    const text = await directResp.text();
+    throw new Error(`Strava token exchange failed (${directResp.status}): ${text}`);
+  }
+
+  return (await directResp.json()) as StravaTokenResponse;
+}
+
 export function buildStravaAuthorizeUrl(clientId: string): string {
   const redirectUri = `${window.location.origin}${window.location.pathname}`;
   const params = new URLSearchParams({
@@ -48,27 +86,17 @@ export async function exchangeStravaOAuthCode(
   importedFtp?: number;
   importedWeightLbs?: number;
 }> {
-  if (!config.clientId || !config.clientSecret) {
-    throw new Error('Enter your Strava Client ID and Client Secret before connecting.');
+  if (!config.clientId) {
+    throw new Error('Enter your Strava Client ID before connecting.');
   }
 
-  const resp = await fetch(STRAVA_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: config.clientId.trim(),
-      client_secret: config.clientSecret.trim(),
-      code,
-      grant_type: 'authorization_code',
-    }),
+  const data = await postStravaTokenRequest({
+    client_id: config.clientId.trim(),
+    client_secret: config.clientSecret.trim(),
+    code,
+    grant_type: 'authorization_code',
   });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Strava token exchange failed (${resp.status}): ${text}`);
-  }
-
-  const data = (await resp.json()) as StravaTokenResponse;
   const fullName = [data.athlete?.firstname, data.athlete?.lastname].filter(Boolean).join(' ');
 
   const updatedConfig: StravaConfig = {
@@ -107,22 +135,13 @@ export async function getValidStravaAccessToken(): Promise<string> {
     return config.accessToken;
   }
 
-  const resp = await fetch(STRAVA_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: config.clientId.trim(),
-      client_secret: config.clientSecret.trim(),
-      refresh_token: config.refreshToken,
-      grant_type: 'refresh_token',
-    }),
+  const refreshed = await postStravaTokenRequest({
+    client_id: config.clientId.trim(),
+    client_secret: config.clientSecret.trim(),
+    refresh_token: config.refreshToken,
+    grant_type: 'refresh_token',
   });
 
-  if (!resp.ok) {
-    throw new Error(`Failed to refresh Strava access token (${resp.status}). Reconnect Strava.`);
-  }
-
-  const refreshed = (await resp.json()) as StravaTokenResponse;
   const nextConfig: StravaConfig = {
     ...config,
     accessToken: refreshed.access_token,
@@ -184,7 +203,6 @@ export async function uploadRideToStrava(
     throw new Error(`Strava rejected file: ${created.error}`);
   }
 
-  // Poll up to ~16 seconds for Strava to finish processing the TCX into an Activity ID
   for (let attempt = 0; attempt < 7; attempt++) {
     onProgress?.('Strava is processing your power & heart rate streams...');
     await sleep(2300);

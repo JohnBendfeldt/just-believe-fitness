@@ -223,7 +223,7 @@ export function HistoryAndStravaModal({
       clientSecret: clientSecret.trim(),
     };
     onSaveStravaConfig(next);
-    if (!next.clientId || !next.clientSecret) return;
+    if (!next.clientId) return;
     window.location.href = buildStravaAuthorizeUrl(next.clientId);
   };
 
@@ -453,11 +453,13 @@ export function HistoryAndStravaModal({
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="strava-client-secret">Strava Client Secret</label>
+                  <label htmlFor="strava-client-secret">
+                    Strava Client Secret (or set in Netlify Env)
+                  </label>
                   <input
                     id="strava-client-secret"
                     type="password"
-                    placeholder="Your personal client secret"
+                    placeholder="Optional if STRAVA_CLIENT_SECRET is set on Netlify"
                     value={clientSecret}
                     onChange={(e) => setClientSecret(e.target.value)}
                   />
@@ -469,7 +471,7 @@ export function HistoryAndStravaModal({
                   type="button"
                   id="authorize-strava-btn"
                   className="btn btn-strava btn-sm"
-                  disabled={!clientId.trim() || !clientSecret.trim()}
+                  disabled={!clientId.trim()}
                   onClick={handleConnectStrava}
                 >
                   Connect with Strava
