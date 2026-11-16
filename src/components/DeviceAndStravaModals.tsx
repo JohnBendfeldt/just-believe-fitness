@@ -1,19 +1,32 @@
 import { useState } from 'react';
 import {
   Bluetooth,
+  Camera,
   CheckCircle2,
   Download,
   ExternalLink,
   Flame,
   Heart,
   Play,
+  ShieldCheck,
   Trash2,
   UploadCloud,
   X,
 } from 'lucide-react';
-import type { LiveTelemetry, SavedRide, StravaConfig, ZoneId } from '../types/fitness';
+import type {
+  GarminConfig,
+  LiveTelemetry,
+  SavedRide,
+  StravaConfig,
+  ZoneId,
+} from '../types/fitness';
 import { ZONE_PALETTE, formatDuration, metersToMiles } from '../utils/zones';
 import { buildStravaAuthorizeUrl } from '../services/strava';
+import {
+  loginGarminConnect,
+  verifyGarminConnectMfa,
+} from '../services/garminConnect';
+import { RidePhotoStudio } from './RidePhotoStudio';
 
 interface DeviceModalProps {
   isOpen: boolean;
@@ -21,7 +34,7 @@ interface DeviceModalProps {
   bleSupported: boolean;
   onConnectBike: () => void;
   onDisconnectBike: () => void;
-  onConnectHr: () => void;
+  onConnectHr: (acceptAllDevices?: boolean) => void;
   onDisconnectHr: () => void;
   onToggleSimulation: () => void;
   onClose: () => void;
@@ -47,8 +60,8 @@ export function DeviceConnectionModal({
           <div>
             <h2 className="modal-title">Direct Bluetooth Sensors</h2>
             <p className="modal-subtitle">
-              Pairs directly with your Echelon EX-3 and Garmin Watch/Strap — no middleman bridge app
-              to drop out.
+              Pairs directly with your Echelon EX-3 and any Bluetooth heart rate strap, armband, or
+              watch — no middleman bridge app to drop out.
             </p>
           </div>
           <button type="button" className="btn btn-sm" id="close-device-modal" onClick={onClose}>
@@ -115,7 +128,7 @@ export function DeviceConnectionModal({
           )}
         </div>
 
-        {/* Garmin Heart Rate Card */}
+        {/* Universal BLE Heart Rate Monitor Card (Any Brand) */}
         <div className="history-item">
           <div style={{ flex: '1 1 260px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
@@ -128,10 +141,12 @@ export function DeviceConnectionModal({
                       : ''
                 }`}
               />
-              Garmin Watch / HRM ({telemetry.hrName || 'Not Paired'})
+              Heart Rate Monitor ({telemetry.hrName || 'Any BLE Strap / Watch'})
             </div>
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              On your Garmin watch: open <strong>Settings → Sensors / Wrist Heart Rate → Broadcast Heart Rate</strong> and press Start before tapping Pair.
+              Works with <strong>any Bluetooth HR sensor</strong>: Polar, Wahoo TICKR, WHOOP,
+              Coospo, Scosche, COROS, Suunto, or Garmin (on watches, enable{' '}
+              <strong>Broadcast Heart Rate</strong> first).
             </p>
           </div>
           {telemetry.hrConnected ? (
@@ -144,16 +159,28 @@ export function DeviceConnectionModal({
               Disconnect
             </button>
           ) : (
-            <button
-              type="button"
-              id="connect-hr-btn"
-              className="btn btn-primary"
-              disabled={!bleSupported || telemetry.hrStatus === 'connecting'}
-              onClick={onConnectHr}
-            >
-              <Heart size={16} />
-              {telemetry.hrStatus === 'connecting' ? 'Scanning...' : 'Pair Garmin HR'}
-            </button>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                id="connect-hr-btn"
+                className="btn btn-primary"
+                disabled={!bleSupported || telemetry.hrStatus === 'connecting'}
+                onClick={() => onConnectHr(false)}
+              >
+                <Heart size={16} />
+                {telemetry.hrStatus === 'connecting' ? 'Scanning...' : 'Pair Heart Rate'}
+              </button>
+              <button
+                type="button"
+                id="connect-hr-all-btn"
+                className="btn btn-sm"
+                disabled={!bleSupported || telemetry.hrStatus === 'connecting'}
+                onClick={() => onConnectHr(true)}
+                title="Show all nearby Bluetooth devices if your watch hides its HR service icon"
+              >
+                Scan All BLE
+              </button>
+            </div>
           )}
         </div>
 
@@ -162,8 +189,8 @@ export function DeviceConnectionModal({
           <div style={{ flex: '1 1 260px' }}>
             <div style={{ fontWeight: 700 }}>Interactive Ride Simulator</div>
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Stream realistic EX-3 resistance, cadence, watts, and Garmin heart rate off-bike to
-              preview color shifts, Burn Points, PiP HUD, and Strava export.
+              Stream realistic EX-3 resistance, cadence, watts, and heart rate off-bike to preview
+              color shifts, Burn Points, PiP HUD, photo stat cards, and Garmin/Strava export.
             </p>
           </div>
           <button
@@ -181,39 +208,64 @@ export function DeviceConnectionModal({
   );
 }
 
+export type CloudUploadTarget = 'strava' | 'garmin' | 'both';
+
 interface HistoryAndStravaModalProps {
   isOpen: boolean;
   highlightedRide: SavedRide | null;
+  onSelectHighlightedRide: (ride: SavedRide | null) => void;
   rides: SavedRide[];
   stravaConfig: StravaConfig;
+  garminConfig: GarminConfig;
   uploadingRideId: string | null;
   uploadStatusText: string;
   onSaveStravaConfig: (next: StravaConfig) => void;
-  onUploadRide: (ride: SavedRide) => void;
+  onSaveGarminConfig: (next: GarminConfig) => void;
+  onUploadRide: (ride: SavedRide, target: CloudUploadTarget) => void;
+  onUpdateRideMeta: (updated: SavedRide) => Promise<void> | void;
+  onSyncRemoteMeta: (updated: SavedRide) => Promise<void> | void;
   onDownloadTcx: (ride: SavedRide) => void;
   onDeleteRide: (id: string) => void;
+  onNotify: (msg: string) => void;
   onClose: () => void;
 }
 
 export function HistoryAndStravaModal({
   isOpen,
   highlightedRide,
+  onSelectHighlightedRide,
   rides,
   stravaConfig,
+  garminConfig,
   uploadingRideId,
   uploadStatusText,
   onSaveStravaConfig,
+  onSaveGarminConfig,
   onUploadRide,
+  onUpdateRideMeta,
+  onSyncRemoteMeta,
   onDownloadTcx,
   onDeleteRide,
+  onNotify,
   onClose,
 }: HistoryAndStravaModalProps) {
   const [clientId, setClientId] = useState(stravaConfig.clientId);
   const [clientSecret, setClientSecret] = useState(stravaConfig.clientSecret);
-  const [showStravaSetup, setShowStravaSetup] = useState(!stravaConfig.accessToken);
+  const [showStravaSetup, setShowStravaSetup] = useState(false);
+
+  // Garmin Connect SSO & MFA State
+  const [showGarminSetup, setShowGarminSetup] = useState(false);
+  const [garminEmail, setGarminEmail] = useState(garminConfig.email || '');
+  const [garminPassword, setGarminPassword] = useState('');
+  const [garminMfaState, setGarminMfaState] = useState<unknown | null>(null);
+  const [garminMfaCode, setGarminMfaCode] = useState('');
+  const [garminAuthBusy, setGarminAuthBusy] = useState(false);
+  const [showPhotoStudio, setShowPhotoStudio] = useState(true);
 
   if (!isOpen) return null;
 
+  const isStravaConnected = Boolean(stravaConfig.accessToken);
+  const isGarminConnected = Boolean(garminConfig.tokens);
   const callbackDomain = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 
   const handleConnectStrava = () => {
@@ -234,24 +286,156 @@ export function HistoryAndStravaModal({
     });
   };
 
+  const handleGarminSignIn = async () => {
+    if (!garminEmail.trim() || !garminPassword) return;
+    setGarminAuthBusy(true);
+    try {
+      const res = await loginGarminConnect(garminEmail, garminPassword);
+      if (res.mfaRequired) {
+        setGarminMfaState(res.mfaState);
+        onNotify('Enter the 6-digit verification code Garmin sent to finish connecting.');
+      } else {
+        onSaveGarminConfig(res.config);
+        setGarminPassword('');
+        setShowGarminSetup(false);
+        onNotify(`Garmin Connect linked as ${res.config.athleteName}!`);
+      }
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Garmin sign-in failed.');
+    } finally {
+      setGarminAuthBusy(false);
+    }
+  };
+
+  const handleGarminVerifyMfa = async () => {
+    if (!garminMfaState || !garminMfaCode.trim()) return;
+    setGarminAuthBusy(true);
+    try {
+      const cfg = await verifyGarminConnectMfa(garminMfaState, garminMfaCode, garminEmail);
+      onSaveGarminConfig(cfg);
+      setGarminMfaState(null);
+      setGarminMfaCode('');
+      setGarminPassword('');
+      setShowGarminSetup(false);
+      onNotify(`Garmin Connect linked as ${cfg.athleteName}!`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Garmin MFA verification failed.');
+    } finally {
+      setGarminAuthBusy(false);
+    }
+  };
+
+  const handleDisconnectGarmin = () => {
+    onSaveGarminConfig({});
+    setGarminMfaState(null);
+    onNotify('Disconnected Garmin Connect.');
+  };
+
   const orderedZones: ZoneId[] = [5, 4, 3, 2, 1];
+
+  const renderSyncButtonsForRide = (ride: SavedRide, isHero: boolean) => {
+    const isBusy = uploadingRideId === ride.id;
+    const hasStrava = Boolean(ride.stravaActivityId);
+    const hasGarmin = Boolean(ride.garminUploadedAtIso || ride.garminActivityId);
+    const btnSize = isHero ? '' : 'btn-sm';
+
+    return (
+      <>
+        {/* 1-Click Push to BOTH Garmin + Strava (Zwift-style!) when both are connected */}
+        {isGarminConnected && isStravaConnected && !hasStrava && !hasGarmin && (
+          <button
+            type="button"
+            id={isHero ? 'push-both-btn' : undefined}
+            className={`btn btn-primary ${btnSize}`}
+            disabled={isBusy}
+            onClick={() => onUploadRide(ride, 'both')}
+          >
+            <UploadCloud size={15} />
+            {isBusy ? uploadStatusText || 'Syncing...' : 'Push to Garmin + Strava'}
+          </button>
+        )}
+
+        {/* Garmin Connect Button / View Link */}
+        {hasGarmin ? (
+          ride.garminActivityId ? (
+            <a
+              href={`https://connect.garmin.com/modern/activity/${ride.garminActivityId}`}
+              target="_blank"
+              rel="noreferrer"
+              className={`btn btn-garmin ${btnSize}`}
+            >
+              <CheckCircle2 size={14} /> Garmin <ExternalLink size={13} />
+            </a>
+          ) : (
+            <span className={`btn btn-garmin ${btnSize}`} style={{ opacity: 0.9 }}>
+              <CheckCircle2 size={14} /> Garmin Synced
+            </span>
+          )
+        ) : (
+          <button
+            type="button"
+            id={isHero ? 'push-highlighted-garmin' : undefined}
+            className={`btn btn-garmin ${btnSize}`}
+            disabled={isBusy}
+            onClick={() => onUploadRide(ride, 'garmin')}
+          >
+            <UploadCloud size={15} />
+            {isBusy && !isStravaConnected
+              ? uploadStatusText || 'Uploading...'
+              : isHero
+                ? 'Push to Garmin'
+                : 'Garmin'}
+          </button>
+        )}
+
+        {/* Strava Button / View Link */}
+        {hasStrava ? (
+          <a
+            href={`https://www.strava.com/activities/${ride.stravaActivityId}`}
+            target="_blank"
+            rel="noreferrer"
+            className={`btn btn-strava ${btnSize}`}
+          >
+            <CheckCircle2 size={14} /> Strava <ExternalLink size={13} />
+          </a>
+        ) : (
+          <button
+            type="button"
+            id={isHero ? 'push-highlighted-strava' : undefined}
+            className={`btn btn-strava ${btnSize}`}
+            disabled={isBusy}
+            onClick={() => onUploadRide(ride, 'strava')}
+          >
+            <UploadCloud size={15} />
+            {isBusy && !isGarminConnected
+              ? uploadStatusText || 'Uploading...'
+              : isHero
+                ? 'Push to Strava'
+                : 'Strava'}
+          </button>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div
         className="modal-card"
-        style={{ width: 'min(720px, 100%)' }}
+        style={{ width: 'min(780px, 100%)' }}
         onClick={(e) => e.stopPropagation()}
         id="history-strava-modal"
       >
         <div className="modal-header">
           <div>
             <h2 className="modal-title">
-              {highlightedRide ? 'Workout Summary & Strava Sync' : 'Ride History & Strava Sync'}
+              {highlightedRide
+                ? 'Workout Summary, Photo Card & Cloud Sync'
+                : 'Ride History · Garmin & Strava Sync'}
             </h2>
             <p className="modal-subtitle">
-              Workouts save locally with 1-second Power, Cadence, and HR streams — download .TCX or
-              push straight to Strava.
+              Snap a post-ride stat photo, customize your notes, and push to Garmin Connect, Strava,
+              or both at once.
             </p>
           </div>
           <button type="button" className="btn btn-sm" id="close-history-modal" onClick={onClose}>
@@ -259,11 +443,11 @@ export function HistoryAndStravaModal({
           </button>
         </div>
 
-        {/* Highlighted Just-Completed Ride Card */}
+        {/* Highlighted Ride Summary + Photo Overlay Studio */}
         {highlightedRide && (
           <div
             style={{
-              background: 'rgba(249, 115, 22, 0.09)',
+              background: 'rgba(249, 115, 22, 0.08)',
               border: '1px solid rgba(249, 115, 22, 0.32)',
               borderRadius: '14px',
               padding: '14px 16px',
@@ -272,7 +456,15 @@ export function HistoryAndStravaModal({
               gap: '12px',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px',
+                alignItems: 'center',
+              }}
+            >
               <div>
                 <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{highlightedRide.title}</div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
@@ -361,30 +553,17 @@ export function HistoryAndStravaModal({
               })}
             </div>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {highlightedRide.stravaActivityId ? (
-                <a
-                  href={`https://www.strava.com/activities/${highlightedRide.stravaActivityId}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn btn-strava"
-                >
-                  <CheckCircle2 size={16} /> View on Strava <ExternalLink size={14} />
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  id="push-highlighted-strava"
-                  className="btn btn-strava"
-                  disabled={uploadingRideId === highlightedRide.id}
-                  onClick={() => onUploadRide(highlightedRide)}
-                >
-                  <UploadCloud size={16} />
-                  {uploadingRideId === highlightedRide.id
-                    ? uploadStatusText || 'Uploading...'
-                    : 'Push to Strava'}
-                </button>
-              )}
+            {/* Cloud Push + Photo Toggle + TCX Actions */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+              {renderSyncButtonsForRide(highlightedRide, true)}
+
+              <button
+                type="button"
+                className={`btn ${showPhotoStudio ? 'btn-primary' : ''}`}
+                onClick={() => setShowPhotoStudio((v) => !v)}
+              >
+                <Camera size={15} /> {showPhotoStudio ? 'Hide Photo Studio' : 'Create Stat Photo'}
+              </button>
 
               <button
                 type="button"
@@ -392,102 +571,273 @@ export function HistoryAndStravaModal({
                 className="btn"
                 onClick={() => onDownloadTcx(highlightedRide)}
               >
-                <Download size={16} /> Download .TCX
+                <Download size={16} /> .TCX
               </button>
             </div>
+
+            {uploadingRideId === highlightedRide.id && uploadStatusText && (
+              <div style={{ fontSize: '0.8rem', color: '#fb923c', fontWeight: 600 }}>
+                {uploadStatusText}
+              </div>
+            )}
+
+            {/* Embedded Camera / Gallery + Stat Overlay Compositor & Title/Notes Editor */}
+            {showPhotoStudio && (
+              <RidePhotoStudio
+                key={highlightedRide.id}
+                ride={highlightedRide}
+                onSaveRideMeta={onUpdateRideMeta}
+                onSyncRemoteMeta={onSyncRemoteMeta}
+              />
+            )}
           </div>
         )}
 
-        {/* Strava OAuth Configuration Box */}
-        <div className="zone-preview-table">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-            <div>
-              <strong style={{ fontSize: '0.86rem' }}>
-                Strava Connection:{' '}
-                {stravaConfig.accessToken ? (
-                  <span style={{ color: '#12B981' }}>
-                    Connected ({stravaConfig.athleteName || 'Authorized'})
-                  </span>
-                ) : (
-                  <span style={{ color: 'var(--text-muted)' }}>Not Connected</span>
-                )}
-              </strong>
-            </div>
-            <button
-              type="button"
-              className="btn btn-sm"
-              id="toggle-strava-setup-btn"
-              onClick={() => setShowStravaSetup((v) => !v)}
+        {/* Dual Cloud Connections: Garmin Connect & Strava */}
+        <div style={{ display: 'grid', gap: '10px' }}>
+          {/* Garmin Connect Box */}
+          <div className="zone-preview-table">
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap',
+              }}
             >
-              {showStravaSetup ? 'Hide API Settings' : 'Configure Strava'}
-            </button>
+              <div>
+                <strong style={{ fontSize: '0.86rem' }}>
+                  Garmin Connect:{' '}
+                  {isGarminConnected ? (
+                    <span style={{ color: '#0EA5E9' }}>
+                      Connected ({garminConfig.athleteName || garminConfig.email})
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)' }}>Not Connected</span>
+                  )}
+                </strong>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                id="toggle-garmin-setup-btn"
+                onClick={() => setShowGarminSetup((v) => !v)}
+              >
+                {showGarminSetup ? 'Hide Garmin Settings' : 'Configure Garmin'}
+              </button>
+            </div>
+
+            {showGarminSetup && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  marginTop: '8px',
+                }}
+              >
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  <ShieldCheck
+                    size={13}
+                    style={{ verticalAlign: '-2px', marginRight: '4px', color: '#0EA5E9' }}
+                  />
+                  Signs in directly with Garmin SSO via your private Netlify function and stores{' '}
+                  <strong>only rolling OAuth session tokens</strong> in this browser (your Garmin
+                  password is never saved). When both Garmin and Strava are linked, JBF uploads in
+                  import mode so Garmin won&apos;t double-post a duplicate to Strava!
+                </p>
+
+                {!garminMfaState ? (
+                  <div className="form-grid">
+                    <div className="field">
+                      <label htmlFor="garmin-email-input">Garmin Connect Email</label>
+                      <input
+                        id="garmin-email-input"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={garminEmail}
+                        onChange={(e) => setGarminEmail(e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="garmin-password-input">Garmin Password (Not Stored)</label>
+                      <input
+                        id="garmin-password-input"
+                        type="password"
+                        placeholder="Used once to obtain OAuth token"
+                        value={garminPassword}
+                        onChange={(e) => setGarminPassword(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="field">
+                    <label htmlFor="garmin-mfa-input">
+                      Garmin 2FA Verification Code (Check Email / SMS)
+                    </label>
+                    <input
+                      id="garmin-mfa-input"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="6-digit code"
+                      value={garminMfaCode}
+                      onChange={(e) => setGarminMfaCode(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {!garminMfaState ? (
+                    <button
+                      type="button"
+                      id="connect-garmin-btn"
+                      className="btn btn-garmin btn-sm"
+                      disabled={garminAuthBusy || !garminEmail.trim() || !garminPassword}
+                      onClick={() => void handleGarminSignIn()}
+                    >
+                      {garminAuthBusy ? 'Signing in...' : 'Connect Garmin Account'}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        id="verify-garmin-mfa-btn"
+                        className="btn btn-garmin btn-sm"
+                        disabled={garminAuthBusy || !garminMfaCode.trim()}
+                        onClick={() => void handleGarminVerifyMfa()}
+                      >
+                        {garminAuthBusy ? 'Verifying...' : 'Verify 2FA Code'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => setGarminMfaState(null)}
+                      >
+                        Back
+                      </button>
+                    </>
+                  )}
+                  {isGarminConnected && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={handleDisconnectGarmin}
+                    >
+                      Disconnect Garmin
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
-          {showStravaSetup && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
-              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                1. Create a free Personal API app at{' '}
-                <a
-                  href="https://www.strava.com/settings/api"
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: '#fb923c' }}
-                >
-                  strava.com/settings/api
-                </a>{' '}
-                and set <strong>Authorization Callback Domain</strong> to{' '}
-                <code>{callbackDomain}</code>.<br />
-                2. Paste your Client ID &amp; Client Secret below (stored only in this browser) and
-                tap <strong>Connect with Strava</strong>.
-              </p>
-
-              <div className="form-grid">
-                <div className="field">
-                  <label htmlFor="strava-client-id">Strava Client ID</label>
-                  <input
-                    id="strava-client-id"
-                    type="text"
-                    placeholder="e.g. 128491"
-                    value={clientId}
-                    onChange={(e) => setClientId(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="strava-client-secret">
-                    Strava Client Secret (or set in Netlify Env)
-                  </label>
-                  <input
-                    id="strava-client-secret"
-                    type="password"
-                    placeholder="Optional if STRAVA_CLIENT_SECRET is set on Netlify"
-                    value={clientSecret}
-                    onChange={(e) => setClientSecret(e.target.value)}
-                  />
-                </div>
+          {/* Strava OAuth Configuration Box */}
+          <div className="zone-preview-table">
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <div>
+                <strong style={{ fontSize: '0.86rem' }}>
+                  Strava Connection:{' '}
+                  {isStravaConnected ? (
+                    <span style={{ color: '#12B981' }}>
+                      Connected ({stravaConfig.athleteName || 'Authorized'})
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)' }}>Not Connected</span>
+                  )}
+                </strong>
               </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                id="toggle-strava-setup-btn"
+                onClick={() => setShowStravaSetup((v) => !v)}
+              >
+                {showStravaSetup ? 'Hide Strava Settings' : 'Configure Strava'}
+              </button>
+            </div>
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  id="authorize-strava-btn"
-                  className="btn btn-strava btn-sm"
-                  disabled={!clientId.trim()}
-                  onClick={handleConnectStrava}
-                >
-                  Connect with Strava
-                </button>
-                {stravaConfig.accessToken && (
+            {showStravaSetup && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  marginTop: '8px',
+                }}
+              >
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  1. Create a free Personal API app at{' '}
+                  <a
+                    href="https://www.strava.com/settings/api"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: '#fb923c' }}
+                  >
+                    strava.com/settings/api
+                  </a>{' '}
+                  and set <strong>Authorization Callback Domain</strong> to{' '}
+                  <code>{callbackDomain}</code>.<br />
+                  2. Paste your Client ID &amp; Client Secret below (stored only in this browser)
+                  and tap <strong>Connect with Strava</strong>.
+                </p>
+
+                <div className="form-grid">
+                  <div className="field">
+                    <label htmlFor="strava-client-id">Strava Client ID</label>
+                    <input
+                      id="strava-client-id"
+                      type="text"
+                      placeholder="e.g. 128491"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="strava-client-secret">
+                      Strava Client Secret (or set in Netlify Env)
+                    </label>
+                    <input
+                      id="strava-client-secret"
+                      type="password"
+                      placeholder="Optional if STRAVA_CLIENT_SECRET is set on Netlify"
+                      value={clientSecret}
+                      onChange={(e) => setClientSecret(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={handleDisconnectStrava}
+                    id="authorize-strava-btn"
+                    className="btn btn-strava btn-sm"
+                    disabled={!clientId.trim()}
+                    onClick={handleConnectStrava}
                   >
-                    Disconnect Strava
+                    Connect with Strava
                   </button>
-                )}
+                  {isStravaConnected && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={handleDisconnectStrava}
+                    >
+                      Disconnect Strava
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Saved Ride List */}
@@ -495,7 +845,7 @@ export function HistoryAndStravaModal({
           <h3 className="panel-heading">Saved Local Workouts ({rides.length})</h3>
           {rides.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem', padding: '12px 0' }}>
-              No saved rides yet. Start a workout and tap Finish &amp; Save when you&apos;re done!
+              No saved rides yet. Start a workout and tap Save when you&apos;re done!
             </div>
           ) : (
             rides.map((r) => (
@@ -509,7 +859,11 @@ export function HistoryAndStravaModal({
                   </div>
                   <div
                     className="tabular"
-                    style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '2px' }}
+                    style={{
+                      fontSize: '0.76rem',
+                      color: 'var(--text-secondary)',
+                      marginTop: '2px',
+                    }}
                   >
                     {new Date(r.startedAtIso).toLocaleDateString()} · {formatDuration(r.durationSec)}{' '}
                     · Avg {r.avgWatts}W ({r.avgWkg.toFixed(2)} W/kg) ·{' '}
@@ -519,26 +873,19 @@ export function HistoryAndStravaModal({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  {r.stravaActivityId ? (
-                    <a
-                      href={`https://www.strava.com/activities/${r.stravaActivityId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-sm btn-strava"
-                    >
-                      Strava <ExternalLink size={13} />
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-strava"
-                      disabled={uploadingRideId === r.id}
-                      onClick={() => onUploadRide(r)}
-                    >
-                      <UploadCloud size={14} />
-                      {uploadingRideId === r.id ? 'Uploading...' : 'Strava'}
-                    </button>
-                  )}
+                  {renderSyncButtonsForRide(r, false)}
+
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      onSelectHighlightedRide(r);
+                      setShowPhotoStudio(true);
+                    }}
+                    title="Create stat overlay photo or edit title & notes"
+                  >
+                    <Camera size={14} /> Photo
+                  </button>
 
                   <button
                     type="button"

@@ -458,7 +458,9 @@ export function FocusRideModal({
             }
             unit="BPM"
             primaryBadge={
-              telemetry.heartRateBpm > 0 ? `${hrPct}% MAX HR` : 'Garmin BLE Ready'
+              telemetry.heartRateBpm > 0
+                ? `${hrPct}% MAX HR`
+                : telemetry.hrName || 'BLE HR Ready'
             }
             secondarySub={`Max ${profile.maxHrBpm} · Burn ≥ ${hrZones[3].minValue}`}
             zones={hrZones}

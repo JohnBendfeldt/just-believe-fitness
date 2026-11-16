@@ -243,6 +243,17 @@ button {
   background: #ff5c16;
 }
 
+.btn-garmin {
+  background: #0284c7;
+  border-color: rgba(56, 189, 248, 0.42);
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.btn-garmin:hover:not(:disabled) {
+  background: #0369a1;
+}
+
 .btn-danger {
   background: rgba(239, 68, 68, 0.16);
   border-color: rgba(239, 68, 68, 0.35);
@@ -1218,6 +1229,79 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+/* Post-Ride Photo & Stat Overlay Studio */
+.photo-studio-box {
+  background: rgba(6, 9, 14, 0.52);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.photo-meta-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.photo-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, 275px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 620px) {
+  .photo-studio-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.photo-canvas-frame {
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.photo-preview-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+
+.photo-studio-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.photo-control-heading {
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.photo-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.photo-helper-tip {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
 }
 
 .toast-banner {

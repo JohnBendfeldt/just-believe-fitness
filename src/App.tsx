@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type {
   AthleteProfile,
+  GarminConfig,
   LiveTelemetry,
   SavedRide,
   StravaConfig,
@@ -56,15 +57,25 @@ import {
   deleteSavedRide,
   listSavedRides,
   loadAthleteProfile,
+  loadGarminConfig,
   loadStravaConfig,
   loadYouTubePresets,
   saveAthleteProfile,
+  saveGarminConfig,
   saveRideToDb,
   saveStravaConfig,
   saveYouTubeState,
 } from './services/storage';
 import { downloadRideTcx } from './services/tcxExporter';
-import { exchangeStravaOAuthCode, uploadRideToStrava } from './services/strava';
+import {
+  exchangeStravaOAuthCode,
+  updateStravaActivityDetails,
+  uploadRideToStrava,
+} from './services/strava';
+import {
+  updateGarminActivityDetails,
+  uploadRideToGarmin,
+} from './services/garminConnect';
 import { renderTelemetryHudCanvas } from './services/pipHud';
 import { ScreenWakeManager, WorkoutAudioCue } from './services/wakeAndAudio';
 import { enterBrowserFullscreen, exitBrowserFullscreen } from './utils/fullscreen';
@@ -78,6 +89,7 @@ import { AthleteProfileModal } from './components/AthleteProfileModal';
 import {
   DeviceConnectionModal,
   HistoryAndStravaModal,
+  type CloudUploadTarget,
 } from './components/DeviceAndStravaModals';
 
 const EMPTY_ZONE_SECONDS: Record<ZoneId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -156,6 +168,7 @@ export function App() {
   const [highlightedRide, setHighlightedRide] = useState<SavedRide | null>(null);
   const [savedRides, setSavedRides] = useState<SavedRide[]>([]);
   const [stravaConfig, setStravaConfig] = useState<StravaConfig>(() => loadStravaConfig());
+  const [garminConfig, setGarminConfig] = useState<GarminConfig>(() => loadGarminConfig());
   const [uploadingRideId, setUploadingRideId] = useState<string | null>(null);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
@@ -676,39 +689,104 @@ export function App() {
     }
   };
 
-  // Strava Upload Handler
-  const handleUploadToStrava = async (ride: SavedRide) => {
-    if (!stravaConfig.accessToken) {
-      showToast('Connect your Strava account in the Strava Settings panel first.');
+  // Cloud Upload Handler (Strava, Garmin Connect, or Zwift-Style Push to Both)
+  const handleCloudUploadRide = async (ride: SavedRide, target: CloudUploadTarget) => {
+    const wantsStrava = target === 'strava' || target === 'both';
+    const wantsGarmin = target === 'garmin' || target === 'both';
+
+    if (wantsStrava && !stravaConfig.accessToken) {
+      showToast('Connect your Strava account in the Cloud Sync panel first.');
       return;
     }
+    if (wantsGarmin && !garminConfig.tokens) {
+      showToast('Connect your Garmin Connect account in the Cloud Sync panel first.');
+      return;
+    }
+
     try {
       setUploadingRideId(ride.id);
-      setUploadStatusText('Uploading...');
-      const { uploadId, activityId } = await uploadRideToStrava(ride, setUploadStatusText);
-      const updatedRide: SavedRide = {
-        ...ride,
-        stravaUploadId: uploadId,
-        stravaActivityId: activityId,
-        stravaUploadedAtIso: new Date().toISOString(),
-      };
+      let updatedRide: SavedRide = { ...ride };
+      const uploadedTargets: string[] = [];
+
+      if (wantsGarmin && !updatedRide.garminActivityId) {
+        // Use 'import' mode when Strava is also being synced (or already linked) so Garmin
+        // records the workout in Garmin Connect without forwarding a duplicate to Strava.
+        const garminMode =
+          target === 'both' || Boolean(stravaConfig.accessToken || updatedRide.stravaActivityId)
+            ? 'import'
+            : 'device';
+        const { activityId: garminId } = await uploadRideToGarmin(updatedRide, {
+          uploadMode: garminMode,
+          onProgress: setUploadStatusText,
+        });
+        // Refresh rolling Garmin OAuth2 tokens in state
+        setGarminConfig(loadGarminConfig());
+        updatedRide = {
+          ...updatedRide,
+          garminActivityId: garminId,
+          garminUploadedAtIso: new Date().toISOString(),
+        };
+        uploadedTargets.push('Garmin Connect');
+      }
+
+      if (wantsStrava && !updatedRide.stravaActivityId) {
+        setUploadStatusText('Uploading to Strava...');
+        const { uploadId, activityId } = await uploadRideToStrava(updatedRide, setUploadStatusText);
+        updatedRide = {
+          ...updatedRide,
+          stravaUploadId: uploadId,
+          stravaActivityId: activityId,
+          stravaUploadedAtIso: new Date().toISOString(),
+        };
+        uploadedTargets.push('Strava');
+      }
+
       await saveRideToDb(updatedRide);
       const nextList = await listSavedRides();
       setSavedRides(nextList);
       if (highlightedRide?.id === ride.id) {
         setHighlightedRide(updatedRide);
       }
-      showToast(
-        activityId
-          ? 'Workout pushed to Strava!'
-          : 'Uploaded to Strava! Processing will finish in a few seconds.'
-      );
+
+      if (uploadedTargets.length > 0) {
+        showToast(`Workout pushed to ${uploadedTargets.join(' + ')}!`);
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Strava upload failed.';
+      const msg = err instanceof Error ? err.message : 'Cloud upload failed.';
       showToast(msg);
     } finally {
       setUploadingRideId(null);
       setUploadStatusText('');
+    }
+  };
+
+  const handleUpdateRideMeta = async (updatedRide: SavedRide) => {
+    await saveRideToDb(updatedRide);
+    const nextList = await listSavedRides();
+    setSavedRides(nextList);
+    if (highlightedRide?.id === updatedRide.id) {
+      setHighlightedRide(updatedRide);
+    }
+  };
+
+  const handleSyncRemoteMeta = async (updatedRide: SavedRide) => {
+    const syncedTargets: string[] = [];
+    try {
+      if (updatedRide.stravaActivityId && stravaConfig.accessToken) {
+        await updateStravaActivityDetails(updatedRide);
+        syncedTargets.push('Strava');
+      }
+      if (updatedRide.garminActivityId && garminConfig.tokens) {
+        await updateGarminActivityDetails(updatedRide);
+        setGarminConfig(loadGarminConfig());
+        syncedTargets.push('Garmin');
+      }
+      if (syncedTargets.length > 0) {
+        showToast(`Updated title & notes on ${syncedTargets.join(' + ')}!`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not update remote activity details.';
+      showToast(msg);
     }
   };
 
@@ -790,7 +868,7 @@ export function App() {
           </div>
           <div>
             <h1 className="brand-title">Just Believe Fitness</h1>
-            <div className="brand-sub">JBF Studio · Direct EX-3 &amp; Garmin</div>
+            <div className="brand-sub">JBF Studio · Direct EX-3 &amp; BLE HR</div>
           </div>
         </div>
 
@@ -831,10 +909,10 @@ export function App() {
             <Bluetooth size={15} />
             {telemetry.bikeConnected
               ? telemetry.hrConnected
-                ? 'EX-3 + Garmin'
+                ? 'EX-3 + HR'
                 : 'EX-3 Connected'
               : telemetry.hrConnected
-                ? 'Garmin Connected'
+                ? telemetry.hrName || 'HR Connected'
                 : 'Pair Sensors'}
           </button>
 
@@ -1229,7 +1307,9 @@ export function App() {
             }
             unit="BPM"
             primaryBadge={
-              telemetry.heartRateBpm > 0 ? `${hrPct}% MAX HR` : 'Garmin BLE Ready'
+              telemetry.heartRateBpm > 0
+                ? `${hrPct}% MAX HR`
+                : telemetry.hrName || 'BLE HR Ready'
             }
             secondarySub={`Max ${profile.maxHrBpm} · Burn ≥ ${hrZones[3].minValue}`}
             zones={hrZones}
@@ -1405,12 +1485,14 @@ export function App() {
           });
         }}
         onDisconnectBike={() => bikeBleRef.current?.disconnect()}
-        onConnectHr={() => {
-          void hrBleRef.current?.requestAndConnect().catch((err: unknown) => {
-            if (err instanceof Error && err.name !== 'NotFoundError') {
-              showToast(err.message);
-            }
-          });
+        onConnectHr={(acceptAllDevices) => {
+          void hrBleRef.current
+            ?.requestAndConnect({ acceptAllDevices })
+            .catch((err: unknown) => {
+              if (err instanceof Error && err.name !== 'NotFoundError') {
+                showToast(err.message);
+              }
+            });
         }}
         onDisconnectHr={() => hrBleRef.current?.disconnect()}
         onToggleSimulation={() =>
@@ -1422,15 +1504,23 @@ export function App() {
       <HistoryAndStravaModal
         isOpen={isHistoryModalOpen}
         highlightedRide={highlightedRide}
+        onSelectHighlightedRide={setHighlightedRide}
         rides={savedRides}
         stravaConfig={stravaConfig}
+        garminConfig={garminConfig}
         uploadingRideId={uploadingRideId}
         uploadStatusText={uploadStatusText}
         onSaveStravaConfig={(next) => {
           setStravaConfig(next);
           saveStravaConfig(next);
         }}
-        onUploadRide={(ride) => void handleUploadToStrava(ride)}
+        onSaveGarminConfig={(next) => {
+          setGarminConfig(next);
+          saveGarminConfig(next);
+        }}
+        onUploadRide={(ride, target) => void handleCloudUploadRide(ride, target)}
+        onUpdateRideMeta={handleUpdateRideMeta}
+        onSyncRemoteMeta={handleSyncRemoteMeta}
         onDownloadTcx={(ride) => downloadRideTcx(ride)}
         onDeleteRide={(id) => {
           void deleteSavedRide(id).then(async () => {
@@ -1439,6 +1529,7 @@ export function App() {
             if (highlightedRide?.id === id) setHighlightedRide(null);
           });
         }}
+        onNotify={showToast}
         onClose={() => setIsHistoryModalOpen(false)}
       />
 

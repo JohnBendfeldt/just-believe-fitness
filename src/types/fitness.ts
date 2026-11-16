@@ -84,6 +84,7 @@ export interface WorkoutTemplate {
 export interface SavedRide {
   id: string;
   title: string;
+  notes?: string;
   workoutName: string;
   startedAtIso: string;
   endedAtIso: string;
@@ -107,6 +108,8 @@ export interface SavedRide {
   stravaUploadId?: number;
   stravaActivityId?: number;
   stravaUploadedAtIso?: string;
+  garminActivityId?: number;
+  garminUploadedAtIso?: string;
 }
 
 export interface StravaConfig {
@@ -118,4 +121,11 @@ export interface StravaConfig {
   athleteName?: string;
   athleteAvatar?: string;
   athleteId?: number;
+}
+
+export interface GarminConfig {
+  email?: string;
+  athleteName?: string;
+  tokens?: Record<string, unknown>;
+  connectedAtIso?: string;
 }

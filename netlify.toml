@@ -12,6 +12,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/garmin-sync"
+  to = "/.netlify/functions/garmin-sync"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
@@ -19,6 +24,6 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Permissions-Policy = "bluetooth=(self), picture-in-picture=*, fullscreen=*, autoplay=*"
+    Permissions-Policy = "bluetooth=(self), camera=(self), picture-in-picture=*, fullscreen=*, autoplay=*"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"

@@ -1,8 +1,9 @@
-import type { AthleteProfile, SavedRide, StravaConfig } from '../types/fitness';
+import type { AthleteProfile, GarminConfig, SavedRide, StravaConfig } from '../types/fitness';
 import { DEFAULT_ATHLETE_PROFILE } from '../utils/zones';
 
 const ATHLETE_STORAGE_KEY = 'jb_fitness_athlete_v1';
 const STRAVA_STORAGE_KEY = 'jb_fitness_strava_v1';
+const GARMIN_STORAGE_KEY = 'jbf_garmin_connect_v1';
 const YOUTUBE_STORAGE_KEY = 'jb_fitness_youtube_v1';
 
 const DB_NAME = 'just_believe_fitness_db';
@@ -76,6 +77,20 @@ export function loadStravaConfig(): StravaConfig {
 
 export function saveStravaConfig(config: StravaConfig): void {
   localStorage.setItem(STRAVA_STORAGE_KEY, JSON.stringify(config));
+}
+
+export function loadGarminConfig(): GarminConfig {
+  try {
+    const raw = localStorage.getItem(GARMIN_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as GarminConfig;
+  } catch {
+    return {};
+  }
+}
+
+export function saveGarminConfig(config: GarminConfig): void {
+  localStorage.setItem(GARMIN_STORAGE_KEY, JSON.stringify(config));
 }
 
 export function loadYouTubePresets(): { lastUrl: string; presets: YouTubePreset[] } {

@@ -156,6 +156,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+export function buildRideSummaryDescription(ride: SavedRide): string {
+  const statsLine = [
+    `Just Believe Fitness (JBF) · Echelon EX-3`,
+    `Burn Points: ${ride.burnPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
+    ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
+    `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
+  ]
+    .filter(Boolean)
+    .join(' • ');
+
+  const trimmedNotes = ride.notes?.trim();
+  return trimmedNotes ? `${trimmedNotes}\n\n${statsLine}` : statsLine;
+}
+
 export async function uploadRideToStrava(
   ride: SavedRide,
   onProgress?: (statusText: string) => void
@@ -164,15 +178,7 @@ export async function uploadRideToStrava(
   const token = await getValidStravaAccessToken();
   const tcxXml = buildRideTcxXml(ride);
   const fileBlob = new Blob([tcxXml], { type: 'application/xml' });
-
-  const description = [
-    `Just Believe Fitness (JBF) · Echelon EX-3`,
-    `Burn Points: ${ride.burnPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
-    ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
-    `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
-  ]
-    .filter(Boolean)
-    .join(' • ');
+  const description = buildRideSummaryDescription(ride);
 
   const form = new FormData();
   form.append('file', fileBlob, `${ride.id}.tcx`);
@@ -220,4 +226,26 @@ export async function uploadRideToStrava(
   }
 
   return { uploadId: created.id };
+}
+
+export async function updateStravaActivityDetails(ride: SavedRide): Promise<void> {
+  if (!ride.stravaActivityId) {
+    throw new Error('This workout has not been uploaded to Strava yet.');
+  }
+  const token = await getValidStravaAccessToken();
+  const resp = await fetch(`https://www.strava.com/api/v3/activities/${ride.stravaActivityId}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: ride.title,
+      description: buildRideSummaryDescription(ride),
+    }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Could not update Strava activity (${resp.status}): ${errText}`);
+  }
 }

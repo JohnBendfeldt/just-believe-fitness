@@ -1,12 +1,32 @@
 const HEART_RATE_SERVICE = 0x180d;
 const HEART_RATE_MEASUREMENT = 0x2a37;
 
+const COMMON_HR_NAME_PREFIXES = [
+  'Garmin',
+  'HRM',
+  'Polar',
+  'TICKR',
+  'Wahoo',
+  'WHOOP',
+  'COROS',
+  'Coospo',
+  'HW',
+  'Magene',
+  'Scosche',
+  'Rhythm',
+  'Suunto',
+  'Fitcent',
+  'POWR',
+];
+
 export type HrConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
-export interface GarminHrCallbacks {
+export interface BleHrCallbacks {
   onHeartRate: (bpm: number) => void;
   onStatusChange: (status: HrConnectionStatus, deviceName: string | null, message?: string) => void;
 }
+
+export type GarminHrCallbacks = BleHrCallbacks;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -14,6 +34,7 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Parses standard Bluetooth SIG Heart Rate Measurement (0x2A37) characteristic payload.
+ * Works universally across Garmin, Polar, Wahoo TICKR, WHOOP, COROS, Coospo, Suunto, etc.
  * Bit 0 of flags indicates uint8 (0) vs uint16 little-endian (1) BPM format.
  */
 export function parseBleHeartRate(view: DataView): number {
@@ -30,12 +51,12 @@ export class GarminHeartRateConnection {
   private device: BluetoothDevice | null = null;
   private hrChar: BluetoothRemoteGATTCharacteristic | null = null;
   private manualDisconnect = false;
-  private readonly callbacks: GarminHrCallbacks;
+  private readonly callbacks: BleHrCallbacks;
 
   private readonly boundHandleDisconnect: () => void;
   private readonly boundHandleValue: (ev: Event) => void;
 
-  constructor(callbacks: GarminHrCallbacks) {
+  constructor(callbacks: BleHrCallbacks) {
     this.callbacks = callbacks;
     this.boundHandleDisconnect = () => {
       void this.handleUnexpectedDisconnect();
@@ -55,7 +76,7 @@ export class GarminHeartRateConnection {
     return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
   }
 
-  public async requestAndConnect(): Promise<void> {
+  public async requestAndConnect(options?: { acceptAllDevices?: boolean }): Promise<void> {
     if (!GarminHeartRateConnection.isSupported()) {
       throw new Error(
         'Web Bluetooth is not available in this browser. Open Just Believe Fitness in Chrome on your Android phone/tablet or desktop.'
@@ -65,10 +86,24 @@ export class GarminHeartRateConnection {
     this.manualDisconnect = false;
     this.callbacks.onStatusChange('connecting', null);
 
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [HEART_RATE_SERVICE] }],
-      optionalServices: [HEART_RATE_SERVICE, 'battery_service'],
-    });
+    const optionalServices: BluetoothServiceUUID[] = [
+      HEART_RATE_SERVICE,
+      'battery_service',
+      'device_information',
+    ];
+
+    const device = options?.acceptAllDevices
+      ? await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices,
+        })
+      : await navigator.bluetooth.requestDevice({
+          filters: [
+            { services: [HEART_RATE_SERVICE] },
+            ...COMMON_HR_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
+          ],
+          optionalServices,
+        });
 
     if (this.device) {
       this.cleanupListeners();
@@ -85,13 +120,21 @@ export class GarminHeartRateConnection {
     }
 
     const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(HEART_RATE_SERVICE);
+    let service: BluetoothRemoteGATTService;
+    try {
+      service = await server.getPrimaryService(HEART_RATE_SERVICE);
+    } catch {
+      throw new Error(
+        `"${device.name || 'Selected device'}" does not expose Bluetooth Heart Rate (0x180D). Make sure HR Broadcast is active on your watch or strap.`
+      );
+    }
+
     const char = await service.getCharacteristic(HEART_RATE_MEASUREMENT);
     char.addEventListener('characteristicvaluechanged', this.boundHandleValue);
     await char.startNotifications();
     this.hrChar = char;
 
-    this.callbacks.onStatusChange('connected', device.name || 'Garmin HR');
+    this.callbacks.onStatusChange('connected', device.name || 'BLE Heart Rate');
   }
 
   private async handleUnexpectedDisconnect(): Promise<void> {
@@ -100,8 +143,8 @@ export class GarminHeartRateConnection {
       return;
     }
 
-    const name = this.device.name || 'Garmin HR';
-    this.callbacks.onStatusChange('reconnecting', name, 'Reconnecting to Garmin HR...');
+    const name = this.device.name || 'BLE Heart Rate';
+    this.callbacks.onStatusChange('reconnecting', name, `Reconnecting to ${name}...`);
 
     for (const delay of [800, 1600, 2800, 4500]) {
       if (this.manualDisconnect || !this.device) return;
@@ -114,7 +157,7 @@ export class GarminHeartRateConnection {
       }
     }
 
-    this.callbacks.onStatusChange('disconnected', null, 'Garmin heart rate broadcast disconnected.');
+    this.callbacks.onStatusChange('disconnected', null, `${name} disconnected.`);
   }
 
   private cleanupListeners(): void {
@@ -137,3 +180,5 @@ export class GarminHeartRateConnection {
     this.callbacks.onStatusChange('disconnected', null);
   }
 }
+
+export { GarminHeartRateConnection as BleHeartRateConnection };

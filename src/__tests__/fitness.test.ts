@@ -18,6 +18,7 @@ import {
 import { computeEchelonUnlockResponse } from '../services/ble/echelonBle';
 import { parseBleHeartRate } from '../services/ble/garminHrBle';
 import { buildRideTcxXml } from '../services/tcxExporter';
+import { buildRideSummaryDescription } from '../services/strava';
 import { buildYouTubeEmbedSrc } from '../utils/youtube';
 import type { SavedRide } from '../types/fitness';
 
@@ -94,12 +95,13 @@ describe('Echelon EX-3 Power Curve & BLE Protocol', () => {
   });
 });
 
-describe('TCX Export & YouTube Embed Parser', () => {
-  it('builds Strava-compatible TCX XML containing Watts, Cadence, HeartRateBpm, and Burn pts', () => {
+describe('TCX Export, Cloud Summary Description & YouTube Embed Parser', () => {
+  it('builds Garmin/Strava-compatible TCX XML and prepends custom athlete notes to activity description', () => {
     const ride: SavedRide = {
       id: 'ride-1',
       title: 'JBF 23-Min Signature Burn',
       workoutName: 'JBF 23-Min Signature Burn',
+      notes: 'Crushed the final All-Out intervals!',
       startedAtIso: '2026-11-15T22:00:00.000Z',
       endedAtIso: '2026-11-15T22:23:00.000Z',
       durationSec: 1380,
@@ -141,6 +143,11 @@ describe('TCX Export & YouTube Embed Parser', () => {
     expect(xml).toContain('<Cadence>92</Cadence>');
     expect(xml).toContain('<Value>171</Value>');
     expect(xml).toContain('14 Burn pts');
+
+    const desc = buildRideSummaryDescription(ride);
+    expect(desc.startsWith('Crushed the final All-Out intervals!\n\n')).toBe(true);
+    expect(desc).toContain('Burn Points: 14');
+    expect(desc).toContain('Avg Power: 228W');
   });
 
   it('parses standard YouTube watch, short, and playlist URLs into embed URLs', () => {
