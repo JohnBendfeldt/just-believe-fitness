@@ -1247,24 +1247,32 @@ button {
 }
 
 /* ============================================================================
- * Focused Workout Modal (Instructions + Prominent Transport Dock + 4-Grid)
+ * Full-Screen Focused Workout Cockpit (Instructions + Transport Dock + 4-Grid)
  * ============================================================================ */
 
 .focus-modal-backdrop {
-  background: rgba(4, 6, 10, 0.92);
-  padding: 10px;
+  background: var(--bg-canvas);
+  backdrop-filter: none;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .focus-modal-card {
-  width: min(860px, 100%);
-  max-height: calc(100dvh - 20px);
+  width: 100%;
+  max-width: 1180px;
+  height: 100dvh;
+  max-height: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--bg-canvas);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 28px 68px rgba(0, 0, 0, 0.9);
-  padding: 12px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+    max(10px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1485,7 +1493,15 @@ button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  flex-shrink: 0;
+  flex: 1 0 auto;
+}
+
+.focus-four-grid .dial-body {
+  justify-content: space-evenly;
+}
+
+.focus-four-grid .dial-ring-stage {
+  max-width: min(200px, 21vh);
 }
 
 /* ============================================================================
@@ -1716,19 +1732,29 @@ button {
     font-size: 0.69rem;
   }
 
-  /* Focus Mode on Phone Portrait: Zero-scroll edge-to-edge 4-grid + instructions + prominent Start/Pause dock */
+  /* Focus Mode on Phone Portrait: True Full-Screen 100dvh edge-to-edge cockpit */
   .focus-modal-backdrop {
-    padding: 5px;
+    padding: 0;
   }
 
   .focus-modal-card {
-    padding: 7px;
-    gap: 6px;
-    max-height: calc(100dvh - 10px);
+    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    gap: 7px;
+    height: 100dvh;
+    max-height: 100dvh;
   }
 
   .focus-hide-xs {
     display: none;
+  }
+
+  .focus-topbar-actions {
+    gap: 5px;
+  }
+
+  .focus-topbar-actions .btn-sm {
+    padding: 0 9px;
   }
 
   .focus-cue-banner {
@@ -1764,36 +1790,36 @@ button {
   }
 
   .focus-play-btn {
-    min-height: 42px;
-    font-size: 0.92rem;
+    min-height: 44px;
+    font-size: 0.94rem;
   }
 
   .focus-secondary-btn {
-    min-height: 42px;
+    min-height: 44px;
     padding: 0 11px;
     font-size: 0.78rem;
   }
 
   .focus-icon-btn {
-    min-height: 42px;
-    width: 42px;
+    min-height: 44px;
+    width: 44px;
   }
 
   .focus-four-grid {
-    gap: 6px;
+    gap: 7px;
   }
 
   .focus-four-grid .dial-body {
-    padding: 4px 7px 6px;
+    padding: 5px 7px 7px;
     gap: 3px;
   }
 
   .focus-four-grid .dial-ring-stage {
-    max-width: 118px;
+    max-width: 126px;
   }
 
   .focus-four-grid .dial-value {
-    font-size: clamp(1.85rem, 8.2vw, 2.2rem);
+    font-size: clamp(1.88rem, 8.4vw, 2.25rem);
   }
 
   .focus-four-grid .dial-meta-row {
@@ -1816,12 +1842,27 @@ button {
   }
 
   .focus-four-grid .quad-val {
-    font-size: 1.25rem;
+    font-size: 1.28rem;
   }
 
   .focus-four-grid .quad-burn-footer {
     margin: 0 7px 7px;
     padding: 5px 8px;
+  }
+}
+
+/* When Full-Screen Mode hides Chrome's bars on Phone Portrait (viewport >= 750px tall), scale dials up! */
+@media (max-width: 599px) and (min-height: 750px) {
+  .focus-four-grid .dial-ring-stage {
+    max-width: 154px;
+  }
+
+  .focus-four-grid .dial-value {
+    font-size: clamp(2.05rem, 9.2vw, 2.5rem);
+  }
+
+  .focus-four-grid .quad-val {
+    font-size: 1.42rem;
   }
 }
 
@@ -1979,15 +2020,17 @@ button {
     font-size: 1.12rem;
   }
 
-  /* Focus Mode in Phone Landscape: 4-across single row under slim instructions + Play/Pause dock */
+  /* Focus Mode in Phone Landscape: Full-Screen 4-across single row under slim instructions + Play/Pause dock */
   .focus-modal-card {
     width: 100%;
-    padding: 6px 8px;
+    max-width: none;
+    padding: max(5px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+      max(5px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
     gap: 5px;
   }
 
   .focus-cue-banner {
-    padding: 5px 10px;
+    padding: 4px 10px;
   }
 
   .focus-instructions-body {
@@ -2022,5 +2065,9 @@ button {
   .focus-four-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
+  }
+
+  .focus-four-grid .dial-ring-stage {
+    max-width: min(132px, 31vh);
   }
 }

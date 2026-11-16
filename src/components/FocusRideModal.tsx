@@ -1,7 +1,9 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   FastForward,
   Flame,
+  Maximize2,
+  Minimize2,
   Pause,
   PictureInPicture2,
   Play,
@@ -24,6 +26,7 @@ import {
   cueDisplayLabel,
   formatDuration,
 } from '../utils/zones';
+import { isBrowserFullscreen, toggleBrowserFullscreen } from '../utils/fullscreen';
 import { getTotalWorkoutDurationSec } from '../data/workouts';
 import { ZoneSpeedometerCard } from './ZoneSpeedometerCard';
 import { RideStatsQuadCard } from './RideStatsQuadCard';
@@ -114,13 +117,27 @@ export function FocusRideModal({
   onFinishAndSave,
   onResetWorkout,
 }: FocusRideModalProps) {
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isBrowserFullscreen());
+
   useEffect(() => {
     if (!isOpen) return;
+    const syncFullscreen = () => setIsFullscreen(isBrowserFullscreen());
+    syncFullscreen();
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !isBrowserFullscreen()) {
+        onClose();
+      }
     };
+
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    document.addEventListener('webkitfullscreenchange', syncFullscreen);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreen);
+      document.removeEventListener('webkitfullscreenchange', syncFullscreen);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -152,7 +169,6 @@ export function FocusRideModal({
   return (
     <div
       className="modal-backdrop focus-modal-backdrop"
-      onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Focused Workout Cockpit"
@@ -160,9 +176,8 @@ export function FocusRideModal({
       <div
         className="focus-modal-card"
         id="focus-workout-modal"
-        onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Bar: Workout Selector + Sensor Status + Audio / PiP / Close */}
+        {/* Top Bar: Workout Selector + Sensor Status + Fullscreen / PiP / Audio / Exit */}
         <header className="focus-topbar">
           <div className="focus-topbar-left">
             <span
@@ -200,6 +215,17 @@ export function FocusRideModal({
           </div>
 
           <div className="focus-topbar-actions">
+            <button
+              type="button"
+              className={`btn btn-sm ${isFullscreen ? 'btn-primary' : ''}`}
+              id="focus-fullscreen-btn"
+              onClick={() => void toggleBrowserFullscreen()}
+              title={isFullscreen ? 'Exit browser fullscreen' : 'Enter full screen'}
+              aria-label={isFullscreen ? 'Exit browser fullscreen' : 'Enter full screen'}
+            >
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              <span className="focus-hide-xs">{isFullscreen ? 'Window' : 'Full'}</span>
+            </button>
             <button
               type="button"
               className={`btn btn-sm ${isHudPipActive ? 'btn-primary' : ''}`}

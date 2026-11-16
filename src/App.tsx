@@ -67,6 +67,7 @@ import { downloadRideTcx } from './services/tcxExporter';
 import { exchangeStravaOAuthCode, uploadRideToStrava } from './services/strava';
 import { renderTelemetryHudCanvas } from './services/pipHud';
 import { ScreenWakeManager, WorkoutAudioCue } from './services/wakeAndAudio';
+import { enterBrowserFullscreen, exitBrowserFullscreen } from './utils/fullscreen';
 import { ZoneMetricCard } from './components/ZoneMetricCard';
 import { ZoneSpeedometerCard } from './components/ZoneSpeedometerCard';
 import { RideStatsQuadCard } from './components/RideStatsQuadCard';
@@ -303,10 +304,20 @@ export function App() {
     });
   }, []);
 
-  // Keep Screen Wake Lock engaged while running
+  const handleOpenFocusMode = useCallback(() => {
+    setIsFocusModalOpen(true);
+    void enterBrowserFullscreen();
+  }, []);
+
+  const handleCloseFocusMode = useCallback(() => {
+    setIsFocusModalOpen(false);
+    void exitBrowserFullscreen();
+  }, []);
+
+  // Keep Screen Wake Lock engaged while running or viewing full-screen Focus Mode
   useEffect(() => {
-    void wakeRef.current?.setActive(rideState === 'running');
-  }, [rideState]);
+    void wakeRef.current?.setActive(rideState === 'running' || isFocusModalOpen);
+  }, [rideState, isFocusModalOpen]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -963,8 +974,8 @@ export function App() {
             <button
               type="button"
               className="segment-target-callout segment-callout-btn tabular"
-              onClick={() => setIsFocusModalOpen(true)}
-              title="Open Focused Workout Mode with full instructions & 4-grid"
+              onClick={handleOpenFocusMode}
+              title="Open Full-Screen Focused Workout Mode with instructions & 4-grid"
             >
               <span>
                 <strong>Block {activeSegmentInfo.index + 1}/{activeSegmentInfo.totalSegments}:</strong>{' '}
@@ -976,10 +987,10 @@ export function App() {
             <button
               type="button"
               className="segment-target-callout segment-callout-btn"
-              onClick={() => setIsFocusModalOpen(true)}
-              title="Open Focused Workout Mode"
+              onClick={handleOpenFocusMode}
+              title="Open Full-Screen Focused Workout Mode"
             >
-              <span>Open Ride · Tap Focus for distraction-free 4-grid cockpit</span>
+              <span>Open Ride · Tap Focus for full-screen 4-grid cockpit</span>
               <Maximize2 size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
             </button>
           )}
@@ -1012,8 +1023,8 @@ export function App() {
             type="button"
             id="open-focus-mode-btn"
             className="btn btn-sm focus-launch-btn"
-            onClick={() => setIsFocusModalOpen(true)}
-            title="Pop out Focused 4-Grid Modal with Workout Instructions & Play/Pause"
+            onClick={handleOpenFocusMode}
+            title="Enter Full-Screen Focused 4-Grid Cockpit with Workout Instructions & Play/Pause"
           >
             <Maximize2 size={14} /> Focus
           </button>
@@ -1334,7 +1345,7 @@ export function App() {
       {/* Modals */}
       <FocusRideModal
         isOpen={isFocusModalOpen}
-        onClose={() => setIsFocusModalOpen(false)}
+        onClose={handleCloseFocusMode}
         workouts={WORKOUT_TEMPLATES}
         selectedWorkout={selectedWorkout}
         onSelectWorkoutId={(id) => {
