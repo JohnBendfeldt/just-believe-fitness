@@ -197,11 +197,13 @@ function sleep(ms) {
 
 export async function handler(event) {
   if (event.httpMethod === 'GET') {
-    const hasServerCredentials = Boolean(
-      process.env.GARMIN_EMAIL && process.env.GARMIN_PASSWORD
-    );
-    const hasServerPersonalApiKey = Boolean(process.env.GARMIN_PERSONAL_API_KEY);
-    return jsonResponse(200, { ok: true, hasServerCredentials, hasServerPersonalApiKey });
+    // Personal Garmin credentials are never read from server env vars (public endpoint);
+    // each visitor supplies their own per request.
+    return jsonResponse(200, {
+      ok: true,
+      hasServerCredentials: false,
+      hasServerPersonalApiKey: false,
+    });
   }
 
   if (event.httpMethod !== 'POST') {
@@ -213,8 +215,8 @@ export async function handler(event) {
     const action = payload.action;
 
     if (action === 'login') {
-      const email = (payload.email || process.env.GARMIN_EMAIL || '').trim();
-      const password = payload.password || process.env.GARMIN_PASSWORD || '';
+      const email = (payload.email || '').trim();
+      const password = payload.password || '';
 
       if (!email || !password) {
         return jsonResponse(400, {
@@ -324,10 +326,10 @@ export async function handler(event) {
     }
 
     if (action === 'personal_api_sync') {
-      const apiKey = String(payload.apiKey || process.env.GARMIN_PERSONAL_API_KEY || '').trim();
+      const apiKey = String(payload.apiKey || '').trim();
       if (!apiKey) {
         return jsonResponse(400, {
-          error: 'Enter your Garmin Personal API Key (GCDC_...) or set GARMIN_PERSONAL_API_KEY.',
+          error: 'Enter your Garmin Personal API Key (GCDC_...).',
         });
       }
 
@@ -396,26 +398,13 @@ export async function handler(event) {
       }
 
       const { getCurrent, store } = createMemoryBackedStore(tokens || null);
-      let client = new GarminClient({ tokenStore: store, loginDelayMs: 0 });
+      const client = new GarminClient({ tokenStore: store, loginDelayMs: 0 });
 
       const hasValidSession = await client.loadTokens();
       if (!hasValidSession) {
-        if (process.env.GARMIN_EMAIL && process.env.GARMIN_PASSWORD) {
-          client = new GarminClient({ tokenStore: store });
-          const envLogin = await client.login(
-            process.env.GARMIN_EMAIL,
-            process.env.GARMIN_PASSWORD
-          );
-          if (envLogin && envLogin.state === 'mfa_required') {
-            return jsonResponse(401, {
-              error: 'Garmin Connect requires 2FA verification. Sign in under Garmin Settings.',
-            });
-          }
-        } else {
-          return jsonResponse(401, {
-            error: 'Garmin Connect is not signed in yet. Open Garmin Settings to connect.',
-          });
-        }
+        return jsonResponse(401, {
+          error: 'Garmin Connect is not signed in yet. Open Garmin Settings to connect.',
+        });
       }
 
       const garmin = new Garmin(client);
