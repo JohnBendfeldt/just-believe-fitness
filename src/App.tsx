@@ -3,11 +3,13 @@ import {
   Bluetooth,
   FastForward,
   Flame,
+  Gauge,
   History,
   Pause,
   PictureInPicture2,
   Play,
   RotateCcw,
+  Rows3,
   Sliders,
   Square,
   Tv,
@@ -65,6 +67,7 @@ import { exchangeStravaOAuthCode, uploadRideToStrava } from './services/strava';
 import { renderTelemetryHudCanvas } from './services/pipHud';
 import { ScreenWakeManager, WorkoutAudioCue } from './services/wakeAndAudio';
 import { ZoneMetricCard } from './components/ZoneMetricCard';
+import { ZoneSpeedometerCard } from './components/ZoneSpeedometerCard';
 import { LiveZoneGraph } from './components/LiveZoneGraph';
 import { YouTubeDeck, type YouTubeLayoutMode } from './components/YouTubeDeck';
 import { AthleteProfileModal } from './components/AthleteProfileModal';
@@ -74,11 +77,26 @@ import {
 } from './components/DeviceAndStravaModals';
 
 const EMPTY_ZONE_SECONDS: Record<ZoneId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+const GAUGE_MODE_STORAGE_KEY = 'jbf_gauge_mode_v1';
+
+export type GaugeDisplayMode = 'rings' | 'bars';
+
+function loadGaugeDisplayMode(): GaugeDisplayMode {
+  try {
+    const saved = window.localStorage.getItem(GAUGE_MODE_STORAGE_KEY);
+    return saved === 'bars' ? 'bars' : 'rings';
+  } catch {
+    return 'rings';
+  }
+}
 
 export function App() {
   // Athlete Profile (defaults to 5'9", 168 lbs, 257W FTP, 196 Max HR)
   const [profile, setProfile] = useState<AthleteProfile>(() => loadAthleteProfile());
   const profileRef = useRef<AthleteProfile>(profile);
+
+  // Gauge Layout Mode ('rings' 2/3-col speedometer grid vs 'bars' horizontal Garmin bars)
+  const [gaugeMode, setGaugeMode] = useState<GaugeDisplayMode>(() => loadGaugeDisplayMode());
 
   // Workout Selection & Active Session State
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<string>(WORKOUT_TEMPLATES[1].id);
@@ -154,6 +172,15 @@ export function App() {
     }, 4200);
   }, []);
 
+  const handleSelectGaugeMode = (nextMode: GaugeDisplayMode) => {
+    setGaugeMode(nextMode);
+    try {
+      window.localStorage.setItem(GAUGE_MODE_STORAGE_KEY, nextMode);
+    } catch {
+      // Ignore storage quota errors
+    }
+  };
+
   useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
@@ -169,7 +196,6 @@ export function App() {
 
     void listSavedRides().then(setSavedRides).catch(() => {});
 
-    // Check URL for Strava OAuth return code
     const params = new URLSearchParams(window.location.search);
     const oauthCode = params.get('code');
     const oauthState = params.get('state');
@@ -345,7 +371,9 @@ export function App() {
         )
       );
       const currentHr = simCurrentHrRef.current;
-      const nextHr = Math.round(currentHr + (targetHr - currentHr) * 0.14 + (Math.random() - 0.5) * 1.4);
+      const nextHr = Math.round(
+        currentHr + (targetHr - currentHr) * 0.14 + (Math.random() - 0.5) * 1.4
+      );
       simCurrentHrRef.current = nextHr;
 
       setTelemetry((prev) => ({
@@ -433,14 +461,12 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [rideState, selectedWorkout, segmentOffsetSec]);
 
-  // Derived Splat Points (1 Splat per 60s in Zone 4 Orange + Zone 5 Red)
+  // Derived Burn Points (1 Burn Point per 60s in Zone 4 Orange + Zone 5 Red)
   const hasHrStream = telemetry.heartRateBpm > 0 || hrZoneSeconds[4] + hrZoneSeconds[5] > 0;
-  const splatPoints = useMemo(() => {
-    const splatSecs = hasHrStream
-      ? hrZoneSeconds[4] + hrZoneSeconds[5]
-      : powerZoneSeconds[4] + powerZoneSeconds[5];
-    return Math.floor(splatSecs / 60);
-  }, [hasHrStream, hrZoneSeconds, powerZoneSeconds]);
+  const burnZoneTotalSec = hasHrStream
+    ? hrZoneSeconds[4] + hrZoneSeconds[5]
+    : powerZoneSeconds[4] + powerZoneSeconds[5];
+  const burnPoints = Math.floor(burnZoneTotalSec / 60);
 
   // Keep Picture-in-Picture Canvas continuously updated
   useEffect(() => {
@@ -450,13 +476,14 @@ export function App() {
       telemetry,
       profile,
       elapsedSec,
-      splatPoints,
+      burnPoints,
+      gaugeMode,
       segmentLabel: activeSegmentInfo?.segment.label,
       segmentRemainingSec: activeSegmentInfo?.remainingSec,
     });
-  }, [telemetry, profile, elapsedSec, splatPoints, activeSegmentInfo]);
+  }, [telemetry, profile, elapsedSec, burnPoints, gaugeMode, activeSegmentInfo]);
 
-  // Launch Picture-in-Picture Floating HUD (works over YouTube App on Android/Desktop!)
+  // Launch Picture-in-Picture Floating HUD (works over YouTube App on Android/Desktop)
   const handleLaunchHudPip = useCallback(async () => {
     const canvas = hudCanvasRef.current;
     const video = hudVideoRef.current;
@@ -473,7 +500,8 @@ export function App() {
         telemetry: telemetryRef.current,
         profile: profileRef.current,
         elapsedSec,
-        splatPoints,
+        burnPoints,
+        gaugeMode,
         segmentLabel: activeSegmentInfo?.segment.label,
         segmentRemainingSec: activeSegmentInfo?.remainingSec,
       });
@@ -502,7 +530,7 @@ export function App() {
           : 'Could not open system PiP window — try the built-in YouTube Split/Corner player!';
       showToast(msg);
     }
-  }, [elapsedSec, splatPoints, activeSegmentInfo, showToast]);
+  }, [elapsedSec, burnPoints, gaugeMode, activeSegmentInfo, showToast]);
 
   useEffect(() => {
     const video = hudVideoRef.current;
@@ -516,7 +544,6 @@ export function App() {
   const handleStartOrResume = () => {
     if (rideState === 'idle') {
       setStartedAtMs(Date.now());
-      // Auto-enable simulator if neither bike nor simulator is active yet so new users see instant telemetry
       if (!telemetry.bikeConnected && !telemetry.isSimulating) {
         setTelemetry((prev) => ({ ...prev, isSimulating: true }));
         showToast('Ride started with Demo Simulator active — pair Echelon EX-3 anytime!');
@@ -571,7 +598,7 @@ export function App() {
       durationSec: elapsedSec,
       distanceMeters,
       caloriesKcal: Math.round(caloriesKcal),
-      splatPoints,
+      burnPoints,
       avgWatts,
       maxWatts,
       normalizedWatts,
@@ -595,7 +622,7 @@ export function App() {
     handleResetWorkout();
   };
 
-  // Simulator Effort Preset Helper (orients directly to Athlete's FTP!)
+  // Simulator Effort Preset Helper (orients directly to Athlete's FTP)
   const applySimulatorEffort = (ftpMultiplier: number, targetCadence: number) => {
     const desiredWatts = Math.round(profile.ftpWatts * ftpMultiplier);
     const recRes = suggestEx3Resistance(
@@ -707,8 +734,33 @@ export function App() {
   const isAnySensorLive =
     telemetry.powerWatts > 0 || telemetry.heartRateBpm > 0 || rideState === 'running';
 
+  const resistanceControl = (
+    <div className="resistance-stepper">
+      <button
+        type="button"
+        id="resistance-dec-btn"
+        className="stepper-btn"
+        onClick={() => adjustResistance(-1)}
+        aria-label="Decrease resistance"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        id="resistance-inc-btn"
+        className="stepper-btn"
+        onClick={() => adjustResistance(1)}
+        aria-label="Increase resistance"
+      >
+        +
+      </button>
+    </div>
+  );
+
+  const ActiveGaugeComponent = gaugeMode === 'rings' ? ZoneSpeedometerCard : ZoneMetricCard;
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell mode-${gaugeMode}`}>
       {/* Top Studio Header + Athlete Stats Orientation Chip */}
       <header className="topbar">
         <div className="brand-lockup">
@@ -723,7 +775,7 @@ export function App() {
           </div>
           <div>
             <h1 className="brand-title">Just Believe Fitness</h1>
-            <div className="brand-sub">Direct Echelon EX-3 &amp; Garmin Studio</div>
+            <div className="brand-sub">JBF Studio · Direct EX-3 &amp; Garmin</div>
           </div>
         </div>
 
@@ -735,8 +787,10 @@ export function App() {
           onClick={() => setIsAthleteModalOpen(true)}
           title="Click to edit height, weight, FTP, and Max HR"
         >
-          <Sliders size={14} color="var(--accent-orange)" />
-          <span className="athlete-chip-label">{profile.name}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <Sliders size={14} color="var(--accent-orange)" />
+            <span className="athlete-chip-label">{profile.name}</span>
+          </span>
           <span className="athlete-chip-stats tabular">
             {formatHeightImperial(profile.heightFeet, profile.heightInches)} · {profile.weightLbs}# ·{' '}
             {profile.ftpWatts}W FTP · {profile.maxHrBpm} HR
@@ -815,10 +869,10 @@ export function App() {
         </div>
       </header>
 
-      {/* Orangetheory Solid Intensity Effort Ribbon */}
+      {/* JBF Solid 5-Zone Intensity Effort Ribbon */}
       <section
         className="effort-ribbon"
-        id="otf-effort-ribbon"
+        id="jbf-effort-ribbon"
         style={{
           backgroundColor: isAnySensorLive ? headlineZone.color : '#1C2330',
           color: isAnySensorLive ? headlineZone.textOnFill : '#F8FAFC',
@@ -827,8 +881,8 @@ export function App() {
         <div className="effort-ribbon-left">
           <span className="effort-zone-title">
             {isAnySensorLive
-              ? `ZONE ${headlineZone.zone} · ${headlineZone.otfName}`
-              : 'STUDIO READY · PAIR OR START'}
+              ? `ZONE ${headlineZone.zone} · ${headlineZone.stageLabel}`
+              : 'JBF READY · PAIR OR START'}
           </span>
           <span className="effort-cue-meta">
             {activeSegmentInfo ? (
@@ -842,7 +896,7 @@ export function App() {
             ) : (
               <>
                 Threshold {profile.ftpWatts}W (
-                {computeWattsPerKg(profile.ftpWatts, profile.weightLbs).toFixed(2)} W/kg) · Splat
+                {computeWattsPerKg(profile.ftpWatts, profile.weightLbs).toFixed(2)} W/kg) · Burn
                 Zone ≥ {hrZones[3].minValue} bpm
               </>
             )}
@@ -867,19 +921,19 @@ export function App() {
           </div>
 
           <div className="ribbon-stat">
-            <span className="ribbon-stat-label">Splat Points</span>
+            <span className="ribbon-stat-label">Burn Points</span>
             <span
               className="ribbon-stat-val"
-              id="ride-splat-points"
+              id="ride-burn-points"
               style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
             >
-              <Flame size={22} /> {splatPoints}
+              <Flame size={20} /> {burnPoints}
             </span>
           </div>
         </div>
       </section>
 
-      {/* Workout Selector & Transport Bar */}
+      {/* Workout Selector, Gauge Style Switcher (Rings vs Bars), & Transport Bar */}
       <section className="workout-strip">
         <div className="workout-picker-group">
           <select
@@ -918,6 +972,28 @@ export function App() {
         </div>
 
         <div className="transport-controls">
+          {/* Speedometer Ring Grid vs Horizontal Bars Switcher */}
+          <div className="gauge-toggle-group" role="group" aria-label="Gauge display style">
+            <button
+              type="button"
+              id="gauge-mode-rings-btn"
+              className={`gauge-toggle-btn ${gaugeMode === 'rings' ? 'active' : ''}`}
+              onClick={() => handleSelectGaugeMode('rings')}
+              title="Compact 2/3-column Speedometer Ring Grid"
+            >
+              <Gauge size={14} /> Rings
+            </button>
+            <button
+              type="button"
+              id="gauge-mode-bars-btn"
+              className={`gauge-toggle-btn ${gaugeMode === 'bars' ? 'active' : ''}`}
+              onClick={() => handleSelectGaugeMode('bars')}
+              title="Horizontal Segmented Zone Bars"
+            >
+              <Rows3 size={14} /> Bars
+            </button>
+          </div>
+
           {rideState !== 'running' ? (
             <button
               type="button"
@@ -925,7 +1001,7 @@ export function App() {
               className="btn btn-primary"
               onClick={handleStartOrResume}
             >
-              <Play size={16} /> {rideState === 'paused' ? 'Resume Ride' : 'Start Workout'}
+              <Play size={16} /> {rideState === 'paused' ? 'Resume' : 'Start Workout'}
             </button>
           ) : (
             <button
@@ -948,7 +1024,7 @@ export function App() {
               }
               title="Skip to next interval block"
             >
-              <FastForward size={15} /> Next Block
+              <FastForward size={15} /> Next
             </button>
           )}
 
@@ -960,7 +1036,7 @@ export function App() {
                 className="btn btn-strava"
                 onClick={() => void handleFinishAndSave()}
               >
-                <Square size={15} /> Finish &amp; Save
+                <Square size={15} /> Save
               </button>
               <button
                 type="button"
@@ -990,8 +1066,8 @@ export function App() {
       {telemetry.isSimulating && (
         <section className="sim-bar" id="simulator-controls-bar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <strong style={{ fontSize: '0.8rem', color: 'var(--accent-orange)' }}>
-              DEMO SIMULATOR:
+            <strong style={{ fontSize: '0.78rem', color: 'var(--accent-orange)' }}>
+              DEMO SIM:
             </strong>
             <button
               type="button"
@@ -1050,7 +1126,7 @@ export function App() {
         </section>
       )}
 
-      {/* Main Studio Workspace: Splits cleanly when YouTube Split Theater is open */}
+      {/* Main Studio Workspace: 2-Column on Phone Portrait, 3-Column on Phone Landscape / Tablet / Desktop */}
       <main
         className={`studio-workspace ${ytLayoutMode === 'split' ? 'split-youtube' : ''}`}
       >
@@ -1078,11 +1154,11 @@ export function App() {
           />
         )}
 
-        {/* Three Primary Color-Coded Displays: Power, Cadence + EX-3 Resistance, Heart Rate */}
-        <div className="metrics-grid">
-          <ZoneMetricCard
+        {/* Primary Color-Coded Displays: Power, Cadence + EX-3 Gear, Heart Rate (+ 4th All-Stats Tile in 2-col Portrait/Split) */}
+        <div className={`metrics-grid ${gaugeMode === 'rings' ? 'rings-mode' : 'bars-mode'}`}>
+          <ActiveGaugeComponent
             id="power-metric-card"
-            title="Power Output"
+            title="Power"
             valueDisplay={`${Math.round(telemetry.powerWatts)}`}
             unit="Watts"
             primaryBadge={`${ftpPct}% FTP · ${liveWkg.toFixed(2)} W/kg`}
@@ -1093,64 +1169,87 @@ export function App() {
             thresholdUnitSuffix="W"
           />
 
-          <ZoneMetricCard
+          <ActiveGaugeComponent
             id="cadence-metric-card"
-            title="Cadence & EX-3 Gear"
+            title="Cadence"
             valueDisplay={`${Math.round(telemetry.cadenceRpm)}`}
             unit="RPM"
-            primaryBadge={`EX-3 RES ${telemetry.resistance} / 32`}
+            primaryBadge={`EX-3 RES ${telemetry.resistance}/32`}
             secondarySub={
               activeSegmentInfo
-                ? `Target ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]} RPM`
+                ? `Target ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]}`
                 : 'Spin Rhythm'
             }
             zones={cadenceZones}
             numericValue={telemetry.cadenceRpm}
             activeZone={activeCadenceZone}
-            extraControl={
-              <div className="resistance-stepper">
-                <button
-                  type="button"
-                  id="resistance-dec-btn"
-                  className="stepper-btn"
-                  onClick={() => adjustResistance(-1)}
-                  aria-label="Decrease resistance"
-                >
-                  −
-                </button>
-                <button
-                  type="button"
-                  id="resistance-inc-btn"
-                  className="stepper-btn"
-                  onClick={() => adjustResistance(1)}
-                  aria-label="Increase resistance"
-                >
-                  +
-                </button>
-              </div>
-            }
+            extraControl={resistanceControl}
           />
 
-          <ZoneMetricCard
+          <ActiveGaugeComponent
             id="hr-metric-card"
-            title="Garmin Heart Rate"
+            title="Heart Rate"
             valueDisplay={
               telemetry.heartRateBpm > 0 ? `${Math.round(telemetry.heartRateBpm)}` : '--'
             }
             unit="BPM"
             primaryBadge={
-              telemetry.heartRateBpm > 0 ? `${hrPct}% MAX HR` : 'Broadcast HR Ready'
+              telemetry.heartRateBpm > 0 ? `${hrPct}% MAX HR` : 'Garmin BLE Ready'
             }
-            secondarySub={`Max ${profile.maxHrBpm} · Splat ≥ ${hrZones[3].minValue}`}
+            secondarySub={`Max ${profile.maxHrBpm} · Burn ≥ ${hrZones[3].minValue}`}
             zones={hrZones}
             numericValue={telemetry.heartRateBpm}
             activeZone={activeHrZone}
           />
+
+          {/* In 2-column layouts (Phone Portrait & Split YouTube), Cell #4 packs Speed, Distance, Calories, Avg W, & Burn Time right beside Heart Rate so ALL stats sit in one 2x2 view */}
+          {gaugeMode === 'rings' && (
+            <section
+              className="metric-card compact-telemetry-quad tabular"
+              id="compact-all-stats-card"
+              aria-label="Ride computer stats"
+            >
+              <header className="metric-zone-header dial-zone-header" style={{ background: '#232B38', color: '#CBD5E1' }}>
+                <span className="dial-header-title">Ride Stats</span>
+                <span className="dial-header-zone" style={{ color: '#fb923c' }}>
+                  ★ {burnPoints} BURN
+                </span>
+              </header>
+
+              <div className="quad-grid">
+                <div className="quad-cell">
+                  <span className="quad-label">Speed</span>
+                  <span className="quad-val">{telemetry.speedMph.toFixed(1)}</span>
+                  <span className="quad-sub">mph</span>
+                </div>
+                <div className="quad-cell">
+                  <span className="quad-label">Distance</span>
+                  <span className="quad-val">{metersToMiles(distanceMeters).toFixed(2)}</span>
+                  <span className="quad-sub">mi ({(distanceMeters / 1000).toFixed(1)} km)</span>
+                </div>
+                <div className="quad-cell">
+                  <span className="quad-label">Calories</span>
+                  <span className="quad-val">{Math.round(caloriesKcal)}</span>
+                  <span className="quad-sub">kcal</span>
+                </div>
+                <div className="quad-cell">
+                  <span className="quad-label">Avg / NP</span>
+                  <span className="quad-val">{avgRideWatts}W</span>
+                  <span className="quad-sub">NP {npRideWatts}W</span>
+                </div>
+              </div>
+
+              <div className="quad-burn-footer">
+                <span>Burn Zone (Z4+Z5)</span>
+                <strong>{formatDuration(burnZoneTotalSec)}</strong>
+              </div>
+            </section>
+          )}
         </div>
       </main>
 
-      {/* Secondary Ride Telemetry Strip */}
-      <section className="secondary-strip tabular">
+      {/* Full Secondary Ride Telemetry Strip (Shown in 3-Column Landscape/Tablet/Desktop & Bars Mode) */}
+      <section className={`secondary-strip tabular ${gaugeMode === 'rings' ? 'rings-secondary' : ''}`}>
         <div className="stat-tile">
           <span className="stat-tile-label">Virtual Speed</span>
           <span className="stat-tile-val">{telemetry.speedMph.toFixed(1)} mph</span>
@@ -1183,15 +1282,9 @@ export function App() {
         </div>
 
         <div className="stat-tile">
-          <span className="stat-tile-label">Orange + Red Time</span>
-          <span className="stat-tile-val">
-            {formatDuration(
-              hasHrStream
-                ? hrZoneSeconds[4] + hrZoneSeconds[5]
-                : powerZoneSeconds[4] + powerZoneSeconds[5]
-            )}
-          </span>
-          <span className="stat-tile-sub">{splatPoints} Splat pts earned</span>
+          <span className="stat-tile-label">Burn Zone Time</span>
+          <span className="stat-tile-val">{formatDuration(burnZoneTotalSec)}</span>
+          <span className="stat-tile-sub">{burnPoints} Burn pts earned</span>
         </div>
       </section>
 

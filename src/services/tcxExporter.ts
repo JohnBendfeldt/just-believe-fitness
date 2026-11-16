@@ -65,7 +65,7 @@ export function buildRideTcxXml(ride: SavedRide): string {
     <Activity Sport="Biking">
       <Id>${startIso}</Id>
       <Notes>${escapeXml(
-        `${ride.title} · ${ride.splatPoints} Splat pts · Avg ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg)`
+        `${ride.title} · ${ride.burnPoints} Burn pts · Avg ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg)`
       )}</Notes>
       <Lap StartTime="${startIso}">
         <TotalTimeSeconds>${ride.durationSec}</TotalTimeSeconds>
@@ -111,7 +111,7 @@ export function downloadRideTcx(ride: SavedRide): void {
     .replace(/(^-|-$)/g, '');
   const a = document.createElement('a');
   a.href = url;
-  a.download = `jb-fitness-${datePart}-${safeTitle || 'ride'}.tcx`;
+  a.download = `jbf-${datePart}-${safeTitle || 'ride'}.tcx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

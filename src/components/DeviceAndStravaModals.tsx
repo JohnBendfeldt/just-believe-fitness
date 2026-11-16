@@ -163,7 +163,7 @@ export function DeviceConnectionModal({
             <div style={{ fontWeight: 700 }}>Interactive Ride Simulator</div>
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
               Stream realistic EX-3 resistance, cadence, watts, and Garmin heart rate off-bike to
-              preview color shifts, Splat points, PiP HUD, and Strava export.
+              preview color shifts, Burn Points, PiP HUD, and Strava export.
             </p>
           </div>
           <button
@@ -294,11 +294,11 @@ export function HistoryAndStravaModal({
                   fontSize: '0.88rem',
                 }}
               >
-                <Flame size={16} /> {highlightedRide.splatPoints} SPLATS
+                <Flame size={16} /> {highlightedRide.burnPoints} BURN PTS
               </div>
             </div>
 
-            <div className="secondary-strip" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="summary-metrics-grid">
               <div className="stat-tile">
                 <span className="stat-tile-label">Avg / NP Power</span>
                 <span className="stat-tile-val tabular">
@@ -504,7 +504,7 @@ export function HistoryAndStravaModal({
                   <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>
                     {r.title}{' '}
                     <span style={{ color: '#f97316', fontSize: '0.8rem' }}>
-                      · ★ {r.splatPoints} Splats
+                      · ★ {r.burnPoints} Burn pts
                     </span>
                   </div>
                   <div

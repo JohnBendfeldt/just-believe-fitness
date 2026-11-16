@@ -41,7 +41,7 @@ export function ZoneMetricCard({
         }}
       >
         <span>{title}</span>
-        <span>{numericValue > 0 ? `Z${activeZone.zone} · ${activeZone.otfName}` : 'READY'}</span>
+        <span>{numericValue > 0 ? `Z${activeZone.zone} · ${activeZone.stageLabel}` : 'READY'}</span>
       </header>
 
       <div className="metric-body">

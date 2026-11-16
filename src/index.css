@@ -24,7 +24,7 @@
   --text-secondary: hsl(215, 20%, 74%);
   --text-muted: hsl(216, 16%, 54%);
 
-  /* Functional Brand & Orangetheory / Garmin 5-Zone Palette */
+  /* Functional JBF 5-Zone Palette */
   --accent-orange: #f97316;
   --accent-orange-hover: #fb923c;
   --strava-orange: #fc4c02;
@@ -82,8 +82,8 @@ button {
   flex-direction: column;
   max-width: 1540px;
   margin: 0 auto;
-  padding: 12px clamp(12px, 2vw, 24px) 24px;
-  gap: 14px;
+  padding: 12px clamp(10px, 2vw, 24px) 24px;
+  gap: 12px;
 }
 
 /* Top Navigation & Athlete Orientation Bar */
@@ -107,8 +107,8 @@ button {
 }
 
 .brand-mark {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   background: var(--bg-elevated-2);
   border: 1px solid var(--hairline-strong);
@@ -132,7 +132,7 @@ button {
 .brand-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.25rem, 2.2vw, 1.55rem);
+  font-size: clamp(1.2rem, 2.2vw, 1.55rem);
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -140,7 +140,7 @@ button {
 }
 
 .brand-sub {
-  font-size: 0.73rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
   font-weight: 500;
   margin-top: 2px;
@@ -155,8 +155,8 @@ button {
   background: var(--bg-elevated-2);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-md);
-  padding: 8px 12px;
-  min-height: 42px;
+  padding: 7px 12px;
+  min-height: 40px;
   transition: background-color 0.16s ease, transform 0.12s ease;
 }
 
@@ -178,7 +178,7 @@ button {
 
 .athlete-chip-stats {
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -195,14 +195,14 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-height: 42px;
-  padding: 0 14px;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 13px;
   border-radius: var(--radius-md);
   border: 1px solid var(--hairline-strong);
   background: var(--bg-elevated-2);
   color: var(--text-primary);
-  font-size: 0.84rem;
+  font-size: 0.83rem;
   font-weight: 600;
   transition: background-color 0.16s ease, transform 0.12s ease, opacity 0.16s ease;
   white-space: nowrap;
@@ -256,8 +256,41 @@ button {
 .btn-sm {
   min-height: 36px;
   padding: 0 11px;
-  font-size: 0.78rem;
+  font-size: 0.77rem;
   border-radius: var(--radius-sm);
+}
+
+/* Segmented Gauge Mode Switcher (Rings vs Bars) */
+.gauge-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(6, 9, 14, 0.65);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 2px;
+}
+
+.gauge-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.gauge-toggle-btn.active {
+  background: var(--bg-elevated-3);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* Status Dot */
@@ -277,14 +310,14 @@ button {
   background: var(--zone-4);
 }
 
-/* Orangetheory Effort Hero Ribbon */
+/* JBF Effort Hero Ribbon */
 .effort-ribbon {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   border-radius: var(--radius-lg);
-  padding: 14px 18px;
+  padding: 12px 16px;
   transition: background-color 0.35s ease, color 0.35s ease;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
     0 12px 28px -14px rgba(0, 0, 0, 0.7);
@@ -294,12 +327,12 @@ button {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px 16px;
+  gap: 6px 14px;
 }
 
 .effort-zone-title {
   font-family: var(--font-display);
-  font-size: clamp(1.65rem, 3.4vw, 2.35rem);
+  font-size: clamp(1.5rem, 3.2vw, 2.25rem);
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -307,7 +340,7 @@ button {
 }
 
 .effort-cue-meta {
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 600;
   opacity: 0.92;
 }
@@ -326,7 +359,7 @@ button {
 }
 
 .ribbon-stat-label {
-  font-size: 0.67rem;
+  font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -335,7 +368,7 @@ button {
 
 .ribbon-stat-val {
   font-family: var(--font-display);
-  font-size: clamp(1.5rem, 2.8vw, 2.1rem);
+  font-size: clamp(1.4rem, 2.6vw, 2.05rem);
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.01em;
@@ -359,25 +392,25 @@ button {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  flex: 1 1 320px;
+  gap: 8px;
+  flex: 1 1 300px;
 }
 
 .workout-select {
   background: var(--bg-elevated-2);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-md);
-  min-height: 42px;
+  min-height: 40px;
   padding: 0 12px;
   font-weight: 600;
-  font-size: 0.88rem;
-  min-width: 230px;
+  font-size: 0.86rem;
+  min-width: 220px;
   max-width: 100%;
 }
 
 .segment-target-callout {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.04);
   padding: 6px 10px;
@@ -391,28 +424,43 @@ button {
   gap: 8px;
 }
 
-/* Main Workspace Layout: Adapts cleanly when Split YouTube Theater is toggled */
+/* Main Workspace Layout */
 .studio-workspace {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 14px;
+  gap: 12px;
   align-items: start;
 }
 
 .studio-workspace.split-youtube {
-  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr);
+  grid-template-columns: minmax(0, 1.3fr) minmax(340px, 1fr);
 }
 
-/* Three Primary Metric Displays (Power, Cadence, Heart Rate) */
+/* Primary Metric Displays: 3 Columns on >= 600px (Landscape Phone, Tablet, Desktop) */
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
-.studio-workspace.split-youtube .metrics-grid {
+/* In Split YouTube mode on wide screens: Rings form a 2x2 Cockpit; Bars stack cleanly */
+.studio-workspace.split-youtube .metrics-grid.rings-mode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.studio-workspace.split-youtube .metrics-grid.bars-mode {
   grid-template-columns: 1fr;
   gap: 10px;
+}
+
+/* Hide 4th compact telemetry quad when in 3-column mode (full secondary strip shows below) */
+.compact-telemetry-quad {
+  display: none;
+}
+
+.studio-workspace.split-youtube .compact-telemetry-quad {
+  display: flex;
 }
 
 .metric-card {
@@ -426,19 +474,28 @@ button {
   justify-content: space-between;
 }
 
-/* Solid zone color header strip inside each metric card (OTF + Garmin functional style) */
+/* Solid zone color header strip inside each metric card */
 .metric-zone-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
-  font-size: 0.74rem;
+  gap: 6px;
+  padding: 8px 13px;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+.dial-header-title,
+.dial-header-zone {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Horizontal Segmented Bar Card Body */
 .metric-body {
   padding: 14px 16px 16px;
   display: flex;
@@ -466,7 +523,7 @@ button {
 
 .metric-number {
   font-family: var(--font-display);
-  font-size: clamp(3.3rem, 6vw, 4.9rem);
+  font-size: clamp(2.8rem, 5.2vw, 4.7rem);
   font-weight: 800;
   line-height: 0.92;
   letter-spacing: -0.025em;
@@ -474,12 +531,12 @@ button {
 }
 
 .studio-workspace.split-youtube .metric-number {
-  font-size: clamp(2.5rem, 4vw, 3.3rem);
+  font-size: clamp(2.4rem, 3.8vw, 3.2rem);
 }
 
 .metric-unit {
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -496,28 +553,192 @@ button {
 
 .metric-primary-badge {
   font-family: var(--font-mono);
-  font-size: 0.86rem;
+  font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .metric-secondary-sub {
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
 }
 
-/* Resistance inline +/- stepper inside Cadence/Bike card */
-.resistance-stepper {
-  display: inline-flex;
+/* Rounded 5-Zone Speedometer Ring Card Styles */
+.dial-body {
+  padding: 8px 12px 11px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
+  flex: 1;
+}
+
+.dial-ring-stage {
+  position: relative;
+  width: 100%;
+  max-width: 205px;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.dial-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.dial-zone-arc {
+  transition: stroke-width 0.24s ease, opacity 0.24s ease;
+}
+
+.dial-center-overlay {
+  position: absolute;
+  inset: 16% 12% 8%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  text-align: center;
+}
+
+.dial-value {
+  font-family: var(--font-display);
+  font-size: clamp(2.35rem, 5.2vw, 3.65rem);
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+}
+
+.dial-unit {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
+.dial-meta {
+  width: 100%;
+}
+
+.dial-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dial-meta-texts {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 1px;
+}
+
+.dial-primary-badge {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dial-secondary-sub {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.dial-thresholds {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+/* 4th All-Stats Cockpit Tile (2x2 Portrait & Split YouTube Mode) */
+.quad-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px 10px 6px;
+  flex: 1;
+  align-content: center;
+}
+
+.quad-cell {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.quad-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.quad-val {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.quad-sub {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quad-burn-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 10px 10px;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  background: rgba(249, 115, 22, 0.12);
+  border: 1px solid rgba(249, 115, 22, 0.28);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: #fed7aa;
+}
+
+/* Resistance inline +/- stepper */
+.resistance-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .stepper-btn {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 7px;
   border: 1px solid var(--hairline-strong);
   background: var(--bg-elevated-2);
@@ -532,7 +753,7 @@ button {
   background: var(--bg-elevated-3);
 }
 
-/* Garmin-Style 5-Segment Color Zone Bar */
+/* Garmin-Style 5-Segment Horizontal Color Zone Bar */
 .garmin-gauge {
   display: flex;
   flex-direction: column;
@@ -581,10 +802,17 @@ button {
   color: var(--text-muted);
 }
 
-/* Secondary Summary Strip (Speed, Distance, Calories, Avg/NP Power, Time in Zones) */
+/* Secondary Summary Strip (Speed, Distance, Calories, Avg/NP Power, Burn Zone Time) */
 .secondary-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* Summary Metrics 4-Card Grid inside Workout Summary Modal */
+.summary-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -593,14 +821,14 @@ button {
   box-shadow: var(--surface-inset);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
-  padding: 10px 13px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .stat-tile-label {
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -609,18 +837,18 @@ button {
 
 .stat-tile-val {
   font-family: var(--font-display);
-  font-size: 1.55rem;
+  font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.05;
 }
 
 .stat-tile-sub {
   font-family: var(--font-mono);
-  font-size: 0.71rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
 }
 
-/* Live Garmin-Style Color-Coded Rolling Graph & Zone Distribution */
+/* Live Color-Coded Rolling Graph & Zone Distribution */
 .graph-panel {
   background: var(--surface-gradient);
   box-shadow: var(--surface-inset);
@@ -642,9 +870,15 @@ button {
   margin-bottom: 10px;
 }
 
+.graph-mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .panel-heading {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -652,8 +886,9 @@ button {
 }
 
 .graph-canvas-wrap {
+  position: relative;
   width: 100%;
-  height: 168px;
+  height: 164px;
   border-radius: var(--radius-md);
   background: rgba(6, 9, 14, 0.55);
   border: 1px solid var(--hairline);
@@ -666,7 +901,26 @@ button {
   display: block;
 }
 
-/* Orangetheory 5-Zone Time Distribution Stack */
+.graph-empty-hint {
+  position: absolute;
+  inset: 28px 16px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  pointer-events: none;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.graph-empty-hint strong {
+  color: var(--text-secondary);
+}
+
+/* 5-Zone Time Distribution Stack */
 .zone-dist-list {
   display: flex;
   flex-direction: column;
@@ -770,9 +1024,9 @@ button {
 /* Floating Corner PiP Video inside App */
 .youtube-floating-pip {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
-  width: min(380px, calc(100vw - 28px));
+  right: 16px;
+  bottom: 16px;
+  width: min(380px, calc(100vw - 24px));
   z-index: 40;
   background: var(--bg-elevated-1);
   border: 1px solid var(--hairline-strong);
@@ -782,7 +1036,7 @@ button {
 }
 
 .youtube-floating-pip.large {
-  width: min(520px, calc(100vw - 28px));
+  width: min(520px, calc(100vw - 24px));
 }
 
 .youtube-floating-bar {
@@ -838,22 +1092,22 @@ button {
   backdrop-filter: blur(6px);
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: 14px;
   overflow-y: auto;
 }
 
 .modal-card {
   width: min(640px, 100%);
-  max-height: calc(100dvh - 32px);
+  max-height: calc(100dvh - 28px);
   overflow-y: auto;
   background: var(--bg-elevated-1);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-lg);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
-  padding: 20px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .modal-header {
@@ -866,7 +1120,7 @@ button {
 .modal-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.6rem;
+  font-size: 1.55rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.02em;
@@ -874,7 +1128,7 @@ button {
 
 .modal-subtitle {
   margin: 3px 0 0;
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   color: var(--text-secondary);
 }
 
@@ -891,7 +1145,7 @@ button {
 }
 
 .field label {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -900,12 +1154,12 @@ button {
 
 .field input,
 .field select {
-  min-height: 42px;
+  min-height: 40px;
   padding: 0 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--hairline-strong);
   background: var(--bg-elevated-2);
-  font-size: 0.94rem;
+  font-size: 0.92rem;
   font-weight: 600;
 }
 
@@ -931,7 +1185,7 @@ button {
   align-items: center;
   gap: 8px;
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: 0.75rem;
 }
 
 .history-item {
@@ -956,7 +1210,7 @@ button {
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-md);
   padding: 10px 16px;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   font-weight: 600;
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.75);
 }
@@ -972,14 +1226,27 @@ button {
   left: 0;
 }
 
-/* Responsive Breakpoints (Android Tablets & Phones in Portrait/Landscape) */
+/* ============================================================================
+ * Responsive Breakpoints
+ * - >= 600px (Phone Landscape, Tablet, Desktop): 3-Column Gauges so rotating
+ *   to landscape NEVER stretches rows 1-wide across the screen.
+ * - < 600px (Phone Portrait): 2-Column Speedometer Ring Grid with all stats
+ *   packed into a balanced 2x2 cockpit!
+ * ============================================================================ */
+
 @media (max-width: 1080px) {
   .studio-workspace.split-youtube {
     grid-template-columns: 1fr;
   }
 
-  .studio-workspace.split-youtube .metrics-grid {
+  /* When stacked below YouTube on 600px-1080px tablets/landscape phones, keep 3 columns! */
+  .studio-workspace.split-youtube .metrics-grid.rings-mode,
+  .studio-workspace.split-youtube .metrics-grid.bars-mode {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .studio-workspace.split-youtube .compact-telemetry-quad {
+    display: none;
   }
 
   .graph-panel {
@@ -988,17 +1255,9 @@ button {
 }
 
 @media (max-width: 820px) {
-  .metrics-grid,
-  .studio-workspace.split-youtube .metrics-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .secondary-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .effort-ribbon {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .effort-ribbon-right {
@@ -1010,13 +1269,343 @@ button {
   }
 }
 
-@media (max-width: 560px) {
+/* Mid-width 600px - 760px: keep 3 gauge columns & tidy 3/2 secondary row */
+@media (min-width: 600px) and (max-width: 760px) {
+  .secondary-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .secondary-strip .stat-tile:nth-child(4),
+  .secondary-strip .stat-tile:nth-child(5) {
+    grid-column: span 1;
+  }
+}
+
+/* Phone Portrait (< 600px): 2-Column Speedometer Ring Grid + Clean Stacked Top Controls */
+@media (max-width: 599px) {
+  .app-shell {
+    padding: 8px 9px 20px;
+    gap: 9px;
+  }
+
+  .topbar {
+    padding: 9px 10px;
+    gap: 8px;
+  }
+
+  .athlete-chip {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  #open-sensors-btn {
+    grid-column: 1 / -1;
+  }
+
+  .effort-ribbon {
+    padding: 10px 12px;
+  }
+
+  .workout-strip {
+    padding: 9px 10px;
+    gap: 8px;
+  }
+
+  .workout-picker-group {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .workout-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .segment-target-callout {
+    width: 100%;
+  }
+
+  .transport-controls {
+    width: 100%;
+  }
+
+  #start-ride-btn,
+  #pause-ride-btn {
+    flex: 1 1 auto;
+  }
+
+  /* 2-Column Speedometer Ring Grid in Phone Portrait! */
+  .metrics-grid.rings-mode,
+  .studio-workspace.split-youtube .metrics-grid.rings-mode {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  /* Show 4th Ride Stats Quad inside the 2x2 Cockpit & hide duplicate secondary-strip */
+  .compact-telemetry-quad,
+  .studio-workspace.split-youtube .compact-telemetry-quad {
+    display: flex;
+  }
+
+  .secondary-strip.rings-secondary {
+    display: none;
+  }
+
+  /* Classic Horizontal Bars Option on Portrait (< 600px) */
+  .metrics-grid.bars-mode,
+  .studio-workspace.split-youtube .metrics-grid.bars-mode {
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .metric-zone-header {
+    padding: 6px 9px;
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+  }
+
+  .dial-body {
+    padding: 6px 8px 9px;
+    gap: 4px;
+  }
+
+  .dial-ring-stage {
+    max-width: 162px;
+  }
+
+  .dial-value {
+    font-size: clamp(2.05rem, 9.5vw, 2.55rem);
+  }
+
+  .dial-unit {
+    font-size: 0.76rem;
+  }
+
+  .dial-primary-badge {
+    font-size: 0.68rem;
+  }
+
+  .dial-secondary-sub {
+    font-size: 0.62rem;
+  }
+
+  .dial-thresholds {
+    font-size: 0.58rem;
+  }
+
+  .metric-body {
+    padding: 11px 13px 13px;
+    gap: 9px;
+  }
+
+  .metric-number {
+    font-size: clamp(2.55rem, 11vw, 3.25rem);
+  }
+
+  /* Secondary strip in Bars mode on Portrait: 2x2 + full-width Burn Zone banner */
+  .secondary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .secondary-strip .stat-tile:last-child {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  .summary-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .graph-panel {
+    padding: 12px;
+    gap: 14px;
+  }
+
+  .graph-mode-tabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .graph-mode-tabs .btn {
+    padding: 0 6px;
+    font-size: 0.72rem;
+  }
+
   .form-grid {
     grid-template-columns: 1fr;
   }
 
   .zone-preview-row {
-    grid-template-columns: 92px 1fr 1fr;
+    grid-template-columns: 90px 1fr 1fr;
+    font-size: 0.69rem;
+  }
+}
+
+/* Phone Landscape Optimization: Always 3 Columns + Sleek Chrome so ALL stats fit on one screen */
+@media (orientation: landscape) and (max-height: 540px) {
+  .app-shell {
+    padding: 6px 10px 12px;
+    gap: 6px;
+  }
+
+  .topbar {
+    padding: 5px 10px;
+    gap: 5px 8px;
+  }
+
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+  }
+
+  .brand-title {
+    font-size: 1.05rem;
+  }
+
+  .brand-sub,
+  .segment-target-callout {
+    display: none;
+  }
+
+  .athlete-chip {
+    width: auto;
+    min-height: 30px;
+    padding: 4px 8px;
+  }
+
+  .athlete-chip-stats {
     font-size: 0.7rem;
+  }
+
+  .topbar-actions {
+    width: auto;
+    display: flex;
+    gap: 5px;
+  }
+
+  .topbar-actions .btn-sm {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 0.71rem;
+  }
+
+  #open-sensors-btn {
+    grid-column: auto;
+  }
+
+  .effort-ribbon {
+    grid-template-columns: 1fr auto;
+    padding: 6px 12px;
+    gap: 8px;
+  }
+
+  .effort-zone-title {
+    font-size: 1.25rem;
+  }
+
+  .effort-cue-meta {
+    font-size: 0.74rem;
+  }
+
+  .ribbon-stat {
+    align-items: flex-end;
+  }
+
+  .ribbon-stat-val {
+    font-size: 1.22rem;
+  }
+
+  .workout-strip {
+    padding: 5px 10px;
+    gap: 6px 10px;
+  }
+
+  .workout-picker-group {
+    width: auto;
+    flex: 1 1 200px;
+  }
+
+  .workout-select {
+    width: auto;
+    min-height: 32px;
+    font-size: 0.8rem;
+  }
+
+  .transport-controls {
+    width: auto;
+  }
+
+  .transport-controls .btn {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 0.76rem;
+  }
+
+  .gauge-toggle-btn {
+    min-height: 28px;
+    padding: 0 8px;
+    font-size: 0.71rem;
+  }
+
+  .metrics-grid,
+  .metrics-grid.rings-mode,
+  .metrics-grid.bars-mode,
+  .studio-workspace.split-youtube .metrics-grid.rings-mode,
+  .studio-workspace.split-youtube .metrics-grid.bars-mode {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .compact-telemetry-quad,
+  .studio-workspace.split-youtube .compact-telemetry-quad {
+    display: none;
+  }
+
+  .secondary-strip,
+  .secondary-strip.rings-secondary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .secondary-strip .stat-tile:last-child {
+    grid-column: auto;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dial-body {
+    padding: 4px 8px 6px;
+    gap: 2px;
+  }
+
+  .dial-ring-stage {
+    max-width: 132px;
+  }
+
+  .dial-value {
+    font-size: 1.95rem;
+  }
+
+  .stat-tile {
+    padding: 5px 8px;
+  }
+
+  .stat-tile-val {
+    font-size: 1.12rem;
   }
 }

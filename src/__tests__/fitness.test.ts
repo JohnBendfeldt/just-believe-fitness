@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_ATHLETE_PROFILE,
   computeNormalizedPower,
+  computeSegmentedGaugeProgress,
   computeWattsPerKg,
   estimateIndoorSpeedMps,
   getHrZones,
   getPowerZones,
+  getResistanceZones,
   mpsToMph,
   resolveZone,
 } from '../utils/zones';
@@ -31,7 +33,7 @@ describe('Athlete Profile & Zone Orientation (5\'9", 168#, 257W FTP, 196 Max HR)
     expect(wkg).toBeCloseTo(3.37, 2);
   });
 
-  it('re-orients 5 Power Zones and 5 Heart Rate Zones dynamically when stats change', () => {
+  it('re-orients 5 Power, HR, and EX-3 Resistance Zones dynamically when stats change', () => {
     const powerZones = getPowerZones(257);
     expect(powerZones).toHaveLength(5);
     // Z4 Threshold Push starts at 91% of 257W => 234W; Z5 All-Out starts at 106% => 272W
@@ -42,11 +44,17 @@ describe('Athlete Profile & Zone Orientation (5\'9", 168#, 257W FTP, 196 Max HR)
 
     const hrZones = getHrZones(196);
     expect(hrZones).toHaveLength(5);
-    // Z4 Splat Zone starts at 84% of 196 => 165 bpm; Z5 Red starts at 92% => 180 bpm
+    // Z4 Burn Zone starts at 84% of 196 => 165 bpm; Z5 Red starts at 92% => 180 bpm
     expect(hrZones[3].minValue).toBe(165);
     expect(hrZones[4].minValue).toBe(180);
     expect(resolveZone(170, hrZones).zone).toBe(4);
     expect(resolveZone(185, hrZones).zone).toBe(5);
+
+    const resZones = getResistanceZones();
+    expect(resZones).toHaveLength(5);
+    expect(resolveZone(24, resZones).zone).toBe(4);
+    expect(computeSegmentedGaugeProgress(24, resZones)).toBeGreaterThan(60);
+    expect(computeSegmentedGaugeProgress(24, resZones)).toBeLessThan(80);
   });
 
   it('incorporates rider height & weight into indoor aerodynamic speed', () => {
@@ -87,17 +95,17 @@ describe('Echelon EX-3 Power Curve & BLE Protocol', () => {
 });
 
 describe('TCX Export & YouTube Embed Parser', () => {
-  it('builds Strava-compatible TCX XML containing Watts, Cadence, and HeartRateBpm', () => {
+  it('builds Strava-compatible TCX XML containing Watts, Cadence, HeartRateBpm, and Burn pts', () => {
     const ride: SavedRide = {
       id: 'ride-1',
-      title: 'OTF 23-Min Signature Burn',
-      workoutName: 'OTF 23-Min Signature Burn',
+      title: 'JBF 23-Min Signature Burn',
+      workoutName: 'JBF 23-Min Signature Burn',
       startedAtIso: '2026-11-15T22:00:00.000Z',
       endedAtIso: '2026-11-15T22:23:00.000Z',
       durationSec: 1380,
       distanceMeters: 12850,
       caloriesKcal: 312,
-      splatPoints: 14,
+      burnPoints: 14,
       avgWatts: 228,
       maxWatts: 345,
       normalizedWatts: computeNormalizedPower(Array.from({ length: 40 }, () => 240)),
@@ -132,6 +140,7 @@ describe('TCX Export & YouTube Embed Parser', () => {
     expect(xml).toContain('<ns3:Watts>255</ns3:Watts>');
     expect(xml).toContain('<Cadence>92</Cadence>');
     expect(xml).toContain('<Value>171</Value>');
+    expect(xml).toContain('14 Burn pts');
   });
 
   it('parses standard YouTube watch, short, and playlist URLs into embed URLs', () => {

@@ -5,16 +5,16 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
   {
     id: 'free-ride',
     name: 'Just Ride · Open Studio',
-    subtitle: 'Free-form spin with live Orangetheory splats, Garmin zone bars & YouTube PiP',
+    subtitle: 'Free-form spin with live JBF Burn Points, 5-zone gauges & YouTube PiP',
     category: 'free',
     isFreeRide: true,
     segments: [],
   },
   {
-    id: 'otf-23-burn',
-    name: 'OTF 23-Min Signature Burn',
-    subtitle: 'Classic Base · Push · All-Out blocks designed to stack 12+ Splat Points',
-    category: 'otf',
+    id: 'jbf-23-burn',
+    name: 'JBF 23-Min Signature Burn',
+    subtitle: 'Base · Push · All-Out blocks designed to stack 12+ Burn Points',
+    category: 'jbf',
     segments: [
       {
         id: 'w1',
@@ -64,7 +64,7 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
         targetZone: 4,
         ftpPctRange: [0.95, 1.05],
         cadenceRange: [88, 98],
-        coachingNote: 'Right around your FTP — build Orange zone minutes!',
+        coachingNote: 'Right around your FTP — build Orange Burn minutes!',
       },
       {
         id: 'ao1',
@@ -74,7 +74,7 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
         targetZone: 5,
         ftpPctRange: [1.15, 1.35],
         cadenceRange: [98, 112],
-        coachingNote: 'Empty the tank — fast legs, Red/Orange Splat territory!',
+        coachingNote: 'Empty the tank — fast legs, Red/Orange Burn Zone!',
       },
       {
         id: 'r1',
@@ -139,8 +139,8 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
     ],
   },
   {
-    id: 'splat-hiit-20',
-    name: '20-Min Splat Express HIIT',
+    id: 'burn-hiit-20',
+    name: 'JBF 20-Min Burn Express',
     subtitle: 'Crisp 60s Push / 30s All-Out / 60s Recovery rounds for busy days',
     category: 'hiit',
     segments: [

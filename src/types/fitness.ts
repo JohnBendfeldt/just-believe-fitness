@@ -18,7 +18,7 @@ export interface ZoneDefinition {
   zone: ZoneId;
   key: 'grey' | 'blue' | 'green' | 'orange' | 'red';
   name: string;
-  otfName: string;
+  stageLabel: string;
   color: string;
   colorSoft: string;
   colorStrong: string;
@@ -76,7 +76,7 @@ export interface WorkoutTemplate {
   id: string;
   name: string;
   subtitle: string;
-  category: 'free' | 'otf' | 'hiit' | 'climb' | 'endurance';
+  category: 'free' | 'jbf' | 'hiit' | 'climb' | 'endurance';
   isFreeRide?: boolean;
   segments: WorkoutSegment[];
 }
@@ -90,7 +90,7 @@ export interface SavedRide {
   durationSec: number;
   distanceMeters: number;
   caloriesKcal: number;
-  splatPoints: number;
+  burnPoints: number;
   avgWatts: number;
   maxWatts: number;
   normalizedWatts: number;

@@ -25,16 +25,31 @@ export function LiveZoneGraph({
   powerZoneSeconds,
   hasHrStream,
 }: LiveZoneGraphProps) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [mode, setMode] = useState<GraphMode>('combined');
+  const [canvasWidth, setCanvasWidth] = useState<number>(0);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const nextWidth = Math.floor(entries[0]?.contentRect.width ?? 0);
+      if (nextWidth > 0) {
+        setCanvasWidth(nextWidth);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const width = Math.max(280, Math.floor(rect.width));
-    const height = Math.max(140, Math.floor(rect.height));
+    const width = Math.max(240, canvasWidth || Math.floor(rect.width));
+    const height = Math.max(136, Math.floor(rect.height));
 
     if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
       canvas.width = width * dpr;
@@ -58,7 +73,7 @@ export function LiveZoneGraph({
     const plotW = width - padX * 2;
     const plotH = height - padTop - padBottom;
 
-    // Subtle horizontal reference lines (FTP & Splat threshold)
+    // Subtle horizontal reference lines (FTP & Burn Zone threshold)
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
@@ -81,30 +96,22 @@ export function LiveZoneGraph({
       ctx.font = '600 10px JetBrains Mono, monospace';
       ctx.fillText(`FTP ${profile.ftpWatts}W`, padX + 4, Math.max(11, ftpY - 4));
     } else {
-      const splatHr = Math.round(profile.maxHrBpm * 0.84);
+      const burnHr = Math.round(profile.maxHrBpm * 0.84);
       const minHr = 70;
       const maxHr = Math.max(profile.maxHrBpm + 6, 200);
-      const splatY = padTop + plotH * (1 - (splatHr - minHr) / (maxHr - minHr));
+      const burnY = padTop + plotH * (1 - (burnHr - minHr) / (maxHr - minHr));
       ctx.beginPath();
-      ctx.moveTo(padX, splatY);
-      ctx.lineTo(width - padX, splatY);
+      ctx.moveTo(padX, burnY);
+      ctx.lineTo(width - padX, burnY);
       ctx.stroke();
 
       ctx.setLineDash([]);
       ctx.fillStyle = 'rgba(249, 115, 22, 0.88)';
       ctx.font = '600 10px JetBrains Mono, monospace';
-      ctx.fillText(`SPLAT ${splatHr} BPM`, padX + 4, Math.max(11, splatY - 4));
+      ctx.fillText(`BURN ${burnHr} BPM`, padX + 4, Math.max(11, burnY - 4));
     }
 
     if (windowPoints.length === 0) {
-      ctx.fillStyle = '#64748B';
-      ctx.font = '500 13px Plus Jakarta Sans, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(
-        'Start riding or enable Simulate Ride to stream color-coded zone bars',
-        width / 2,
-        height / 2
-      );
       ctx.restore();
       return;
     }
@@ -112,7 +119,7 @@ export function LiveZoneGraph({
     const slots = Math.max(60, windowPoints.length);
     const stepX = plotW / slots;
 
-    // 1. Draw Garmin/OTF color-coded Power Bars (in 'combined' or 'power' mode)
+    // 1. Draw JBF 5-zone color-coded Power Bars (in 'combined' or 'power' mode)
     if (mode === 'combined' || mode === 'power') {
       const barW = Math.max(1.5, stepX - 1);
       windowPoints.forEach((pt, idx) => {
@@ -183,7 +190,7 @@ export function LiveZoneGraph({
     }
 
     ctx.restore();
-  }, [points, profile, mode]);
+  }, [points, profile, mode, canvasWidth]);
 
   const activeZoneTotals = hasHrStream ? hrZoneSeconds : powerZoneSeconds;
   const totalTrackedSec = Math.max(
@@ -197,9 +204,9 @@ export function LiveZoneGraph({
       <div>
         <div className="graph-header">
           <h2 className="panel-heading">
-            Live Intensity Timeline ({mode === 'hr' ? 'Garmin HR Zones' : mode === 'power' ? 'FTP Power Bars' : 'Power Bars + HR Line'})
+            Live Intensity Timeline ({mode === 'hr' ? 'Garmin HR Zones' : mode === 'power' ? 'FTP Power Bars' : 'Power + HR'})
           </h2>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="graph-mode-tabs">
             <button
               type="button"
               id="graph-mode-combined"
@@ -227,8 +234,13 @@ export function LiveZoneGraph({
           </div>
         </div>
 
-        <div className="graph-canvas-wrap">
+        <div className="graph-canvas-wrap" ref={wrapRef}>
           <canvas ref={canvasRef} />
+          {points.length === 0 && (
+            <div className="graph-empty-hint">
+              Tap <strong>Start Workout</strong> or <strong>Simulate</strong> to stream color-coded zone bars
+            </div>
+          )}
         </div>
       </div>
 
@@ -238,7 +250,7 @@ export function LiveZoneGraph({
             Time in {hasHrStream ? 'HR' : 'Power'} Zones
           </h2>
           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            Z4 + Z5 = SPLATS
+            Z4 + Z5 = BURN PTS
           </span>
         </div>
 

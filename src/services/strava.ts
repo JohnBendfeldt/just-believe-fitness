@@ -166,8 +166,8 @@ export async function uploadRideToStrava(
   const fileBlob = new Blob([tcxXml], { type: 'application/xml' });
 
   const description = [
-    `Just Believe Fitness · Echelon EX-3`,
-    `Splat Points: ${ride.splatPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
+    `Just Believe Fitness (JBF) · Echelon EX-3`,
+    `Burn Points: ${ride.burnPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
     ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
     `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
   ]
@@ -182,7 +182,7 @@ export async function uploadRideToStrava(
   form.append('trainer', '1');
   form.append('name', ride.title);
   form.append('description', description);
-  form.append('external_id', `jb-fitness-${ride.id}.tcx`);
+  form.append('external_id', `jbf-${ride.id}.tcx`);
 
   onProgress?.('Uploading workout to Strava...');
   const resp = await fetch(STRAVA_UPLOADS_URL, {

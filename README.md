@@ -1,16 +1,16 @@
-# Just Believe Fitness (JB Fitness)
+# Just Believe Fitness (JBF)
 
-An Orangetheory & Garmin-inspired indoor cycling studio PWA built for **Android phones/tablets** and desktop Chrome — connecting **directly** to an **Echelon EX-3** bike and **Garmin** heart rate broadcast over Web Bluetooth with **zero middleman bridge app**.
+A 5-zone color-coded indoor cycling studio PWA built for **Android phones/tablets** and desktop Chrome — connecting **directly** to an **Echelon EX-3** bike and **Garmin** heart rate broadcast over Web Bluetooth with **zero middleman bridge app**.
 
 ## Highlights
 
-- **Athlete-Oriented Telemetry Display:** Enter your height, weight, FTP, and Max HR (pre-configured for `5'9"`, `168 lbs`, `257W` FTP, `196 bpm` Max HR) and every 5-zone color bar, target Watt block, `W/kg` badge, aerodynamic speed estimate, and Splat threshold immediately calibrates to you.
+- **Athlete-Oriented Telemetry Display:** Enter your height, weight, FTP, and Max HR (pre-configured for `5'9"`, `168 lbs`, `257W` FTP, `196 bpm` Max HR) and every 5-zone speedometer arc, bar gauge, target Watt block, `W/kg` badge, aerodynamic speed estimate, and Burn Zone threshold immediately calibrates to you.
 - **Direct Echelon EX-3 Bluetooth (`0bf669f1...`):** Speaks Echelon's GATT protocol directly (both classic handshake and post-update `0xF0 0xE0` challenge-response + 2s keepalive + auto-reconnect) and computes live Watts via the Vector-pedal-calibrated EX-3 32-level power curve.
 - **Direct Garmin Heart Rate (`0x180D` / `0x2A37`):** Pairs directly with Garmin watches in *Broadcast Heart Rate* mode or any BLE HRM strap.
-- **Orangetheory + Garmin 5-Zone UI:** Solid color-changing Effort Ribbon, Splat Point counter (minutes in Orange Zone 4 + Red Zone 5), 5-segment Garmin zone bars for **Power**, **Cadence**, and **Heart Rate**, and a live color-coded rolling timeline graph.
+- **JBF 5-Zone Ring Grid & Segmented Bar Modes:** Switch anytime between the **2×2 / 4-Up Speedometer Ring Grid** (rounded 5-zone arcs around Power, Heart Rate, Cadence, and EX-3 Gear) and **Horizontal Zone Bar Cards**, complete with a solid color-changing Effort Ribbon, **Burn Points** counter (minutes in Orange Zone 4 + Red Zone 5), and a live color-coded rolling timeline graph.
 - **YouTube + Picture-in-Picture Two Ways:**
   1. **Built-in YouTube Split Cinema & Corner PiP Mini-Player** right inside the studio (keeps Android Chrome in the foreground with Screen Wake Lock active).
-  2. **Pop-Out Telemetry HUD PiP** (`HUD PiP` button) streaming live Power, Cadence, and Heart Rate gauges into a floating Picture-in-Picture overlay on top of the native YouTube app.
+  2. **Pop-Out Telemetry HUD PiP** (`HUD PiP` button) streaming live 5-zone speedometer rings into a floating Picture-in-Picture overlay on top of the native YouTube app.
 - **Local History + `.TCX` Export + 1-Click Strava Push:** Saves 1-second streams locally in IndexedDB, downloads Garmin/Strava `.TCX` files (with `<Watts>`, `<Cadence>`, `<HeartRateBpm>`), and uploads directly to Strava via OAuth 2.0 (`POST /api/v3/uploads`).
 
 ## Quick Start (Local Development)

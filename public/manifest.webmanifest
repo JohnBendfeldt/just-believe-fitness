@@ -1,7 +1,7 @@
 {
   "name": "Just Believe Fitness",
-  "short_name": "JB Fitness",
-  "description": "Direct Echelon EX-3 & Garmin BLE indoor cycling studio with Orangetheory/Garmin zone bars, YouTube PiP, and Strava sync.",
+  "short_name": "JBF",
+  "description": "JBF 5-zone indoor cycling studio with Burn Points, direct Echelon EX-3 & BLE heart rate telemetry, YouTube PiP, and Strava sync.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0e14",

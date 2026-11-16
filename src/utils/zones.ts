@@ -17,7 +17,7 @@ export const ZONE_PALETTE: Record<
   {
     key: ZoneDefinition['key'];
     name: string;
-    otfName: string;
+    stageLabel: string;
     color: string;
     colorSoft: string;
     colorStrong: string;
@@ -27,7 +27,7 @@ export const ZONE_PALETTE: Record<
   1: {
     key: 'grey',
     name: 'Zone 1 · Recovery',
-    otfName: 'VERY LIGHT',
+    stageLabel: 'VERY LIGHT',
     color: '#7A8699',
     colorSoft: 'rgba(122, 134, 153, 0.18)',
     colorStrong: '#5B6678',
@@ -36,7 +36,7 @@ export const ZONE_PALETTE: Record<
   2: {
     key: 'blue',
     name: 'Zone 2 · Endurance',
-    otfName: 'WARM UP',
+    stageLabel: 'WARM UP',
     color: '#1898F2',
     colorSoft: 'rgba(24, 152, 242, 0.18)',
     colorStrong: '#0C7CD5',
@@ -45,7 +45,7 @@ export const ZONE_PALETTE: Record<
   3: {
     key: 'green',
     name: 'Zone 3 · Base Pace',
-    otfName: 'BASE PACE',
+    stageLabel: 'BASE PACE',
     color: '#12B981',
     colorSoft: 'rgba(18, 185, 129, 0.18)',
     colorStrong: '#099668',
@@ -54,7 +54,7 @@ export const ZONE_PALETTE: Record<
   4: {
     key: 'orange',
     name: 'Zone 4 · Push Pace',
-    otfName: 'PUSH · SPLAT',
+    stageLabel: 'PUSH · BURN',
     color: '#F97316',
     colorSoft: 'rgba(249, 115, 22, 0.2)',
     colorStrong: '#EA580C',
@@ -63,7 +63,7 @@ export const ZONE_PALETTE: Record<
   5: {
     key: 'red',
     name: 'Zone 5 · All Out',
-    otfName: 'ALL OUT · SPLAT',
+    stageLabel: 'ALL OUT · BURN',
     color: '#EF4444',
     colorSoft: 'rgba(239, 68, 68, 0.22)',
     colorStrong: '#DC2626',
@@ -104,14 +104,12 @@ export function estimateIndoorSpeedMps(watts: number, profile: AthleteProfile): 
 
   // DuBois Body Surface Area (m^2): 5'9", 168 lbs => ~1.92 m^2
   const bsa = 0.007184 * Math.pow(weightKg, 0.425) * Math.pow(heightCm, 0.725);
-  // Hoods frontal CdA scaled gently by rider BSA (~0.32 m^2 for 1.92 BSA)
   const cda = 0.168 * bsa;
   const airDensity = 1.225;
   const crr = 0.004;
   const drivetrainEfficiency = 0.96;
   const effectivePower = watts * drivetrainEfficiency;
 
-  // Solve 0.5 * rho * CdA * v^3 + Crr * m * g * v = P_eff via Newton-Raphson
   const kAero = 0.5 * airDensity * cda;
   const fRoll = crr * totalMassKg * 9.80665;
   let v = 7.5;
@@ -141,8 +139,6 @@ export function estimateKcalPerSecond(
   profile: AthleteProfile
 ): number {
   if (watts > 3) {
-    // 1 Watt = 1 J/s; human cycling gross metabolic efficiency ~23.9% => ~1 kcal per kJ of mechanical work!
-    // Slightly modulated by HR strain if elevated
     const baseKcalPerSec = watts / 1000;
     const hrFactor =
       heartRateBpm > 0
@@ -164,12 +160,12 @@ export function estimateKcalPerSecond(
 }
 
 /**
- * Orangetheory + Garmin aligned 5 Heart Rate Zones oriented around athlete's Max HR:
+ * JBF 5 Heart Rate Zones oriented around athlete's Max HR:
  * Z1 Grey:   < 61% Max HR
  * Z2 Blue:   61% - 70% Max HR
  * Z3 Green:  71% - 83% Max HR (Base)
- * Z4 Orange: 84% - 91% Max HR (Push / Splat)
- * Z5 Red:    92% - 100%+ Max HR (All Out / Splat)
+ * Z4 Orange: 84% - 91% Max HR (Push / Burn Zone)
+ * Z5 Red:    92% - 100%+ Max HR (All Out / Burn Zone)
  */
 export function getHrZones(maxHrBpm: number): ZoneDefinition[] {
   const maxHr = Math.max(120, Math.round(maxHrBpm));
@@ -223,7 +219,7 @@ export function getHrZones(maxHrBpm: number): ZoneDefinition[] {
 }
 
 /**
- * 5-Color Power Zones oriented around athlete's FTP (e.g. 257 W):
+ * JBF 5-Color Power Zones oriented around athlete's FTP (e.g. 257 W):
  * Z1 Grey:   0% - 55% FTP   (Active Recovery)
  * Z2 Blue:   56% - 75% FTP  (Endurance)
  * Z3 Green:  76% - 90% FTP  (Tempo / Sweet Spot Base)
@@ -242,7 +238,7 @@ export function getPowerZones(ftpWatts: number): ZoneDefinition[] {
       zone: 1,
       ...ZONE_PALETTE[1],
       name: 'Z1 · Recovery',
-      otfName: 'RECOVERY',
+      stageLabel: 'RECOVERY',
       minPct: 0,
       maxPct: 55,
       minValue: 0,
@@ -252,7 +248,7 @@ export function getPowerZones(ftpWatts: number): ZoneDefinition[] {
       zone: 2,
       ...ZONE_PALETTE[2],
       name: 'Z2 · Endurance',
-      otfName: 'ENDURANCE',
+      stageLabel: 'ENDURANCE',
       minPct: 56,
       maxPct: 75,
       minValue: z2Min,
@@ -262,7 +258,7 @@ export function getPowerZones(ftpWatts: number): ZoneDefinition[] {
       zone: 3,
       ...ZONE_PALETTE[3],
       name: 'Z3 · Tempo Base',
-      otfName: 'BASE POWER',
+      stageLabel: 'BASE POWER',
       minPct: 76,
       maxPct: 90,
       minValue: z3Min,
@@ -272,7 +268,7 @@ export function getPowerZones(ftpWatts: number): ZoneDefinition[] {
       zone: 4,
       ...ZONE_PALETTE[4],
       name: 'Z4 · Threshold',
-      otfName: 'PUSH POWER',
+      stageLabel: 'PUSH POWER',
       minPct: 91,
       maxPct: 105,
       minValue: z4Min,
@@ -282,7 +278,7 @@ export function getPowerZones(ftpWatts: number): ZoneDefinition[] {
       zone: 5,
       ...ZONE_PALETTE[5],
       name: 'Z5 · VO2 / All Out',
-      otfName: 'ALL OUT POWER',
+      stageLabel: 'ALL OUT POWER',
       minPct: 106,
       maxPct: 150,
       minValue: z5Min,
@@ -305,7 +301,7 @@ export function getCadenceZones(): ZoneDefinition[] {
       zone: 1,
       ...ZONE_PALETTE[1],
       name: 'Easy Spin',
-      otfName: 'EASY SPIN',
+      stageLabel: 'EASY SPIN',
       minPct: 0,
       maxPct: 45,
       minValue: 0,
@@ -315,7 +311,7 @@ export function getCadenceZones(): ZoneDefinition[] {
       zone: 2,
       ...ZONE_PALETTE[2],
       name: 'Heavy Climb',
-      otfName: 'CLIMB GRIND',
+      stageLabel: 'CLIMB GRIND',
       minPct: 46,
       maxPct: 58,
       minValue: 55,
@@ -325,7 +321,7 @@ export function getCadenceZones(): ZoneDefinition[] {
       zone: 3,
       ...ZONE_PALETTE[3],
       name: 'Base Rhythm',
-      otfName: 'RHYTHM',
+      stageLabel: 'RHYTHM',
       minPct: 59,
       maxPct: 75,
       minValue: 70,
@@ -335,7 +331,7 @@ export function getCadenceZones(): ZoneDefinition[] {
       zone: 4,
       ...ZONE_PALETTE[4],
       name: 'Fast Surge',
-      otfName: 'FAST SPIN',
+      stageLabel: 'FAST SPIN',
       minPct: 76,
       maxPct: 87,
       minValue: 90,
@@ -345,11 +341,74 @@ export function getCadenceZones(): ZoneDefinition[] {
       zone: 5,
       ...ZONE_PALETTE[5],
       name: 'Sprint RPM',
-      otfName: 'SPRINT',
+      stageLabel: 'SPRINT',
       minPct: 88,
       maxPct: 100,
       minValue: 105,
       maxValue: 130,
+    },
+  ];
+}
+
+/**
+ * 5-Color Echelon EX-3 Resistance Zones (Levels 1-32):
+ * Z1 Grey:   1-8   (Light Spin)
+ * Z2 Blue:   9-15  (Flat Road)
+ * Z3 Green:  16-21 (Base Gear)
+ * Z4 Orange: 22-26 (Heavy Push)
+ * Z5 Red:    27-32 (Max Climb)
+ */
+export function getResistanceZones(): ZoneDefinition[] {
+  return [
+    {
+      zone: 1,
+      ...ZONE_PALETTE[1],
+      name: 'Light Gear',
+      stageLabel: 'LIGHT GEAR',
+      minPct: 0,
+      maxPct: 25,
+      minValue: 1,
+      maxValue: 8,
+    },
+    {
+      zone: 2,
+      ...ZONE_PALETTE[2],
+      name: 'Flat Road',
+      stageLabel: 'FLAT ROAD',
+      minPct: 26,
+      maxPct: 47,
+      minValue: 9,
+      maxValue: 15,
+    },
+    {
+      zone: 3,
+      ...ZONE_PALETTE[3],
+      name: 'Base Gear',
+      stageLabel: 'BASE GEAR',
+      minPct: 48,
+      maxPct: 66,
+      minValue: 16,
+      maxValue: 21,
+    },
+    {
+      zone: 4,
+      ...ZONE_PALETTE[4],
+      name: 'Push Climb',
+      stageLabel: 'PUSH GEAR',
+      minPct: 67,
+      maxPct: 81,
+      minValue: 22,
+      maxValue: 26,
+    },
+    {
+      zone: 5,
+      ...ZONE_PALETTE[5],
+      name: 'Max Climb',
+      stageLabel: 'MAX CLIMB',
+      minPct: 82,
+      maxPct: 100,
+      minValue: 27,
+      maxValue: 32,
     },
   ];
 }
@@ -365,14 +424,14 @@ export function resolveZone(value: number, zones: ZoneDefinition[]): ZoneDefinit
 }
 
 /**
- * Computes normalized 0..100% needle position across the 5-segment Garmin-style bar
- * so each of the 5 visual blocks represents exactly 20% width while positioning the
+ * Computes normalized 0..100% needle position across the 5-segment zone bar
+ * so each of the 5 visual blocks represents 20% width while positioning the
  * marker proportionally within the active zone's numeric span.
  */
 export function computeSegmentedGaugeProgress(value: number, zones: ZoneDefinition[]): number {
   if (value <= 0) return 0;
   const active = resolveZone(value, zones);
-  const idx = active.zone - 1; // 0..4
+  const idx = active.zone - 1;
   const segStart = idx * 20;
   const minVal = active.minValue;
   const maxVal = active.maxValue ?? minVal * 1.25;
@@ -382,10 +441,9 @@ export function computeSegmentedGaugeProgress(value: number, zones: ZoneDefiniti
 }
 
 /**
- * Determines overall studio intensity banner zone:
- * Uses Heart Rate zone when Garmin HR is streaming (true Orangetheory OTbeat experience),
- * or seamlessly falls back to Power zone (% FTP) if riding without an HR sensor,
- * or takes the higher effort cue when sprinting before HR catches up!
+ * Determines overall JBF studio intensity banner zone:
+ * Uses Heart Rate zone when HR is streaming, or seamlessly falls back to Power zone (% FTP)
+ * if riding without an HR sensor, or reflects immediate Zone 4/5 power surges.
  */
 export function resolveHeadlineEffortZone(
   hrBpm: number,
@@ -398,7 +456,6 @@ export function resolveHeadlineEffortZone(
   if (hrBpm > 40 && watts > 0) {
     const hrZ = resolveZone(hrBpm, hrZones);
     const pwrZ = resolveZone(watts, powerZones);
-    // Primarily HR-driven like Orangetheory, unless rider launches an immediate Zone 4/5 power surge
     if (pwrZ.zone >= 4 && pwrZ.zone > hrZ.zone) {
       return { zoneDef: pwrZ, driver: 'power' };
     }
@@ -438,9 +495,6 @@ export function formatDuration(totalSeconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-/**
- * Computes Normalized Power (NP) using 30-second rolling average raised to 4th power.
- */
 export function computeNormalizedPower(wattsSeries: number[]): number {
   if (wattsSeries.length === 0) return 0;
   if (wattsSeries.length < 30) {

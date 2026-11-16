@@ -44,7 +44,7 @@ export function AthleteProfileModal({
           <div>
             <h2 className="modal-title">Athlete Stats &amp; Zone Orientation</h2>
             <p className="modal-subtitle">
-              All power bars, heart rate splat zones, workout targets, W/kg, and speed physics orient
+              All power bars, heart rate burn zones, workout targets, W/kg, and speed physics orient
               immediately to your numbers.
             </p>
           </div>
@@ -205,7 +205,7 @@ export function AthleteProfileModal({
           >
             <span>LIVE CALIBRATED ZONES</span>
             <span>
-              Threshold: {profile.ftpWatts}W ({thresholdWkg} W/kg) · Splat HR ≥{' '}
+              Threshold: {profile.ftpWatts}W ({thresholdWkg} W/kg) · Burn HR ≥{' '}
               {hrZones[3].minValue} bpm
             </span>
           </div>
@@ -238,7 +238,7 @@ export function AthleteProfileModal({
             id="reset-athlete-defaults"
             onClick={() => onChangeProfile({ ...DEFAULT_ATHLETE_PROFILE })}
           >
-            <RotateCcw size={14} /> Reset to JB Defaults (5&apos;9&quot;, 168#, 257W, 196 HR)
+            <RotateCcw size={14} /> Reset to JBF Defaults (5&apos;9&quot;, 168#, 257W, 196 HR)
           </button>
           <button type="button" className="btn btn-primary" id="save-athlete-done" onClick={onClose}>
             Done
