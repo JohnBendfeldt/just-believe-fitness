@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { RotateCcw, X } from 'lucide-react';
 import type { AthleteProfile, PowerCurveType } from '../types/fitness';
 import {
@@ -8,6 +9,51 @@ import {
   getPowerZones,
   lbsToKg,
 } from '../utils/zones';
+
+interface ClampedNumberInputProps {
+  id: string;
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (next: number) => void;
+}
+
+// Keeps the raw text while typing so partial entries (e.g. "1" on the way to "165")
+// aren't clamped/overwritten per keystroke. Clamps and saves on blur / Enter.
+function ClampedNumberInput({ id, value, min, max, onCommit }: ClampedNumberInputProps) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = Number(draft);
+    if (draft.trim() !== '' && Number.isFinite(parsed)) {
+      onCommit(Math.max(min, Math.min(max, Math.round(parsed))));
+    }
+    setDraft(null);
+  };
+
+  return (
+    <input
+      id={id}
+      type="number"
+      min={min}
+      max={max}
+      value={draft ?? String(value)}
+      onChange={(e) => {
+        const text = e.target.value;
+        setDraft(text);
+        const parsed = Number(text);
+        if (text.trim() !== '' && Number.isFinite(parsed) && parsed >= min && parsed <= max) {
+          onCommit(Math.round(parsed));
+        }
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+      }}
+    />
+  );
+}
 
 interface AthleteProfileModalProps {
   isOpen: boolean;
@@ -104,21 +150,12 @@ export function AthleteProfileModal({
 
           <div className="field">
             <label htmlFor="athlete-weight-lbs">Weight (lbs) · {weightKg} kg</label>
-            <input
+            <ClampedNumberInput
               id="athlete-weight-lbs"
-              type="number"
               min={75}
               max={400}
               value={profile.weightLbs}
-              onChange={(e) =>
-                updateField(
-                  'weightLbs',
-                  Math.max(
-                    75,
-                    Math.min(400, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.weightLbs)
-                  )
-                )
-              }
+              onCommit={(n) => updateField('weightLbs', n)}
             />
           </div>
 
@@ -126,41 +163,23 @@ export function AthleteProfileModal({
             <label htmlFor="athlete-ftp-watts">
               FTP (Watts) · {thresholdWkg} W/kg
             </label>
-            <input
+            <ClampedNumberInput
               id="athlete-ftp-watts"
-              type="number"
               min={60}
               max={550}
               value={profile.ftpWatts}
-              onChange={(e) =>
-                updateField(
-                  'ftpWatts',
-                  Math.max(
-                    60,
-                    Math.min(550, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.ftpWatts)
-                  )
-                )
-              }
+              onCommit={(n) => updateField('ftpWatts', n)}
             />
           </div>
 
           <div className="field">
             <label htmlFor="athlete-max-hr">Max Heart Rate (BPM)</label>
-            <input
+            <ClampedNumberInput
               id="athlete-max-hr"
-              type="number"
               min={120}
               max={230}
               value={profile.maxHrBpm}
-              onChange={(e) =>
-                updateField(
-                  'maxHrBpm',
-                  Math.max(
-                    120,
-                    Math.min(230, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.maxHrBpm)
-                  )
-                )
-              }
+              onCommit={(n) => updateField('maxHrBpm', n)}
             />
           </div>
 
