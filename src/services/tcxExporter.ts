@@ -65,7 +65,7 @@ export function buildRideTcxXml(ride: SavedRide): string {
     <Activity Sport="Biking">
       <Id>${startIso}</Id>
       <Notes>${escapeXml(
-        `${ride.title} · ${ride.burnPoints} Burn pts · Avg ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg)`
+        `${ride.title} · ${ride.burnPoints} Burn pts · Avg ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg)\njustbelievefitness.netlify.app`
       )}</Notes>
       <Lap StartTime="${startIso}">
         <TotalTimeSeconds>${ride.durationSec}</TotalTimeSeconds>

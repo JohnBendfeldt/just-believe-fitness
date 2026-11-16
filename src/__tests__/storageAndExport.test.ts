@@ -115,6 +115,7 @@ describe('Garmin & Strava TrainingCenterDatabase (.TCX) Exporter', () => {
     expect(xml).toContain('<Activity Sport="Biking">');
     expect(xml).toContain('Push &amp; Surge &lt;All-Out&gt; &quot;Test&quot;');
     expect(xml).toContain('16 Burn pts');
+    expect(xml).toContain('\njustbelievefitness.netlify.app</Notes>');
     expect(xml).toContain('<ns3:Watts>122</ns3:Watts>');
     expect(xml).toContain('<Cadence>84</Cadence>');
     expect(xml).toContain('<HeartRateBpm>');

@@ -156,6 +156,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+export const JBF_STRAVA_APP_DOMAIN = 'justbelievefitness.netlify.app';
+
 export function buildRideSummaryDescription(ride: SavedRide): string {
   const bikeTag = ride.bikeLabel || 'Indoor Bike';
   const statsLine = [
@@ -168,7 +170,9 @@ export function buildRideSummaryDescription(ride: SavedRide): string {
     .join(' • ');
 
   const trimmedNotes = ride.notes?.trim();
-  return trimmedNotes ? `${trimmedNotes}\n\n${statsLine}` : statsLine;
+  const alreadyHasDomain = trimmedNotes?.toLowerCase().includes(JBF_STRAVA_APP_DOMAIN) ?? false;
+  const summaryFooter = alreadyHasDomain ? statsLine : `${statsLine}\n${JBF_STRAVA_APP_DOMAIN}`;
+  return trimmedNotes ? `${trimmedNotes}\n\n${summaryFooter}` : summaryFooter;
 }
 
 export async function uploadRideToStrava(

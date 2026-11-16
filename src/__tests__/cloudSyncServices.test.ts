@@ -32,9 +32,21 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
     const desc = buildRideSummaryDescription(rideWithNotes);
     expect(desc.startsWith('Loved the climb block!\n\nJust Believe Fitness (JBF)')).toBe(true);
     expect(desc).toContain('Burn Points: 14');
+    expect(desc.endsWith('\njustbelievefitness.netlify.app')).toBe(true);
+    expect(desc).not.toContain('https://justbelievefitness.netlify.app');
+    expect(desc).not.toContain('justbelievefitness.netlify.app/');
 
     const rideNoNotes = makeSampleRide({ notes: undefined });
-    expect(buildRideSummaryDescription(rideNoNotes).startsWith('Just Believe Fitness')).toBe(true);
+    const descNoNotes = buildRideSummaryDescription(rideNoNotes);
+    expect(descNoNotes.startsWith('Just Believe Fitness')).toBe(true);
+    expect(descNoNotes.endsWith('\njustbelievefitness.netlify.app')).toBe(true);
+
+    // Avoid duplicate link if the rider already wrote justbelievefitness.netlify.app in notes
+    const rideAlreadyLinked = makeSampleRide({
+      notes: 'Great ride on justbelievefitness.netlify.app',
+    });
+    const descDeduped = buildRideSummaryDescription(rideAlreadyLinked);
+    expect(descDeduped.match(/justbelievefitness\.netlify\.app/g)?.length).toBe(1);
   });
 
   it('exchanges OAuth code via /api/strava-token and imports athlete FTP & kg->lbs weight', async () => {

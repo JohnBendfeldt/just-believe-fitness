@@ -110,7 +110,9 @@ export function RidePhotoStudio({
       if (typeof nav.share === 'function' && (!nav.canShare || nav.canShare({ files: [file] }))) {
         await nav.share({
           title: title.trim() || ride.title,
-          text: notes.trim() || `${ride.burnPoints} Burn Points on Just Believe Fitness!`,
+          text:
+            notes.trim() ||
+            `${ride.burnPoints} Burn Points on Just Believe Fitness!\njustbelievefitness.netlify.app`,
           files: [file],
         });
       } else {
