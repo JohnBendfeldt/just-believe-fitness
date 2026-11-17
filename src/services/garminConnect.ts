@@ -4,8 +4,11 @@ import type {
   GarminRemoteActivity,
   SavedRide,
 } from '../types/fitness';
-import { buildRideTcxXml } from './tcxExporter';
-import { buildRideSummaryDescription } from './strava';
+import {
+  buildRideSummaryDescription,
+  buildRideTcxXml,
+  normalizeRideTitle,
+} from './tcxExporter';
 import { loadGarminConfig, saveGarminConfig } from './storage';
 
 const GARMIN_SYNC_ENDPOINT = '/api/garmin-sync';
@@ -210,7 +213,7 @@ export async function uploadRideToGarmin(
     tokens: config.tokens,
     tcxXml,
     filename: `jbf-${ride.id}.tcx`,
-    title: ride.title,
+    title: normalizeRideTitle(ride.title),
     description,
     uploadMode: options?.uploadMode || 'device',
     startedAtIso: ride.startedAtIso,
@@ -239,7 +242,7 @@ export async function updateGarminActivityDetails(ride: SavedRide): Promise<void
     action: 'update_meta',
     tokens: config.tokens,
     activityId: ride.garminActivityId,
-    title: ride.title,
+    title: normalizeRideTitle(ride.title),
     description: buildRideSummaryDescription(ride),
   });
 

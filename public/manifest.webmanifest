@@ -1,6 +1,6 @@
 {
   "name": "Just Believe Fitness",
-  "short_name": "JBF",
+  "short_name": "Just Believe",
   "description": "5-zone indoor cycling studio with Burn Points, direct Bluetooth for all Echelon & FTMS stationary bikes plus BLE heart rate, YouTube PiP, and Garmin + Strava sync.",
   "start_url": "/",
   "display": "standalone",

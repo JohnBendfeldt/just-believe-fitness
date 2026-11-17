@@ -9,6 +9,41 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
+export const JBF_STRAVA_APP_DOMAIN = 'jbfit.studio';
+
+/**
+ * Cleans legacy "JBF " prefixes and redundant "(23 min)" suffixes when
+ * the workout title already includes its duration (e.g. "23-Min Signature Burn").
+ */
+export function normalizeRideTitle(title: string): string {
+  let cleaned = title.trim().replace(/^JBF\s+/i, '');
+  if (/\b\d+\s*-?\s*min/i.test(cleaned)) {
+    cleaned = cleaned.replace(/\s*\(\d+\s*(?:min|m)\)\s*$/i, '');
+  }
+  return cleaned;
+}
+
+/**
+ * Shared summary description sent to Strava, Garmin Connect, and embedded TCX <Notes>.
+ * Avoids repeating the workout title/duration and appends bare jbfit.studio below the summary.
+ */
+export function buildRideSummaryDescription(ride: SavedRide): string {
+  const bikeTag = ride.bikeLabel || 'Indoor Bike';
+  const statsLine = [
+    `Just Believe Fitness · ${bikeTag}`,
+    `Burn Points: ${ride.burnPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
+    ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
+    `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
+  ]
+    .filter(Boolean)
+    .join(' • ');
+
+  const trimmedNotes = ride.notes?.trim();
+  const alreadyHasDomain = trimmedNotes?.toLowerCase().includes(JBF_STRAVA_APP_DOMAIN) ?? false;
+  const summaryFooter = alreadyHasDomain ? statsLine : `${statsLine}\n${JBF_STRAVA_APP_DOMAIN}`;
+  return trimmedNotes ? `${trimmedNotes}\n\n${summaryFooter}` : summaryFooter;
+}
+
 /**
  * Generates a Garmin / Strava Training Center XML (.tcx) file containing
  * 1-second indoor cycling telemetry: Power (<ns3:Watts>), Cadence (<Cadence>),
@@ -64,9 +99,7 @@ export function buildRideTcxXml(ride: SavedRide): string {
   <Activities>
     <Activity Sport="Biking">
       <Id>${startIso}</Id>
-      <Notes>${escapeXml(
-        `${ride.title} · ${ride.burnPoints} Burn pts · Avg ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg)\njbfit.studio`
-      )}</Notes>
+      <Notes>${escapeXml(buildRideSummaryDescription(ride))}</Notes>
       <Lap StartTime="${startIso}">
         <TotalTimeSeconds>${ride.durationSec}</TotalTimeSeconds>
         <DistanceMeters>${ride.distanceMeters.toFixed(2)}</DistanceMeters>

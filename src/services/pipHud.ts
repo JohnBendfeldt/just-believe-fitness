@@ -185,7 +185,7 @@ export function renderTelemetryHudCanvas(
   ctx.textAlign = 'left';
   const leftText = segmentLabel
     ? `${headline.stageLabel}  ·  ${segmentLabel.toUpperCase()}`
-    : `JBF  ·  ${headline.stageLabel}`;
+    : `JUST BELIEVE FITNESS  ·  ${headline.stageLabel}`;
   ctx.fillText(leftText, 20, bannerH / 2, 360);
 
   // Timer + Burn Points badge on right of banner

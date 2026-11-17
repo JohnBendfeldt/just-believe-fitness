@@ -1,6 +1,6 @@
-# Just Believe Fitness (JBF)
+# Just Believe Fitness
 
-A **100% local-first, privacy-first** 5-zone color-coded indoor cycling studio PWA built for **Android phones/tablets** and desktop Chrome — connecting **directly** to **any Echelon stationary bike**, **standard FTMS smart bikes & trainers**, **Bluetooth power pedals**, or **BLE cadence sensors**, plus **any Bluetooth heart rate monitor**, with **zero accounts, zero paywalls, and zero middleman bridge apps**.
+A **100% local-first, privacy-first** 5-zone color-coded indoor cycling studio PWA (`jbfit.studio`) built for **Android phones/tablets** and desktop Chrome — connecting **directly** to **any Echelon stationary bike**, **standard FTMS smart bikes & trainers**, **Bluetooth power pedals**, or **BLE cadence sensors**, plus **any Bluetooth heart rate monitor**, with **zero accounts, zero paywalls, and zero middleman bridge apps**.
 
 ## Supported Stationary Bikes & Sensors
 

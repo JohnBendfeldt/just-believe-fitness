@@ -52,8 +52,8 @@ import { EchelonBikeConnection } from './services/ble/echelonBle';
 import { GarminHeartRateConnection } from './services/ble/garminHrBle';
 import {
   WORKOUT_TEMPLATES,
+  formatWorkoutOptionLabel,
   getSegmentTargetsForAthlete,
-  getTotalWorkoutDurationSec,
 } from './data/workouts';
 import {
   deleteSavedRide,
@@ -495,11 +495,13 @@ export function App() {
   // Pre-ride preview: while idle, stream live/simulated readings into a rolling buffer so the
   // timeline reacts to Simulate or a paired bike before Start. Never saved or counted in stats.
   useEffect(() => {
-    if (rideState !== 'idle') return;
-    if (!telemetry.isSimulating && !telemetry.bikeConnected && !telemetry.hrConnected) {
-      setPreviewPoints([]);
+    if (
+      rideState !== 'idle' ||
+      (!telemetry.isSimulating && !telemetry.bikeConnected && !telemetry.hrConnected)
+    ) {
       return;
     }
+    const sessionStartMs = Date.now();
     const timer = window.setInterval(() => {
       const t = telemetryRef.current;
       const p = profileRef.current;
@@ -517,7 +519,10 @@ export function App() {
         hrZone: resolveZone(t.heartRateBpm, getHrZones(p.maxHrBpm)).zone,
         powerZone: resolveZone(t.powerWatts, getPowerZones(p.ftpWatts)).zone,
       };
-      setPreviewPoints((prev) => [...prev.slice(-239), point]);
+      setPreviewPoints((prev) => [
+        ...prev.filter((pt) => pt.timestampMs >= sessionStartMs).slice(-239),
+        point,
+      ]);
     }, 1000);
     return () => window.clearInterval(timer);
   }, [rideState, telemetry.isSimulating, telemetry.bikeConnected, telemetry.hrConnected]);
@@ -1202,10 +1207,7 @@ export function App() {
           >
             {WORKOUT_TEMPLATES.map((w) => (
               <option key={w.id} value={w.id}>
-                {w.name}
-                {!w.isFreeRide
-                  ? ` (${Math.round(getTotalWorkoutDurationSec(w) / 60)} min)`
-                  : ''}
+                {formatWorkoutOptionLabel(w)}
               </option>
             ))}
           </select>
@@ -1550,7 +1552,13 @@ export function App() {
 
       {/* Live Garmin-Style Color-Coded Timeline Graph + 5-Zone Distribution */}
       <LiveZoneGraph
-        points={rideState === 'idle' ? previewPoints : trackPoints}
+        points={
+          rideState === 'idle'
+            ? telemetry.isSimulating || telemetry.bikeConnected || telemetry.hrConnected
+              ? previewPoints
+              : []
+            : trackPoints
+        }
         profile={profile}
         hrZoneSeconds={hrZoneSeconds}
         powerZoneSeconds={powerZoneSeconds}

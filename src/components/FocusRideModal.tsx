@@ -28,7 +28,7 @@ import {
   formatDuration,
 } from '../utils/zones';
 import { isBrowserFullscreen, toggleBrowserFullscreen } from '../utils/fullscreen';
-import { getTotalWorkoutDurationSec } from '../data/workouts';
+import { formatWorkoutOptionLabel } from '../data/workouts';
 import { ZoneSpeedometerCard } from './ZoneSpeedometerCard';
 import { RideStatsQuadCard } from './RideStatsQuadCard';
 
@@ -206,10 +206,7 @@ export function FocusRideModal({
             >
               {workouts.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.name}
-                  {!w.isFreeRide
-                    ? ` (${Math.round(getTotalWorkoutDurationSec(w) / 60)}m)`
-                    : ''}
+                  {formatWorkoutOptionLabel(w, 'm')}
                 </option>
               ))}
             </select>

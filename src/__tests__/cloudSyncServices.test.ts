@@ -4,6 +4,7 @@ import {
   buildStravaAuthorizeUrl,
   exchangeStravaOAuthCode,
   getValidStravaAccessToken,
+  normalizeRideTitle,
   updateStravaActivityDetails,
   uploadRideToStrava,
 } from '../services/strava';
@@ -47,6 +48,12 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
     });
     const descDeduped = buildRideSummaryDescription(rideAlreadyLinked);
     expect(descDeduped.match(/jbfit\.studio/g)?.length).toBe(1);
+
+    // Normalize legacy "JBF " prefixes and redundant "(23 min)" suffixes on workout titles
+    expect(normalizeRideTitle('JBF 23-Min Signature Burn')).toBe('23-Min Signature Burn');
+    expect(normalizeRideTitle('23-Min Signature Burn (23 min)')).toBe('23-Min Signature Burn');
+    expect(normalizeRideTitle('20-Min Burn Express (20m)')).toBe('20-Min Burn Express');
+    expect(normalizeRideTitle('First workout post Injury')).toBe('First workout post Injury');
   });
 
   it('exchanges OAuth code via /api/strava-token and imports athlete FTP & kg->lbs weight', async () => {

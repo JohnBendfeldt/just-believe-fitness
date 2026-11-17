@@ -365,6 +365,21 @@ export function getTotalWorkoutDurationSec(workout: WorkoutTemplate): number {
   return workout.segments.reduce((acc, s) => acc + s.durationSec, 0);
 }
 
+/**
+ * Formats a workout's selector label without repeating the duration when
+ * the workout name already includes the time (e.g. "23-Min Signature Burn").
+ */
+export function formatWorkoutOptionLabel(
+  workout: WorkoutTemplate,
+  unit: 'min' | 'm' = 'min'
+): string {
+  if (workout.isFreeRide || /\b\d+\s*-?\s*min/i.test(workout.name)) {
+    return workout.name;
+  }
+  const mins = Math.round(getTotalWorkoutDurationSec(workout) / 60);
+  return unit === 'm' ? `${workout.name} (${mins}m)` : `${workout.name} (${mins} min)`;
+}
+
 export function getSegmentTargetsForAthlete(
   segment: WorkoutSegment,
   profile: AthleteProfile,

@@ -30,6 +30,7 @@ import {
 } from '../services/ble/echelonPowerCurve';
 import {
   WORKOUT_TEMPLATES,
+  formatWorkoutOptionLabel,
   getSegmentTargetsForAthlete,
   getTotalWorkoutDurationSec,
 } from '../data/workouts';
@@ -271,8 +272,11 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
 
       if (tpl.isFreeRide) {
         expect(getTotalWorkoutDurationSec(tpl)).toBe(0);
+        expect(formatWorkoutOptionLabel(tpl)).toBe(tpl.name);
       } else {
         expect(getTotalWorkoutDurationSec(tpl)).toBeGreaterThanOrEqual(1200);
+        expect(formatWorkoutOptionLabel(tpl)).toBe(tpl.name);
+        expect(formatWorkoutOptionLabel(tpl, 'm')).toBe(tpl.name);
         for (const seg of tpl.segments) {
           expect(seg.durationSec).toBeGreaterThan(0);
           expect(seg.coachingNote).not.toMatch(bannedPattern);
@@ -287,6 +291,15 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
         }
       }
     }
+
+    // Custom workout without duration in its name still appends "(15 min)" / "(15m)"
+    const customNoTime = {
+      ...WORKOUT_TEMPLATES[1],
+      name: 'Tabata Power',
+      segments: [{ ...WORKOUT_TEMPLATES[1].segments[0], durationSec: 900 }],
+    };
+    expect(formatWorkoutOptionLabel(customNoTime)).toBe('Tabata Power (15 min)');
+    expect(formatWorkoutOptionLabel(customNoTime, 'm')).toBe('Tabata Power (15m)');
   });
 });
 

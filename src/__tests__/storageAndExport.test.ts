@@ -105,7 +105,8 @@ describe('100% Local-First Browser Storage (localStorage & IndexedDB)', () => {
 describe('Garmin & Strava TrainingCenterDatabase (.TCX) Exporter', () => {
   it('generates valid TCX v2 XML with Watts, Cadence, HeartRateBpm, Burn Points, and XML escaping', () => {
     const ride = makeSampleRide({
-      title: 'Push & Surge <All-Out> "Test"',
+      title: '23-Min Signature Burn',
+      notes: 'Push & Surge <All-Out> "Test"',
       burnPoints: 16,
     });
 
@@ -114,7 +115,9 @@ describe('Garmin & Strava TrainingCenterDatabase (.TCX) Exporter', () => {
     expect(xml).toContain('<TrainingCenterDatabase');
     expect(xml).toContain('<Activity Sport="Biking">');
     expect(xml).toContain('Push &amp; Surge &lt;All-Out&gt; &quot;Test&quot;');
-    expect(xml).toContain('16 Burn pts');
+    expect(xml).toContain('Just Believe Fitness');
+    expect(xml).toContain('Burn Points: 16');
+    expect(xml).not.toContain('<Notes>23-Min Signature Burn');
     expect(xml).toContain('\njbfit.studio</Notes>');
     expect(xml).toContain('<ns3:Watts>122</ns3:Watts>');
     expect(xml).toContain('<Cadence>84</Cadence>');

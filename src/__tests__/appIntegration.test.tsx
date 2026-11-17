@@ -75,10 +75,21 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
 
     render(<App />);
 
+    // Regression guard: workout dropdown options do NOT repeat "(23 min)" when time is in the name
+    const mainSelect = document.getElementById('workout-template-select') as HTMLSelectElement;
+    const mainOptionLabels = Array.from(mainSelect.options).map((o) => o.textContent);
+    expect(mainOptionLabels).toContain('23-Min Signature Burn');
+    expect(mainOptionLabels.some((t) => t?.includes('(23 min)'))).toBe(false);
+
     fireEvent.click(document.getElementById('open-focus-mode-btn')!);
     const modal = document.getElementById('focus-workout-modal');
     expect(modal).toBeInTheDocument();
     expect(requestFsSpy).toHaveBeenCalled();
+
+    const focusSelect = document.getElementById('focus-workout-select') as HTMLSelectElement;
+    const focusOptionLabels = Array.from(focusSelect.options).map((o) => o.textContent);
+    expect(focusOptionLabels).toContain('23-Min Signature Burn');
+    expect(focusOptionLabels.some((t) => t?.includes('(23m)'))).toBe(false);
 
     // Regression guard: Start Workout button must be prominently rendered inside .focus-transport-dock
     const startBtn = document.getElementById('focus-play-resume-btn');

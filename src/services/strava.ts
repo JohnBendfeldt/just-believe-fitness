@@ -1,6 +1,13 @@
 import type { SavedRide, StravaConfig } from '../types/fitness';
-import { buildRideTcxXml } from './tcxExporter';
+import {
+  JBF_STRAVA_APP_DOMAIN,
+  buildRideSummaryDescription,
+  buildRideTcxXml,
+  normalizeRideTitle,
+} from './tcxExporter';
 import { loadStravaConfig, saveStravaConfig } from './storage';
+
+export { JBF_STRAVA_APP_DOMAIN, buildRideSummaryDescription, normalizeRideTitle };
 
 const STRAVA_AUTH_URL = 'https://www.strava.com/oauth/authorize';
 const STRAVA_TOKEN_URL = 'https://www.strava.com/oauth/token';
@@ -156,25 +163,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-export const JBF_STRAVA_APP_DOMAIN = 'jbfit.studio';
-
-export function buildRideSummaryDescription(ride: SavedRide): string {
-  const bikeTag = ride.bikeLabel || 'Indoor Bike';
-  const statsLine = [
-    `Just Believe Fitness · ${bikeTag}`,
-    `Burn Points: ${ride.burnPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
-    ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
-    `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
-  ]
-    .filter(Boolean)
-    .join(' • ');
-
-  const trimmedNotes = ride.notes?.trim();
-  const alreadyHasDomain = trimmedNotes?.toLowerCase().includes(JBF_STRAVA_APP_DOMAIN) ?? false;
-  const summaryFooter = alreadyHasDomain ? statsLine : `${statsLine}\n${JBF_STRAVA_APP_DOMAIN}`;
-  return trimmedNotes ? `${trimmedNotes}\n\n${summaryFooter}` : summaryFooter;
-}
-
 export async function uploadRideToStrava(
   ride: SavedRide,
   onProgress?: (statusText: string) => void
@@ -191,7 +179,7 @@ export async function uploadRideToStrava(
   form.append('activity_type', 'ride');
   form.append('SportType', 'VirtualRide');
   form.append('trainer', '1');
-  form.append('name', ride.title);
+  form.append('name', normalizeRideTitle(ride.title));
   form.append('description', description);
   form.append('external_id', `jbf-${ride.id}.tcx`);
 
@@ -245,7 +233,7 @@ export async function updateStravaActivityDetails(ride: SavedRide): Promise<void
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      name: ride.title,
+      name: normalizeRideTitle(ride.title),
       description: buildRideSummaryDescription(ride),
     }),
   });
