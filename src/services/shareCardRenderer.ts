@@ -313,7 +313,9 @@ export function renderRideShareCanvas(
   ctx.font = '600 22px "JetBrains Mono", monospace';
   ctx.fillText(dateLabel.toUpperCase(), padX + 92, 116);
 
-  drawBurnPill(ctx, SHARE_CARD_WIDTH - padX, 60, ride.burnPoints);
+  if (ride.burnPoints > 0) {
+    drawBurnPill(ctx, SHARE_CARD_WIDTH - padX, 60, ride.burnPoints);
+  }
 
   // Workout Title
   ctx.save();

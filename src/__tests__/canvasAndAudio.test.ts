@@ -37,6 +37,21 @@ describe('Post-Ride Photo & Stat Overlay Canvas Compositor (1080×1350)', () => 
       expect(textCalls.some((t) => t.includes('18 BURN PTS'))).toBe(true);
     }
 
+    // Regression guard: 0 Burn Points omits the top-right BURN PTS pill across all 3 styles
+    const zeroBurnRide = makeSampleRide({ burnPoints: 0 });
+    for (const style of ['timeline', 'rings', 'minimal'] as const) {
+      const zeroCanvas = document.createElement('canvas');
+      renderRideShareCanvas(zeroCanvas, {
+        ride: zeroBurnRide,
+        photo: null,
+        overlayStyle: style,
+      });
+      const zeroTexts = getRecordedCanvasCalls(zeroCanvas)
+        .filter((c) => c.op === 'fillText')
+        .map((c) => String(c.args[0]));
+      expect(zeroTexts.some((t) => t.includes('BURN PTS'))).toBe(false);
+    }
+
     const blob = await canvasToPngBlob(canvas);
     expect(blob.type).toBe('image/png');
     expect(blob.size).toBeGreaterThan(0);

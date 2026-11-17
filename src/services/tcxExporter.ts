@@ -29,9 +29,10 @@ export function normalizeRideTitle(title: string): string {
  */
 export function buildRideSummaryDescription(ride: SavedRide): string {
   const bikeTag = ride.bikeLabel || 'Indoor Bike';
+  const powerPart = `Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`;
   const statsLine = [
     `Just Believe Fitness · ${bikeTag}`,
-    `Burn Points: ${ride.burnPoints} | Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`,
+    ride.burnPoints > 0 ? `Burn Points: ${ride.burnPoints} | ${powerPart}` : powerPart,
     ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
     `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
   ]

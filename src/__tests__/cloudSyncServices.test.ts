@@ -42,6 +42,11 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
     expect(descNoNotes.startsWith('Just Believe Fitness')).toBe(true);
     expect(descNoNotes.endsWith('\njbfit.studio')).toBe(true);
 
+    // Omit "Burn Points: 0" when rider finishes with 0 Burn Points (e.g. Zone 2 recovery spin)
+    const zeroBurnDesc = buildRideSummaryDescription(makeSampleRide({ burnPoints: 0 }));
+    expect(zeroBurnDesc).not.toContain('Burn Points');
+    expect(zeroBurnDesc).toContain('Avg Power:');
+
     // Avoid duplicate link if the rider already wrote jbfit.studio in notes
     const rideAlreadyLinked = makeSampleRide({
       notes: 'Great ride on jbfit.studio',

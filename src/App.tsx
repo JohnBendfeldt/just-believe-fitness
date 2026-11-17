@@ -867,7 +867,8 @@ export function App() {
 
     try {
       setUploadingRideId(ride.id);
-      let updatedRide: SavedRide = { ...ride };
+      const latestStored = (await listSavedRides()).find((r) => r.id === ride.id);
+      let updatedRide: SavedRide = { ...(latestStored ?? ride) };
       const uploadedTargets: string[] = [];
 
       if (wantsGarmin && !updatedRide.garminActivityId) {
@@ -906,9 +907,7 @@ export function App() {
       await saveRideToDb(updatedRide);
       const nextList = await listSavedRides();
       setSavedRides(nextList);
-      if (highlightedRide?.id === ride.id) {
-        setHighlightedRide(updatedRide);
-      }
+      setHighlightedRide((prev) => (prev?.id === ride.id ? updatedRide : prev));
 
       if (uploadedTargets.length > 0) {
         showToast(`Workout pushed to ${uploadedTargets.join(' + ')}!`);
@@ -923,12 +922,11 @@ export function App() {
   };
 
   const handleUpdateRideMeta = async (updatedRide: SavedRide) => {
+    setHighlightedRide((prev) => (prev?.id === updatedRide.id ? updatedRide : prev));
+    setSavedRides((prev) => prev.map((r) => (r.id === updatedRide.id ? updatedRide : r)));
     await saveRideToDb(updatedRide);
     const nextList = await listSavedRides();
     setSavedRides(nextList);
-    if (highlightedRide?.id === updatedRide.id) {
-      setHighlightedRide(updatedRide);
-    }
   };
 
   const handleSyncRemoteMeta = async (updatedRide: SavedRide) => {

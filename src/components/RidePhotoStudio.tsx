@@ -112,7 +112,9 @@ export function RidePhotoStudio({
           title: title.trim() || ride.title,
           text:
             notes.trim() ||
-            `${ride.burnPoints} Burn Points on Just Believe Fitness!\njbfit.studio`,
+            (ride.burnPoints > 0
+              ? `${ride.burnPoints} Burn Points on Just Believe Fitness!\njbfit.studio`
+              : `Avg ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg) on Just Believe Fitness!\njbfit.studio`),
           files: [file],
         });
       } else {

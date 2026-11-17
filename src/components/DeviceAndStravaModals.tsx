@@ -598,21 +598,23 @@ export function HistoryAndStravaModal({
                   {Math.round(highlightedRide.caloriesKcal)} kcal
                 </div>
               </div>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: '#F97316',
-                  color: '#140700',
-                  fontWeight: 800,
-                  padding: '6px 12px',
-                  borderRadius: '999px',
-                  fontSize: '0.88rem',
-                }}
-              >
-                <Flame size={16} /> {highlightedRide.burnPoints} BURN PTS
-              </div>
+              {highlightedRide.burnPoints > 0 && (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: '#F97316',
+                    color: '#140700',
+                    fontWeight: 800,
+                    padding: '6px 12px',
+                    borderRadius: '999px',
+                    fontSize: '0.88rem',
+                  }}
+                >
+                  <Flame size={16} /> {highlightedRide.burnPoints} BURN PTS
+                </div>
+              )}
             </div>
 
             <div className="summary-metrics-grid">
@@ -1141,10 +1143,13 @@ export function HistoryAndStravaModal({
               <div className="history-item" key={r.id}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>
-                    {r.title}{' '}
-                    <span style={{ color: '#f97316', fontSize: '0.8rem' }}>
-                      · ★ {r.burnPoints} Burn pts
-                    </span>
+                    {r.title}
+                    {r.burnPoints > 0 && (
+                      <span style={{ color: '#f97316', fontSize: '0.8rem' }}>
+                        {' '}
+                        · ★ {r.burnPoints} Burn pts
+                      </span>
+                    )}
                   </div>
                   <div
                     className="tabular"
