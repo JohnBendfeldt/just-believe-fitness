@@ -93,6 +93,8 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
   it('strava-token: handles GET status probe, 405 guard, 400 validation, and POST OAuth forwarding', async () => {
     const getResp = await stravaHandler({ httpMethod: 'GET' });
     expect(getResp.statusCode).toBe(200);
+    expect(getResp.headers['Cache-Control']).toBe('no-store');
+    expect(getResp.headers['X-Content-Type-Options']).toBe('nosniff');
 
     const putResp = await stravaHandler({ httpMethod: 'PUT' });
     expect(putResp.statusCode).toBe(405);
@@ -102,6 +104,12 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
       body: JSON.stringify({ grant_type: 'authorization_code', code: 'abc' }),
     });
     expect(missingCreds.statusCode).toBe(400);
+
+    const badGrant = await stravaHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({ client_id: '123', client_secret: '456', grant_type: 'client_credentials' }),
+    });
+    expect(badGrant.statusCode).toBe(400);
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(JSON.stringify({ access_token: 'ok-acc', refresh_token: 'ok-ref', expires_at: 999999 }), {
@@ -119,6 +127,7 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
       }),
     });
     expect(okPost.statusCode).toBe(200);
+    expect(okPost.headers['Cache-Control']).toBe('no-store');
     expect(JSON.parse(okPost.body).access_token).toBe('ok-acc');
   });
 

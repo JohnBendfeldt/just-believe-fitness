@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildRideSummaryDescription,
   buildStravaAuthorizeUrl,
+  consumeAndVerifyStravaOAuthState,
   exchangeStravaOAuthCode,
   getValidStravaAccessToken,
   normalizeRideTitle,
@@ -24,10 +25,19 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
     vi.restoreAllMocks();
   });
 
-  it('builds Strava authorize URL with activity:write scope and formats custom ride notes', () => {
+  it('builds Strava authorize URL with activity:write scope, verifies CSRF state nonce, and formats custom ride notes', () => {
     const url = buildStravaAuthorizeUrl('98765');
     expect(url).toContain('client_id=98765');
     expect(url).toContain('activity%3Awrite');
+    const parsedAuthUrl = new URL(url);
+    const issuedState = parsedAuthUrl.searchParams.get('state');
+    expect(issuedState).toMatch(/^[a-f0-9]{32}$/);
+    expect(consumeAndVerifyStravaOAuthState('forged-state')).toBe(false);
+    const url2 = buildStravaAuthorizeUrl('98765');
+    const issuedState2 = new URL(url2).searchParams.get('state');
+    expect(consumeAndVerifyStravaOAuthState(issuedState2)).toBe(true);
+    // Replay of consumed state must fail
+    expect(consumeAndVerifyStravaOAuthState(issuedState2)).toBe(false);
 
     const rideWithNotes = makeSampleRide({ notes: 'Loved the climb block!' });
     const desc = buildRideSummaryDescription(rideWithNotes);

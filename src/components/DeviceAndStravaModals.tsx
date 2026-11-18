@@ -486,7 +486,7 @@ export function HistoryAndStravaModal({
             <a
               href={`https://connect.garmin.com/modern/activity/${ride.garminActivityId}`}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className={`btn btn-garmin ${btnSize}`}
             >
               <CheckCircle2 size={14} /> Garmin <ExternalLink size={13} />
@@ -518,7 +518,7 @@ export function HistoryAndStravaModal({
           <a
             href={`https://www.strava.com/activities/${ride.stravaActivityId}`}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className={`btn btn-strava ${btnSize}`}
           >
             <CheckCircle2 size={14} /> Strava <ExternalLink size={13} />
@@ -1055,7 +1055,7 @@ export function HistoryAndStravaModal({
                   <a
                     href="https://www.strava.com/settings/api"
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     style={{ color: '#fb923c' }}
                   >
                     strava.com/settings/api
@@ -1246,7 +1246,7 @@ export function HistoryAndStravaModal({
                 <a
                   href={`https://connect.garmin.com/modern/activity/${act.activityId}`}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="btn btn-garmin btn-sm"
                 >
                   Open in Garmin <ExternalLink size={13} />

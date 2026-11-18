@@ -70,6 +70,7 @@ import {
 } from './services/storage';
 import { downloadRideTcx } from './services/tcxExporter';
 import {
+  consumeAndVerifyStravaOAuthState,
   exchangeStravaOAuthCode,
   updateStravaActivityDetails,
   uploadRideToStrava,
@@ -254,7 +255,7 @@ export function App() {
     const params = new URLSearchParams(window.location.search);
     const oauthCode = params.get('code');
     const oauthState = params.get('state');
-    if (oauthCode && oauthState === 'jb_fitness_strava_oauth') {
+    if (oauthCode && consumeAndVerifyStravaOAuthState(oauthState)) {
       window.history.replaceState({}, document.title, window.location.pathname);
       const currentCfg = loadStravaConfig();
       void exchangeStravaOAuthCode(oauthCode, currentCfg)

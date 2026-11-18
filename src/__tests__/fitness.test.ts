@@ -347,5 +347,8 @@ describe('Fullscreen & YouTube Utilities', () => {
     ).toContain('videoseries?list=PL1234567890ABCDEF');
     expect(buildYouTubeEmbedSrc('')).toBeNull();
     expect(buildYouTubeEmbedSrc('not-a-valid-url')).toBeNull();
+    expect(buildYouTubeEmbedSrc('https://www.youtube.com/watch?v=../../evil')).toBeNull();
+    expect(buildYouTubeEmbedSrc('https://youtu.be/bad?param=1')).toBeNull();
+    expect(buildYouTubeEmbedSrc('https://www.youtube.com/playlist?list=<script>')).toBeNull();
   });
 });

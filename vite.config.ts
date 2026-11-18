@@ -17,11 +17,21 @@ interface NetlifyFunctionModule {
   }) => Promise<NetlifyHandlerResult>;
 }
 
+const MAX_LOCAL_PROXY_BODY_BYTES = 10 * 1024 * 1024;
+
 function readRequestBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let totalBytes = 0;
     req.on('data', (chunk: Buffer | string) => {
-      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      totalBytes += buf.length;
+      if (totalBytes > MAX_LOCAL_PROXY_BODY_BYTES) {
+        req.destroy();
+        reject(new Error('Request payload too large.'));
+        return;
+      }
+      chunks.push(buf);
     });
     req.on('end', () => {
       resolve(Buffer.concat(chunks).toString('utf8'));

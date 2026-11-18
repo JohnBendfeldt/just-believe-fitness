@@ -10,7 +10,11 @@ const PERSONAL_API_BASE = 'https://personal.connectapi.garmin.com';
 function jsonResponse(statusCode, payload) {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
     body: JSON.stringify(payload),
   };
 }

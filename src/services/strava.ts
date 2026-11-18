@@ -72,6 +72,35 @@ async function postStravaTokenRequest(body: Record<string, string>): Promise<Str
   return (await directResp.json()) as StravaTokenResponse;
 }
 
+const STRAVA_OAUTH_STATE_STORAGE_KEY = 'jb_fitness_strava_oauth_state_v1';
+const LEGACY_STRAVA_OAUTH_STATE = 'jb_fitness_strava_oauth';
+
+function generateStravaOAuthState(): string {
+  try {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const nonce = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    window.sessionStorage.setItem(STRAVA_OAUTH_STATE_STORAGE_KEY, nonce);
+    return nonce;
+  } catch {
+    return LEGACY_STRAVA_OAUTH_STATE;
+  }
+}
+
+export function consumeAndVerifyStravaOAuthState(receivedState: string | null): boolean {
+  if (!receivedState) return false;
+  try {
+    const expected = window.sessionStorage.getItem(STRAVA_OAUTH_STATE_STORAGE_KEY);
+    window.sessionStorage.removeItem(STRAVA_OAUTH_STATE_STORAGE_KEY);
+    if (expected) {
+      return receivedState === expected;
+    }
+  } catch {
+    // sessionStorage unavailable
+  }
+  return receivedState === LEGACY_STRAVA_OAUTH_STATE;
+}
+
 export function buildStravaAuthorizeUrl(clientId: string): string {
   const redirectUri = `${window.location.origin}${window.location.pathname}`;
   const params = new URLSearchParams({
@@ -80,7 +109,7 @@ export function buildStravaAuthorizeUrl(clientId: string): string {
     redirect_uri: redirectUri,
     approval_prompt: 'auto',
     scope: 'read,profile:read_all,activity:write',
-    state: 'jb_fitness_strava_oauth',
+    state: generateStravaOAuthState(),
   });
   return `${STRAVA_AUTH_URL}?${params.toString()}`;
 }
