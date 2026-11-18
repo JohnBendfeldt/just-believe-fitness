@@ -260,6 +260,9 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       }
+      if (url.includes('/user-settings') || url.includes('/socialProfile') || url.includes('latestFunctionalThresholdPower')) {
+        return new Response('{}', { status: 404 });
+      }
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
 
@@ -290,6 +293,6 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
       avgHr: 152,
       caloriesKcal: 410,
     });
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy).toHaveBeenCalledTimes(7);
   });
 });

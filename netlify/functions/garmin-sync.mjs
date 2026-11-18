@@ -134,7 +134,7 @@ function buildImportedProfileFromPersonalApi(settings, hrZonesRaw) {
   const rawRestingHr = Number(
     userData.restingHeartRate ?? userData.minHeartRate ?? settings?.restingHeartRate
   );
-  if (Number.isFinite(rawRestingHr) && rawRestingHr >= 30 && rawRestingHr <= 110) {
+  if (Number.isFinite(rawRestingHr) && rawRestingHr >= 25 && rawRestingHr <= 130) {
     imported.restingHrBpm = Math.round(rawRestingHr);
   }
 
@@ -162,7 +162,7 @@ function buildImportedProfileFromPersonalApi(settings, hrZonesRaw) {
     }
     if (!imported.restingHrBpm) {
       const zoneRest = Number(zoneEntry.restingHeartRateUsed);
-      if (Number.isFinite(zoneRest) && zoneRest >= 30 && zoneRest <= 110) {
+      if (Number.isFinite(zoneRest) && zoneRest >= 25 && zoneRest <= 130) {
         imported.restingHrBpm = Math.round(zoneRest);
       }
     }
@@ -360,8 +360,21 @@ export async function handler(event) {
         });
       }
 
-      const [settingsResult, hrZonesResult, activitiesResult] = await Promise.allSettled([
+      const [
+        settingsResult,
+        userSettingsResult,
+        socialResult,
+        ftpResult,
+        hrZonesResult,
+        activitiesResult,
+      ] = await Promise.allSettled([
         fetchPersonalApiJson('/userprofile-service/userprofile/settings', bearerToken),
+        fetchPersonalApiJson('/userprofile-service/userprofile/user-settings', bearerToken),
+        fetchPersonalApiJson('/userprofile-service/socialProfile', bearerToken),
+        fetchPersonalApiJson(
+          '/biometric-service/biometric/latestFunctionalThresholdPower/CYCLING',
+          bearerToken
+        ),
         fetchPersonalApiJson('/biometric-service/heartRateZones/v2', bearerToken),
         fetchPersonalApiJson(
           '/activitylist-service/activities/search/activities?start=0&limit=10',
@@ -369,13 +382,28 @@ export async function handler(event) {
         ),
       ]);
 
-      const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
-      const hrZones = hrZonesResult.status === 'fulfilled' ? hrZonesResult.value : null;
-      const rawActivities = activitiesResult.status === 'fulfilled' ? activitiesResult.value : null;
+      const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+      const settings = val(settingsResult);
+      const userSettings = val(userSettingsResult);
+      const social = val(socialResult);
+      const ftpRaw = val(ftpResult);
+      const hrZones = val(hrZonesResult);
+      const rawActivities = val(activitiesResult);
 
-      const importedProfile = buildImportedProfileFromPersonalApi(settings, hrZones);
+      // Garmin sometimes rejects one profile endpoint; merge whichever succeeded.
+      const mergedUserData = {
+        ...(userSettings?.userData || userSettings || {}),
+        ...(settings?.userData || settings || {}),
+      };
+      const mergedSettings = { ...(userSettings || {}), ...(settings || {}), userData: mergedUserData };
+      const ftpValue = Array.isArray(ftpRaw) ? ftpRaw[0]?.functionalThresholdPower : ftpRaw?.functionalThresholdPower;
+      if (ftpValue && !mergedUserData.cyclingFtp) mergedUserData.cyclingFtp = ftpValue;
+
+      const importedProfile = buildImportedProfileFromPersonalApi(mergedSettings, hrZones);
       const recentActivities = mapPersonalApiActivities(rawActivities);
       const athleteName =
+        social?.fullName ||
+        social?.displayName ||
         settings?.displayName ||
         settings?.userName ||
         rawActivities?.[0]?.ownerFullName ||
