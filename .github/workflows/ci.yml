@@ -50,6 +50,35 @@ jobs:
             exit 1
           fi
 
+  automerge:
+    name: Auto-merge Safe Dependabot PRs
+    needs: verify
+    if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Squash-merge minor, patch, security & GitHub Actions PRs
+        if: >-
+          steps.metadata.outputs.package-ecosystem == 'github_actions' ||
+          steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/merge" \
+            -X PUT \
+            -f merge_method=squash \
+            -f sha="${HEAD_SHA}"
+
   full-audit:
     name: Weekly Full Dependency Audit (Dev + Prod)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
