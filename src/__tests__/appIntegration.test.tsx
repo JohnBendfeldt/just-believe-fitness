@@ -34,6 +34,28 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     fireEvent.change(ftpInput, { target: { value: '220' } });
     expect(chip?.textContent).toContain('220W FTP');
 
+    // Regression guard: Resting HR, Height, and Watt Gain allow clearing ("") and partial
+    // single-digit typing ("5" -> "52") without snapping to min/max (32 or 105) mid-keystroke
+    const restingHrInput = document.getElementById('athlete-resting-hr') as HTMLInputElement;
+    fireEvent.change(restingHrInput, { target: { value: '' } });
+    expect(restingHrInput.value).toBe('');
+    fireEvent.change(restingHrInput, { target: { value: '5' } });
+    expect(restingHrInput.value).toBe('5');
+    fireEvent.change(restingHrInput, { target: { value: '52' } });
+    expect(restingHrInput.value).toBe('52');
+    fireEvent.blur(restingHrInput);
+    expect(restingHrInput.value).toBe('52');
+
+    const wattGainInput = document.getElementById('athlete-watt-gain') as HTMLInputElement;
+    fireEvent.change(wattGainInput, { target: { value: '' } });
+    expect(wattGainInput.value).toBe('');
+    fireEvent.change(wattGainInput, { target: { value: '0.' } });
+    expect(wattGainInput.value).toBe('0.');
+    fireEvent.change(wattGainInput, { target: { value: '0.95' } });
+    expect(wattGainInput.value).toBe('0.95');
+    fireEvent.blur(wattGainInput);
+    expect(wattGainInput.value).toBe('0.95');
+
     // Verify Bike Power Curve defaults to 'auto' and allows selecting 'sport-compact'
     const curveSelect = document.getElementById('athlete-power-curve') as HTMLSelectElement;
     expect(curveSelect).not.toBeNull();
@@ -41,9 +63,11 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     fireEvent.change(curveSelect, { target: { value: 'sport-compact' } });
     expect(curveSelect.value).toBe('sport-compact');
 
-    // Reset back to safe starter defaults
+    // Reset back to safe starter defaults and verify inputs sync immediately
     fireEvent.click(document.getElementById('reset-athlete-defaults')!);
     expect(chip?.textContent).toContain('150W FTP');
+    expect(ftpInput.value).toBe('150');
+    expect(restingHrInput.value).toBe('65');
     expect(curveSelect.value).toBe('auto');
 
     fireEvent.click(document.getElementById('save-athlete-done')!);

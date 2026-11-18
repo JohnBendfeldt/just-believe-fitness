@@ -15,19 +15,48 @@ interface ClampedNumberInputProps {
   value: number;
   min: number;
   max: number;
+  step?: number;
+  decimals?: number;
+  ariaLabel?: string;
   onCommit: (next: number) => void;
 }
 
-// Keeps the raw text while typing so partial entries (e.g. "1" on the way to "165")
-// aren't clamped/overwritten per keystroke. Clamps and saves on blur / Enter.
-function ClampedNumberInput({ id, value, min, max, onCommit }: ClampedNumberInputProps) {
+// Keeps the raw text while typing so clearing ("") or partial entries ("5" on the way to "52",
+// or "0." on the way to "0.95") are never clamped or overwritten mid-keystroke.
+// Commits live when within [min, max], and clamps only on blur / Enter.
+function ClampedNumberInput({
+  id,
+  value,
+  min,
+  max,
+  step = 1,
+  decimals = 0,
+  ariaLabel,
+  onCommit,
+}: ClampedNumberInputProps) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [lastPropValue, setLastPropValue] = useState<number>(value);
+
+  const roundToPrecision = (n: number): number => {
+    if (decimals <= 0) return Math.round(n);
+    const factor = 10 ** decimals;
+    return Math.round(n * factor) / factor;
+  };
+
+  if (value !== lastPropValue) {
+    setLastPropValue(value);
+    const draftNum = draft !== null && draft.trim() !== '' ? Number(draft) : NaN;
+    if (!Number.isFinite(draftNum) || roundToPrecision(draftNum) !== value) {
+      setDraft(null);
+    }
+  }
 
   const commit = () => {
     if (draft === null) return;
     const parsed = Number(draft);
     if (draft.trim() !== '' && Number.isFinite(parsed)) {
-      onCommit(Math.max(min, Math.min(max, Math.round(parsed))));
+      const clamped = Math.max(min, Math.min(max, roundToPrecision(parsed)));
+      onCommit(clamped);
     }
     setDraft(null);
   };
@@ -35,21 +64,31 @@ function ClampedNumberInput({ id, value, min, max, onCommit }: ClampedNumberInpu
   return (
     <input
       id={id}
-      type="number"
-      min={min}
-      max={max}
+      type="text"
+      inputMode={decimals > 0 ? 'decimal' : 'numeric'}
+      aria-label={ariaLabel}
       value={draft ?? String(value)}
       onChange={(e) => {
-        const text = e.target.value;
-        setDraft(text);
-        const parsed = Number(text);
-        if (text.trim() !== '' && Number.isFinite(parsed) && parsed >= min && parsed <= max) {
-          onCommit(Math.round(parsed));
+        const cleaned = e.target.value.replace(decimals > 0 ? /[^0-9.]/g : /[^0-9]/g, '');
+        setDraft(cleaned);
+        const parsed = Number(cleaned);
+        if (cleaned.trim() !== '' && Number.isFinite(parsed) && parsed >= min && parsed <= max) {
+          onCommit(roundToPrecision(parsed));
         }
       }}
       onBlur={commit}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') commit();
+        if (e.key === 'Enter') {
+          commit();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setDraft(null);
+          onCommit(Math.min(max, roundToPrecision(value + step)));
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setDraft(null);
+          onCommit(Math.max(min, roundToPrecision(value - step)));
+        }
       }}
     />
   );
@@ -114,36 +153,21 @@ export function AthleteProfileModal({
           <div className="field">
             <label>Height (ft / in) · {heightCm} cm</label>
             <div className="height-inline">
-              <input
+              <ClampedNumberInput
                 id="athlete-height-feet"
-                type="number"
                 min={4}
                 max={7}
                 value={profile.heightFeet}
-                onChange={(e) =>
-                  updateField(
-                    'heightFeet',
-                    Math.max(
-                      4,
-                      Math.min(7, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.heightFeet)
-                    )
-                  )
-                }
-                aria-label="Height feet"
+                ariaLabel="Height feet"
+                onCommit={(n) => updateField('heightFeet', n)}
               />
-              <input
+              <ClampedNumberInput
                 id="athlete-height-inches"
-                type="number"
                 min={0}
                 max={11}
                 value={profile.heightInches}
-                onChange={(e) =>
-                  updateField(
-                    'heightInches',
-                    Math.max(0, Math.min(11, Number(e.target.value) || 0))
-                  )
-                }
-                aria-label="Height inches"
+                ariaLabel="Height inches"
+                onCommit={(n) => updateField('heightInches', n)}
               />
             </div>
           </div>
@@ -185,21 +209,12 @@ export function AthleteProfileModal({
 
           <div className="field">
             <label htmlFor="athlete-resting-hr">Resting Heart Rate (BPM)</label>
-            <input
+            <ClampedNumberInput
               id="athlete-resting-hr"
-              type="number"
-              min={32}
-              max={105}
+              min={25}
+              max={130}
               value={profile.restingHrBpm}
-              onChange={(e) =>
-                updateField(
-                  'restingHrBpm',
-                  Math.max(
-                    32,
-                    Math.min(105, Number(e.target.value) || DEFAULT_ATHLETE_PROFILE.restingHrBpm)
-                  )
-                )
-              }
+              onCommit={(n) => updateField('restingHrBpm', n)}
             />
           </div>
 
@@ -223,19 +238,14 @@ export function AthleteProfileModal({
             <label htmlFor="athlete-watt-gain">
               Watt Calibration Scale ({profile.wattGain.toFixed(2)}x)
             </label>
-            <input
+            <ClampedNumberInput
               id="athlete-watt-gain"
-              type="number"
               step={0.05}
+              decimals={2}
               min={0.5}
               max={1.5}
               value={profile.wattGain}
-              onChange={(e) =>
-                updateField(
-                  'wattGain',
-                  Math.max(0.5, Math.min(1.5, Number(e.target.value) || 1.0))
-                )
-              }
+              onCommit={(n) => updateField('wattGain', n)}
             />
           </div>
         </div>

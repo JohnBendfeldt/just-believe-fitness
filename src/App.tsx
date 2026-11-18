@@ -606,11 +606,14 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [rideState, selectedWorkout, segmentOffsetSec]);
 
-  // Derived Burn Points (1 Burn Point per 60s in Zone 4 Orange + Zone 5 Red)
+  // Derived Burn Points: 1 Burn Point per 60s spent in Orange/Red (Zone 4-5) by EITHER heart rate
+  // OR power. Indoor riders often hit Orange/Red power while HR lags, so each second counts once
+  // if either metric is in the burn zones.
   const hasHrStream = telemetry.heartRateBpm > 0 || hrZoneSeconds[4] + hrZoneSeconds[5] > 0;
-  const burnZoneTotalSec = hasHrStream
-    ? hrZoneSeconds[4] + hrZoneSeconds[5]
-    : powerZoneSeconds[4] + powerZoneSeconds[5];
+  const burnZoneTotalSec = useMemo(
+    () => trackPoints.filter((p) => p.hrZone >= 4 || p.powerZone >= 4).length,
+    [trackPoints]
+  );
   const burnPoints = Math.floor(burnZoneTotalSec / 60);
 
   // Announce 1st and 12th Burn Point milestones via pre-rendered Coach MP3s
