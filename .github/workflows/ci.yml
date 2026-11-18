@@ -1,21 +1,31 @@
-name: CI & Release Verification
+name: CI & Security Verification
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    name: Test, Lint, Typecheck & Build
+    name: Test, Lint, Build & Security Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for leaked secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js 24 LTS
         uses: actions/setup-node@v4
