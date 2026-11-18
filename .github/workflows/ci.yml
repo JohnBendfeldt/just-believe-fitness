@@ -11,10 +11,11 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   verify:
-    name: Test, Lint, Build & Security Audit
+    name: Test, Lint, Build & Runtime Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -36,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit production dependencies
+      - name: Audit runtime dependencies (blocking)
         run: npm audit --omit=dev
 
       - name: Run full test suite, linter, TypeScript check & production build
@@ -48,3 +49,23 @@ jobs:
             echo "Found prohibited branding term in source files!"
             exit 1
           fi
+
+  full-audit:
+    name: Weekly Full Dependency Audit (Dev + Prod)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit all dependencies including build/test tooling
+        run: npm audit
