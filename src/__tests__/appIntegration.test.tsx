@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { resolveLegalRouteFromPathname } from '../utils/legalRoutes';
+import { checkRemoteBuildUpdate } from '../utils/pwaUpdater';
 import { listSavedRides, saveGarminConfig, saveStravaConfig } from '../services/storage';
 
 describe('End-to-End Studio App Integration & Regression Suite', () => {
@@ -253,9 +254,21 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     // Switch back to real timers for IndexedDB & async UI assertions
     vi.useRealTimers();
 
-    // 2. Finish & Save workout
+    // 2. Tap Stop & Save -> opens confirmation dialog instead of ending immediately
+    fireEvent.click(document.getElementById('finish-save-ride-btn')!);
+    expect(document.getElementById('stop-workout-confirm-modal')).toBeInTheDocument();
+    expect(document.getElementById('history-strava-modal')).not.toBeInTheDocument();
+
+    // Accidental tap protection: "Keep Riding" dismisses modal and resumes workout without saving
+    fireEvent.click(document.getElementById('cancel-stop-workout-btn')!);
+    expect(document.getElementById('stop-workout-confirm-modal')).not.toBeInTheDocument();
+    expect(document.getElementById('pause-ride-btn')).toBeInTheDocument();
+    expect((await listSavedRides()).length).toBe(0);
+
+    // Confirm End & Save Workout -> saves locally & opens Summary modal
+    fireEvent.click(document.getElementById('finish-save-ride-btn')!);
     await act(async () => {
-      fireEvent.click(document.getElementById('finish-save-ride-btn')!);
+      fireEvent.click(document.getElementById('confirm-stop-save-btn')!);
     });
 
     await waitFor(async () => {
@@ -388,5 +401,26 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
         document.querySelector('a[href="https://connect.garmin.com/modern/activity/88776655"]')
       ).not.toBeNull();
     });
+  });
+
+  it('detects new PWA build deployments via /version.json without clearing localStorage', async () => {
+    window.localStorage.setItem('jb_fitness_athlete_v1', JSON.stringify({ name: 'KeepMe' }));
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ buildId: 'build-abc' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ buildId: 'build-new-xyz' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    expect(await checkRemoteBuildUpdate('build-abc')).toBe(false);
+    expect(await checkRemoteBuildUpdate('build-abc')).toBe(true);
+    expect(window.localStorage.getItem('jb_fitness_athlete_v1')).toContain('KeepMe');
   });
 });

@@ -207,6 +207,7 @@ button {
   justify-content: center;
   gap: 6px;
   min-height: 40px;
+  max-width: 100%;
   padding: 0 13px;
   border-radius: var(--radius-md);
   border: 1px solid var(--hairline-strong);
@@ -216,6 +217,8 @@ button {
   font-weight: 600;
   transition: background-color 0.16s ease, transform 0.12s ease, opacity 0.16s ease;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn:hover:not(:disabled) {
@@ -1299,6 +1302,34 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.sync-status-line {
+  width: 100%;
+  font-size: 0.8rem;
+  color: #fb923c;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+@media (max-width: 520px) {
+  .confirm-modal-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .confirm-modal-actions .btn {
+    width: 100%;
+  }
 }
 
 /* Post-Ride Photo & Stat Overlay Studio */

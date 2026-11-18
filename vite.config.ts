@@ -93,9 +93,41 @@ function localNetlifyFunctionsPlugin(): Plugin {
   };
 }
 
+function buildVersionManifestPlugin(buildId: string): Plugin {
+  const payload = JSON.stringify({ buildId });
+  return {
+    name: 'jbf-version-manifest',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const pathname = (req.url || '').split('?')[0];
+        if (pathname !== '/version.json') {
+          next();
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(payload);
+      });
+    },
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: payload,
+      });
+    },
+  };
+}
+
+const APP_BUILD_ID = process.env.COMMIT_REF || process.env.DEPLOY_ID || `${Date.now()}`;
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), localNetlifyFunctionsPlugin()],
+  define: {
+    __JBF_BUILD_ID__: JSON.stringify(APP_BUILD_ID),
+  },
+  plugins: [react(), localNetlifyFunctionsPlugin(), buildVersionManifestPlugin(APP_BUILD_ID)],
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],

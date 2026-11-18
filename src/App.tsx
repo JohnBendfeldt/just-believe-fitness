@@ -101,6 +101,7 @@ import {
   resolveLegalRouteFromPathname,
   type LegalDocTab,
 } from './utils/legalRoutes';
+import { checkRemoteBuildUpdate } from './utils/pwaUpdater';
 
 const EMPTY_ZONE_SECONDS: Record<ZoneId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 const GAUGE_MODE_STORAGE_KEY = 'jbf_gauge_mode_v1';
@@ -187,6 +188,10 @@ export function App() {
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [stopConfirmAction, setStopConfirmAction] = useState<'save' | 'discard' | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+  const wasRunningBeforeConfirmRef = useRef<boolean>(false);
+  const isIdleForAutoReloadRef = useRef<boolean>(true);
 
   // Service Refs
   const bikeBleRef = useRef<EchelonBikeConnection | null>(null);
@@ -197,6 +202,54 @@ export function App() {
   const hudVideoRef = useRef<HTMLVideoElement | null>(null);
   const hudStreamAttachedRef = useRef<boolean>(false);
   const lastAnnouncedBurnRef = useRef<number>(0);
+
+  useEffect(() => {
+    isIdleForAutoReloadRef.current =
+      rideState === 'idle' &&
+      elapsedSec === 0 &&
+      uploadingRideId === null &&
+      !isHistoryModalOpen &&
+      !isAthleteModalOpen &&
+      !isDeviceModalOpen;
+  }, [
+    rideState,
+    elapsedSec,
+    uploadingRideId,
+    isHistoryModalOpen,
+    isAthleteModalOpen,
+    isDeviceModalOpen,
+  ]);
+
+  useEffect(() => {
+    const currentBuildId = typeof __JBF_BUILD_ID__ !== 'undefined' ? __JBF_BUILD_ID__ : '';
+    if (!currentBuildId) return;
+
+    const verifyLatestVersion = async () => {
+      if (document.visibilityState === 'hidden') return;
+      const hasNewDeploy = await checkRemoteBuildUpdate(currentBuildId);
+      if (!hasNewDeploy) return;
+      if (isIdleForAutoReloadRef.current) {
+        window.location.reload();
+      } else {
+        setUpdateAvailable(true);
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void verifyLatestVersion();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onVisibility);
+    const intervalId = window.setInterval(() => void verifyLatestVersion(), 10 * 60 * 1000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     const onPopState = () => {
@@ -737,6 +790,8 @@ export function App() {
   };
 
   const handleResetWorkout = () => {
+    setStopConfirmAction(null);
+    wasRunningBeforeConfirmRef.current = false;
     audioRef.current?.stopVoice();
     lastAnnouncedBurnRef.current = 0;
     setRideState('idle');
@@ -750,7 +805,36 @@ export function App() {
     setTrackPoints([]);
   };
 
+  const requestStopWorkoutConfirmation = (action: 'save' | 'discard') => {
+    if (elapsedSec < 5 || trackPoints.length === 0) {
+      if (action === 'save') {
+        handleResetWorkout();
+        showToast('Ride was under 5 seconds — reset without saving.');
+      } else {
+        handleResetWorkout();
+      }
+      return;
+    }
+    wasRunningBeforeConfirmRef.current = rideState === 'running';
+    if (rideState === 'running') {
+      setRideState('paused');
+    }
+    setStopConfirmAction(action);
+  };
+
+  const handleCancelStopConfirm = () => {
+    const shouldResume = wasRunningBeforeConfirmRef.current;
+    wasRunningBeforeConfirmRef.current = false;
+    setStopConfirmAction(null);
+    if (shouldResume) {
+      setRideState('running');
+    }
+  };
+
   const handleFinishAndSave = async () => {
+    setStopConfirmAction(null);
+    wasRunningBeforeConfirmRef.current = false;
+    setIsFocusModalOpen(false);
     setRideState('idle');
     if (elapsedSec < 5 || trackPoints.length === 0) {
       handleResetWorkout();
@@ -1060,6 +1144,17 @@ export function App() {
         </button>
 
         <div className="topbar-actions">
+          {updateAvailable && (
+            <button
+              type="button"
+              id="apply-pwa-update-btn"
+              className="btn btn-sm btn-primary"
+              onClick={() => window.location.reload()}
+              title="Load latest app update (keeps all rides, profile & sync settings intact)"
+            >
+              Update Ready · Reload
+            </button>
+          )}
           <button
             type="button"
             id="open-sensors-btn"
@@ -1311,15 +1406,15 @@ export function App() {
                 type="button"
                 id="finish-save-ride-btn"
                 className="btn btn-strava"
-                onClick={() => void handleFinishAndSave()}
+                onClick={() => requestStopWorkoutConfirmation('save')}
               >
-                <Square size={15} /> Save
+                <Square size={15} /> Stop &amp; Save
               </button>
               <button
                 type="button"
                 id="reset-ride-btn"
                 className="btn btn-sm"
-                onClick={handleResetWorkout}
+                onClick={() => requestStopWorkoutConfirmation('discard')}
                 title="Discard & reset timer"
               >
                 <RotateCcw size={15} />
@@ -1672,8 +1767,8 @@ export function App() {
         onStartOrResume={handleStartOrResume}
         onPause={() => setRideState('paused')}
         onSkipSegment={handleSkipSegment}
-        onFinishAndSave={() => void handleFinishAndSave()}
-        onResetWorkout={handleResetWorkout}
+        onFinishAndSave={() => requestStopWorkoutConfirmation('save')}
+        onResetWorkout={() => requestStopWorkoutConfirmation('discard')}
       />
 
       <AthleteProfileModal
@@ -1767,6 +1862,64 @@ export function App() {
         onSelectTab={handleOpenLegalDoc}
         onClose={handleCloseLegalDoc}
       />
+
+      {stopConfirmAction && (
+        <div
+          className="modal-backdrop"
+          style={{ zIndex: 1400 }}
+          onClick={handleCancelStopConfirm}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="stop-workout-confirm-title"
+          id="stop-workout-confirm-modal"
+        >
+          <div
+            className="modal-card"
+            style={{ width: 'min(440px, 100%)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h2 className="modal-title" id="stop-workout-confirm-title">
+                {stopConfirmAction === 'save' ? 'End & Save Workout?' : 'Discard Workout?'}
+              </h2>
+              <p className="modal-subtitle">
+                {stopConfirmAction === 'save'
+                  ? `Your workout is paused at ${formatDuration(elapsedSec)}${burnPoints > 0 ? ` (${burnPoints} Burn Points)` : ''}. Ready to finish and open your summary?`
+                  : `Discard ${formatDuration(elapsedSec)} of ride data and reset the timer to 0:00?`}
+              </p>
+            </div>
+            <div className="confirm-modal-actions">
+              <button
+                type="button"
+                id="cancel-stop-workout-btn"
+                className="btn"
+                onClick={handleCancelStopConfirm}
+              >
+                <Play size={15} /> Keep Riding
+              </button>
+              {stopConfirmAction === 'save' ? (
+                <button
+                  type="button"
+                  id="confirm-stop-save-btn"
+                  className="btn btn-strava"
+                  onClick={() => void handleFinishAndSave()}
+                >
+                  <Square size={15} /> End &amp; Save Workout
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  id="confirm-discard-workout-btn"
+                  className="btn btn-danger"
+                  onClick={handleResetWorkout}
+                >
+                  <RotateCcw size={15} /> Discard Workout
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastMsg && (
         <div className="toast-banner" role="status">

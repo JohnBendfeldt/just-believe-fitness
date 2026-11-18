@@ -392,19 +392,16 @@ export function FocusRideModal({
                 type="button"
                 id="focus-save-ride-btn"
                 className="btn btn-strava focus-secondary-btn"
-                onClick={() => {
-                  onClose();
-                  onFinishAndSave();
-                }}
+                onClick={onFinishAndSave}
               >
-                <Square size={15} /> Save
+                <Square size={15} /> Stop &amp; Save
               </button>
               <button
                 type="button"
                 id="focus-reset-ride-btn"
                 className="btn focus-icon-btn"
                 onClick={onResetWorkout}
-                title="Reset workout timer"
+                title="Discard & reset workout timer"
               >
                 <RotateCcw size={15} />
               </button>

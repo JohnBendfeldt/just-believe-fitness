@@ -476,7 +476,7 @@ export function HistoryAndStravaModal({
             onClick={() => onUploadRide(ride, 'both')}
           >
             <UploadCloud size={15} />
-            {isBusy ? uploadStatusText || 'Syncing...' : 'Push to Garmin + Strava'}
+            {isBusy ? 'Syncing...' : isHero ? 'Push to Garmin + Strava' : 'Garmin + Strava'}
           </button>
         )}
 
@@ -506,7 +506,7 @@ export function HistoryAndStravaModal({
           >
             <UploadCloud size={15} />
             {isBusy && !isStravaConnected
-              ? uploadStatusText || 'Uploading...'
+              ? 'Syncing...'
               : isHero
                 ? 'Push to Garmin'
                 : 'Garmin'}
@@ -533,7 +533,7 @@ export function HistoryAndStravaModal({
           >
             <UploadCloud size={15} />
             {isBusy && !isGarminConnected
-              ? uploadStatusText || 'Uploading...'
+              ? 'Syncing...'
               : isHero
                 ? 'Push to Strava'
                 : 'Strava'}
@@ -703,7 +703,7 @@ export function HistoryAndStravaModal({
             </div>
 
             {uploadingRideId === highlightedRide.id && uploadStatusText && (
-              <div style={{ fontSize: '0.8rem', color: '#fb923c', fontWeight: 600 }}>
+              <div className="sync-status-line" role="status">
                 {uploadStatusText}
               </div>
             )}
@@ -1199,6 +1199,12 @@ export function HistoryAndStravaModal({
                     <Trash2 size={14} />
                   </button>
                 </div>
+
+                {uploadingRideId === r.id && uploadStatusText && (
+                  <div className="sync-status-line" role="status">
+                    {uploadStatusText}
+                  </div>
+                )}
               </div>
             ))
           )}
