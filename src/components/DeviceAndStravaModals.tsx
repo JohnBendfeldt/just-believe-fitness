@@ -34,9 +34,9 @@ import {
   verifyGarminConnectMfa,
   verifyGarminSessionTokens,
 } from '../services/garminConnect';
+import type { FitDevicePresetId } from '../services/fitExporter';
 import {
   FIT_DEVICE_PRESETS,
-  type FitDevicePresetId,
   convertTcxXmlToFitBytes,
   downloadFitBytes,
   downloadRideFit,
