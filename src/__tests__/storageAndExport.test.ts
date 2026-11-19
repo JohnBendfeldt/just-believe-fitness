@@ -14,6 +14,12 @@ import {
   saveYouTubeState,
 } from '../services/storage';
 import { buildRideTcxXml, downloadRideTcx } from '../services/tcxExporter';
+import {
+  buildRideFitBytes,
+  computeFitCrc,
+  convertTcxXmlToFitBytes,
+  downloadRideFit,
+} from '../services/fitExporter';
 import { DEFAULT_ATHLETE_PROFILE } from '../utils/zones';
 import { makeSampleRide } from '../test/fixtures';
 
@@ -138,6 +144,55 @@ describe('Garmin & Strava TrainingCenterDatabase (.TCX) Exporter', () => {
     const ride = makeSampleRide({ id: 'ride-dl-1', title: '20-Min HIIT Ride' });
 
     downloadRideTcx(ride);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Garmin Binary .FIT v2.0 Exporter & TCX -> FIT Converter', () => {
+  it('encodes a valid FIT v2.0 binary file with .FIT signature, valid header/trailer CRCs, and device presets', () => {
+    const ride = makeSampleRide({ title: '23-Min Signature Burn', burnPoints: 14 });
+    const bytes = buildRideFitBytes(ride, 'edge-830');
+
+    // 14-byte FIT header + ".FIT" ASCII signature
+    expect(bytes[0]).toBe(14);
+    expect(bytes[1]).toBe(0x20);
+    expect(String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11])).toBe('.FIT');
+
+    const dataSize =
+      bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24);
+    expect(bytes.length).toBe(14 + dataSize + 2);
+
+    // Header CRC-16 over bytes 0..11 must match bytes 12..13
+    const expectedHeaderCrc = computeFitCrc(bytes, 0, 12);
+    const actualHeaderCrc = bytes[12] | (bytes[13] << 8);
+    expect(actualHeaderCrc).toBe(expectedHeaderCrc);
+
+    // Trailer CRC-16 over entire file excluding trailer must match last 2 bytes
+    const expectedFileCrc = computeFitCrc(bytes, 0, bytes.length - 2);
+    const actualFileCrc = bytes[bytes.length - 2] | (bytes[bytes.length - 1] << 8);
+    expect(actualFileCrc).toBe(expectedFileCrc);
+  });
+
+  it('converts an existing .TCX XML file into a valid Garmin .FIT file preserving telemetry', () => {
+    const original = makeSampleRide({ title: 'Past Echelon Ride', burnPoints: 10 });
+    const xml = buildRideTcxXml(original);
+
+    const { bytes, ride } = convertTcxXmlToFitBytes(xml, 'tacx-app', 'past-echelon-ride.tcx');
+    expect(ride.trackPoints.length).toBe(original.trackPoints.length);
+    expect(ride.avgWatts).toBeGreaterThan(100);
+    expect(ride.avgHr).toBeGreaterThan(100);
+    expect(String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11])).toBe('.FIT');
+
+    const expectedFileCrc = computeFitCrc(bytes, 0, bytes.length - 2);
+    const actualFileCrc = bytes[bytes.length - 2] | (bytes[bytes.length - 1] << 8);
+    expect(actualFileCrc).toBe(expectedFileCrc);
+  });
+
+  it('triggers a .fit file download cleanly in the browser', () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const ride = makeSampleRide({ id: 'ride-fit-1', title: '23-Min Signature Burn' });
+
+    downloadRideFit(ride, 'edge-830');
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 });

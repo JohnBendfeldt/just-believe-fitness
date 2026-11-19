@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Bluetooth,
   Camera,
@@ -6,6 +6,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FileUp,
   Flame,
   Heart,
   KeyRound,
@@ -33,6 +34,13 @@ import {
   verifyGarminConnectMfa,
   verifyGarminSessionTokens,
 } from '../services/garminConnect';
+import {
+  FIT_DEVICE_PRESETS,
+  type FitDevicePresetId,
+  convertTcxXmlToFitBytes,
+  downloadFitBytes,
+  downloadRideFit,
+} from '../services/fitExporter';
 import { RidePhotoStudio } from './RidePhotoStudio';
 
 interface DeviceModalProps {
@@ -312,6 +320,39 @@ export function HistoryAndStravaModal({
   const [hasServerPersonalKey, setHasServerPersonalKey] = useState(false);
   const [garminPersonalBusy, setGarminPersonalBusy] = useState(false);
   const [showPhotoStudio, setShowPhotoStudio] = useState(true);
+  const [fitPreset, setFitPreset] = useState<FitDevicePresetId>(() => {
+    try {
+      const saved = window.localStorage.getItem('jbf_fit_device_preset_v1') as FitDevicePresetId | null;
+      if (saved && saved in FIT_DEVICE_PRESETS) return saved;
+    } catch {
+      // ignore storage errors
+    }
+    return 'edge-830';
+  });
+  const tcxFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleSelectFitPreset = (next: FitDevicePresetId) => {
+    setFitPreset(next);
+    try {
+      window.localStorage.setItem('jbf_fit_device_preset_v1', next);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const handleConvertTcxUpload = async (file: File) => {
+    try {
+      const xmlText = await file.text();
+      const { bytes, ride } = convertTcxXmlToFitBytes(xmlText, fitPreset, file.name);
+      const outName = file.name.replace(/\.tcx$/i, '') + '.fit';
+      downloadFitBytes(bytes, outName);
+      onNotify(
+        `Converted ${file.name} -> ${outName} (${ride.trackPoints.length}s · ${ride.avgWatts}W avg · ${FIT_DEVICE_PRESETS[fitPreset].label}).`
+      );
+    } catch (err: unknown) {
+      onNotify(err instanceof Error ? err.message : 'Could not convert .TCX file to .FIT.');
+    }
+  };
 
   useEffect(() => {
     if (!isOpen || !showGarminSetup) return;
@@ -690,6 +731,16 @@ export function HistoryAndStravaModal({
                 onClick={() => setShowPhotoStudio((v) => !v)}
               >
                 <Camera size={15} /> {showPhotoStudio ? 'Hide Photo Studio' : 'Create Stat Photo'}
+              </button>
+
+              <button
+                type="button"
+                id="download-highlighted-fit"
+                className="btn"
+                onClick={() => downloadRideFit(highlightedRide, fitPreset)}
+                title={`Download Garmin .FIT file (${FIT_DEVICE_PRESETS[fitPreset].label})`}
+              >
+                <Download size={16} /> .FIT
               </button>
 
               <button
@@ -1131,6 +1182,69 @@ export function HistoryAndStravaModal({
           </div>
         </div>
 
+        {/* FIT Export & Existing TCX -> FIT Converter */}
+        <div
+          className="surface-card"
+          style={{
+            padding: '10px 12px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: '220px', flex: 1 }}>
+            <label
+              htmlFor="fit-device-preset-select"
+              style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}
+            >
+              Garmin .FIT Device Header (Training Status)
+            </label>
+            <select
+              id="fit-device-preset-select"
+              value={fitPreset}
+              onChange={(e) => handleSelectFitPreset(e.target.value as FitDevicePresetId)}
+              style={{ fontSize: '0.8rem', padding: '5px 8px' }}
+            >
+              {(Object.keys(FIT_DEVICE_PRESETS) as FitDevicePresetId[]).map((key) => (
+                <option key={key} value={key}>
+                  {FIT_DEVICE_PRESETS[key].label}
+                </option>
+              ))}
+            </select>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              {FIT_DEVICE_PRESETS[fitPreset].description}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              ref={tcxFileInputRef}
+              id="convert-tcx-file-input"
+              type="file"
+              accept=".tcx,.xml"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  void handleConvertTcxUpload(file);
+                }
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              id="convert-tcx-to-fit-btn"
+              className="btn btn-sm"
+              onClick={() => tcxFileInputRef.current?.click()}
+              title="Convert any existing .TCX ride file into a Garmin .FIT file locally in your browser"
+            >
+              <FileUp size={14} /> Convert .TCX → .FIT
+            </button>
+          </div>
+        </div>
+
         {/* Saved Ride List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <h3 className="panel-heading">Saved Local Workouts ({rides.length})</h3>
@@ -1179,6 +1293,15 @@ export function HistoryAndStravaModal({
                     title="Create stat overlay photo or edit title & notes"
                   >
                     <Camera size={14} /> Photo
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => downloadRideFit(r, fitPreset)}
+                    title={`Download .FIT file (${FIT_DEVICE_PRESETS[fitPreset].label})`}
+                  >
+                    <Download size={14} /> .FIT
                   </button>
 
                   <button
