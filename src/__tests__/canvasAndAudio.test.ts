@@ -125,14 +125,21 @@ describe('Floating PiP Telemetry HUD Canvas & Wake/Audio Services', () => {
     await wake.setActive(false);
     expect(releaseSpy).toHaveBeenCalledTimes(1);
 
-    // Web Audio cue synthesis
+    // Web Audio cue synthesis + ambient background-music-safe Coach MP3 BufferSource
     const startSpy = vi.fn();
     const stopSpy = vi.fn();
+    const bufferStartSpy = vi.fn();
+    const bufferStopSpy = vi.fn();
+    const suspendSpy = vi.fn(async () => {});
+    const mockDecodedBuffer = { duration: 1.2 } as AudioBuffer;
+
     class MockAudioContext {
       public state = 'running';
       public currentTime = 0;
       public destination = {};
       public resume = vi.fn(async () => {});
+      public suspend = suspendSpy;
+      public decodeAudioData = vi.fn(async () => mockDecodedBuffer);
       public createOscillator() {
         return {
           type: 'sine',
@@ -145,9 +152,20 @@ describe('Floating PiP Telemetry HUD Canvas & Wake/Audio Services', () => {
           stop: stopSpy,
         };
       }
+      public createBufferSource() {
+        return {
+          buffer: null as AudioBuffer | null,
+          onended: null as (() => void) | null,
+          connect: vi.fn(),
+          disconnect: vi.fn(),
+          start: bufferStartSpy,
+          stop: bufferStopSpy,
+        };
+      }
       public createGain() {
         return {
           gain: {
+            value: 1,
             setValueAtTime: vi.fn(),
             exponentialRampToValueAtTime: vi.fn(),
           },
@@ -156,27 +174,45 @@ describe('Floating PiP Telemetry HUD Canvas & Wake/Audio Services', () => {
       }
     }
 
+    const mockAudioSession = { type: 'auto' };
+    Object.defineProperty(navigator, 'audioSession', {
+      configurable: true,
+      value: mockAudioSession,
+    });
+
     (window as unknown as { AudioContext: unknown }).AudioContext = MockAudioContext;
+    const htmlAudioPlaySpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+
     const cue = new WorkoutAudioCue();
+    // Defaults to OFF (opt-in) so music connections are never interrupted out of the box
+    expect(cue.enabled).toBe(false);
+    cue.playTick(true);
+    cue.playSegmentCue('w1', 'warmup');
+    expect(startSpy).toHaveBeenCalledTimes(0);
+
+    // Opting in configures ambient audio session + plays chimes & decoded MP3 buffers via Web Audio
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3, 4]).buffer, { status: 200 })
+    );
+    cue.enabled = true;
+    cue.unlock();
+    expect(mockAudioSession.type).toBe('ambient');
+
     cue.playTick(false);
     cue.playTick(true);
     expect(startSpy).toHaveBeenCalledTimes(2);
 
-    cue.enabled = false;
-    cue.playTick(true);
-    expect(startSpy).toHaveBeenCalledTimes(2); // Muted no-op
-
-    // Pre-rendered Coach MP3 playback & instant mute
-    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
-    cue.enabled = true;
-    cue.unlock();
     cue.playSegmentCue('w1', 'warmup');
-    expect(playSpy).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(bufferStartSpy).toHaveBeenCalledTimes(1);
+    });
+    // Never touches HTMLMediaElement.play() (which steals mobile Spotify/Apple Music audio focus)
+    expect(htmlAudioPlaySpy).not.toHaveBeenCalled();
 
     cue.enabled = false;
-    expect(pauseSpy).toHaveBeenCalled();
+    expect(bufferStopSpy).toHaveBeenCalledTimes(1);
+    expect(suspendSpy).toHaveBeenCalled();
     cue.playCoachClip('burn-first');
-    expect(playSpy).toHaveBeenCalledTimes(1); // Muted no-op
+    expect(bufferStartSpy).toHaveBeenCalledTimes(1);
   });
 });

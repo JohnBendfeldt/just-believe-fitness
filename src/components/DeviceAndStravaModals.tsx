@@ -159,22 +159,34 @@ export function DeviceConnectionModal({
                 type="button"
                 id="connect-bike-btn"
                 className="btn btn-primary"
-                disabled={!bleSupported || telemetry.bikeStatus === 'connecting'}
+                disabled={!bleSupported}
                 onClick={() => onConnectBike(false)}
               >
                 <Bluetooth size={16} />
-                {telemetry.bikeStatus === 'connecting' ? 'Scanning...' : 'Pair Bike'}
+                {telemetry.bikeStatus === 'connecting' ? 'Scan Again' : 'Pair Bike'}
               </button>
               <button
                 type="button"
                 id="connect-bike-all-btn"
                 className="btn btn-sm"
-                disabled={!bleSupported || telemetry.bikeStatus === 'connecting'}
+                disabled={!bleSupported}
                 onClick={() => onConnectBike(true)}
                 title="Show all nearby Bluetooth devices if your bike uses a custom name"
               >
                 Scan All BLE
               </button>
+              {(telemetry.bikeStatus === 'connecting' ||
+                telemetry.bikeStatus === 'reconnecting') && (
+                <button
+                  type="button"
+                  id="cancel-bike-scan-btn"
+                  className="btn btn-danger btn-sm"
+                  onClick={onDisconnectBike}
+                  title="Cancel Bluetooth scan"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -215,22 +227,33 @@ export function DeviceConnectionModal({
                 type="button"
                 id="connect-hr-btn"
                 className="btn btn-primary"
-                disabled={!bleSupported || telemetry.hrStatus === 'connecting'}
+                disabled={!bleSupported}
                 onClick={() => onConnectHr(false)}
               >
                 <Heart size={16} />
-                {telemetry.hrStatus === 'connecting' ? 'Scanning...' : 'Pair Heart Rate'}
+                {telemetry.hrStatus === 'connecting' ? 'Scan Again' : 'Pair Heart Rate'}
               </button>
               <button
                 type="button"
                 id="connect-hr-all-btn"
                 className="btn btn-sm"
-                disabled={!bleSupported || telemetry.hrStatus === 'connecting'}
+                disabled={!bleSupported}
                 onClick={() => onConnectHr(true)}
                 title="Show all nearby Bluetooth devices if your watch hides its HR service icon"
               >
                 Scan All BLE
               </button>
+              {(telemetry.hrStatus === 'connecting' || telemetry.hrStatus === 'reconnecting') && (
+                <button
+                  type="button"
+                  id="cancel-hr-scan-btn"
+                  className="btn btn-danger btn-sm"
+                  onClick={onDisconnectHr}
+                  title="Cancel heart rate Bluetooth scan"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           )}
         </div>

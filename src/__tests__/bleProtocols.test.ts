@@ -519,4 +519,66 @@ describe('Universal BLE Heart Rate Monitor Support (Any Brand)', () => {
       /HR Broadcast/i
     );
   });
+
+  it('resets scanning state to disconnected when the Bluetooth picker is closed without picking a bike or HR sensor, allowing immediate re-scan', async () => {
+    const cancelErr = Object.assign(new Error('User cancelled the requestDevice() chooser.'), {
+      name: 'NotFoundError',
+    });
+
+    const mockDevice = {
+      name: 'ECH-SPORT-11',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      gatt: {
+        connected: true,
+        disconnect: vi.fn(),
+        connect: vi.fn(async () => ({
+          getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+            if (uuid === ECHELON_COMM_SERVICE) {
+              return {
+                getCharacteristic: vi.fn(async () => new MockGattCharacteristic()),
+              };
+            }
+            throw new Error('Not Echelon');
+          }),
+        })),
+      },
+    };
+
+    const requestDeviceSpy = vi
+      .fn()
+      .mockRejectedValueOnce(cancelErr)
+      .mockResolvedValueOnce(mockDevice)
+      .mockRejectedValueOnce(cancelErr);
+
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: { requestDevice: requestDeviceSpy },
+    });
+
+    const bikeStatuses: string[] = [];
+    const bikeConn = new EchelonBikeConnection({
+      onReading: () => {},
+      onStatusChange: (status) => bikeStatuses.push(status),
+    });
+
+    // 1st attempt: user closes picker without choosing -> transitions connecting -> disconnected
+    await expect(bikeConn.requestAndConnect()).rejects.toThrow(/cancelled/);
+    expect(bikeStatuses).toEqual(['connecting', 'disconnected']);
+
+    // 2nd attempt: user clicks Pair Bike again -> picker opens cleanly and connects!
+    await bikeConn.requestAndConnect();
+    expect(bikeStatuses.at(-1)).toBe('connected');
+    expect(requestDeviceSpy).toHaveBeenCalledTimes(2);
+    bikeConn.disconnect();
+
+    // Same guarantee on Heart Rate sensor picker dismissal
+    const hrStatuses: string[] = [];
+    const hrConn = new GarminHeartRateConnection({
+      onHeartRate: () => {},
+      onStatusChange: (status) => hrStatuses.push(status),
+    });
+    await expect(hrConn.requestAndConnect()).rejects.toThrow(/cancelled/);
+    expect(hrStatuses).toEqual(['connecting', 'disconnected']);
+  });
 });

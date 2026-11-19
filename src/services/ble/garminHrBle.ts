@@ -51,6 +51,7 @@ export class GarminHeartRateConnection {
   private device: BluetoothDevice | null = null;
   private hrChar: BluetoothRemoteGATTCharacteristic | null = null;
   private manualDisconnect = false;
+  private connectAttemptId = 0;
   private readonly callbacks: BleHrCallbacks;
 
   private readonly boundHandleDisconnect: () => void;
@@ -83,6 +84,7 @@ export class GarminHeartRateConnection {
       );
     }
 
+    const attemptId = ++this.connectAttemptId;
     this.manualDisconnect = false;
     this.callbacks.onStatusChange('connecting', null);
 
@@ -92,26 +94,45 @@ export class GarminHeartRateConnection {
       'device_information',
     ];
 
-    const device = options?.acceptAllDevices
-      ? await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices,
-        })
-      : await navigator.bluetooth.requestDevice({
-          filters: [
-            { services: [HEART_RATE_SERVICE] },
-            ...COMMON_HR_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
-          ],
-          optionalServices,
-        });
+    try {
+      const device = options?.acceptAllDevices
+        ? await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices,
+          })
+        : await navigator.bluetooth.requestDevice({
+            filters: [
+              { services: [HEART_RATE_SERVICE] },
+              ...COMMON_HR_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
+            ],
+            optionalServices,
+          });
 
-    if (this.device) {
-      this.cleanupListeners();
+      if (attemptId !== this.connectAttemptId || this.manualDisconnect) {
+        if (device.gatt?.connected) {
+          device.gatt.disconnect();
+        }
+        return;
+      }
+
+      if (this.device) {
+        this.cleanupListeners();
+      }
+
+      this.device = device;
+      device.addEventListener('gattserverdisconnected', this.boundHandleDisconnect);
+      await this.establishSession(device);
+    } catch (err) {
+      if (attemptId === this.connectAttemptId) {
+        this.cleanupListeners();
+        if (this.device?.gatt?.connected) {
+          this.device.gatt.disconnect();
+        }
+        this.device = null;
+        this.callbacks.onStatusChange('disconnected', null);
+      }
+      throw err;
     }
-
-    this.device = device;
-    device.addEventListener('gattserverdisconnected', this.boundHandleDisconnect);
-    await this.establishSession(device);
   }
 
   private async establishSession(device: BluetoothDevice): Promise<void> {
@@ -171,6 +192,7 @@ export class GarminHeartRateConnection {
   }
 
   public disconnect(): void {
+    this.connectAttemptId++;
     this.manualDisconnect = true;
     this.cleanupListeners();
     if (this.device?.gatt?.connected) {

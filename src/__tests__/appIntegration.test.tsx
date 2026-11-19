@@ -92,6 +92,17 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     // Switch back to Rings mode
     fireEvent.click(document.getElementById('gauge-mode-rings-btn')!);
     expect(document.querySelector('.app-shell.mode-rings')).not.toBeNull();
+
+    // Coach audio defaults to OFF (opt-in) so rider music is never interrupted unless enabled
+    const audioBtn = document.getElementById('toggle-audio-cues-btn');
+    expect(audioBtn).not.toBeNull();
+    expect(audioBtn?.getAttribute('aria-pressed')).toBe('false');
+    expect(audioBtn?.textContent).toContain('Audio Off');
+
+    fireEvent.click(audioBtn!);
+    expect(audioBtn?.getAttribute('aria-pressed')).toBe('true');
+    expect(audioBtn?.textContent).toContain('Coach On');
+    expect(window.localStorage.getItem('jbf_audio_cues_v1')).toBe('true');
   });
 
   it('opens Full-Screen Focused Workout Cockpit with visible Start/Pause transport dock and Fullscreen request', async () => {

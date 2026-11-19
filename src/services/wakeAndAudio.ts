@@ -52,10 +52,31 @@ export class ScreenWakeManager {
   }
 }
 
+interface NavigatorWithAudioSession extends Navigator {
+  audioSession?: {
+    type: string;
+  };
+}
+
+/**
+ * Synthesizes interval chimes and plays pre-rendered Coach MP3 cues strictly via the
+ * Web Audio API (`AudioContext` + `AudioBufferSourceNode`) rather than `<audio>` elements.
+ *
+ * Why this matters on mobile:
+ * `HTMLAudioElement.play()` claims exclusive OS Media-Session / audio focus on Android
+ * Chrome and iOS Safari, pausing Spotify / Apple Music / podcasts! Web Audio mixes cleanly
+ * over background music without stealing media focus, and setting `navigator.audioSession.type
+ * = 'ambient'` (where supported) explicitly tells the OS to mix with other audio apps.
+ *
+ * Defaults to muted (`enabled = false`) as an opt-in feature.
+ */
 export class WorkoutAudioCue {
   private ctx: AudioContext | null = null;
-  private voiceEl: HTMLAudioElement | null = null;
-  private _enabled = true;
+  private activeVoiceSource: AudioBufferSourceNode | null = null;
+  private readonly bufferCache = new Map<string, AudioBuffer>();
+  private readonly inflightLoads = new Map<string, Promise<AudioBuffer | null>>();
+  private playbackGeneration = 0;
+  private _enabled = false;
 
   public get enabled(): boolean {
     return this._enabled;
@@ -65,62 +86,113 @@ export class WorkoutAudioCue {
     this._enabled = val;
     if (!val) {
       this.stopVoice();
+      if (this.ctx && this.ctx.state === 'running' && typeof this.ctx.suspend === 'function') {
+        void this.ctx.suspend().catch(() => {});
+      }
     }
   }
 
-  private ensureVoiceElement(): HTMLAudioElement | null {
-    if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
-    if (!this.voiceEl) {
-      const el = new Audio();
-      el.preload = 'auto';
-      this.voiceEl = el;
+  private configureAmbientAudioSession(): void {
+    if (typeof navigator === 'undefined') return;
+    try {
+      const nav = navigator as NavigatorWithAudioSession;
+      if (nav.audioSession) {
+        nav.audioSession.type = 'ambient';
+      }
+    } catch {
+      // Optional W3C Audio Session API
     }
-    return this.voiceEl;
   }
 
   /**
-   * Call inside user click handlers (e.g. Start button) so mobile Safari / Chrome
-   * unlock both Web Audio chimes and the persistent HTML5 MP3 coach player.
+   * Call inside user click handlers when audio is opted-in so mobile browsers
+   * unlock the ambient Web Audio mixer without touching OS media-player focus.
    */
   public unlock(): void {
+    if (!this._enabled) return;
+    this.configureAmbientAudioSession();
     this.ensureContext();
-    this.ensureVoiceElement();
   }
 
   public stopVoice(): void {
-    if (!this.voiceEl) return;
+    this.playbackGeneration++;
+    if (!this.activeVoiceSource) return;
     try {
-      this.voiceEl.pause();
+      this.activeVoiceSource.stop();
+      this.activeVoiceSource.disconnect();
     } catch {
-      // Ignore media pause errors in headless environments
+      // Ignore if source already ended
+    } finally {
+      this.activeVoiceSource = null;
     }
+  }
+
+  private async loadCoachBuffer(ctx: AudioContext, clipId: string): Promise<AudioBuffer | null> {
+    const cached = this.bufferCache.get(clipId);
+    if (cached) return cached;
+
+    const existing = this.inflightLoads.get(clipId);
+    if (existing) return existing;
+
+    const loadPromise = (async (): Promise<AudioBuffer | null> => {
+      try {
+        const resp = await fetch(`/audio/coach/${clipId}.mp3`);
+        if (!resp.ok) return null;
+        const arrayBuf = await resp.arrayBuffer();
+        if (typeof ctx.decodeAudioData !== 'function') return null;
+        const decoded = await ctx.decodeAudioData(arrayBuf.slice(0));
+        this.bufferCache.set(clipId, decoded);
+        return decoded;
+      } catch {
+        return null;
+      } finally {
+        this.inflightLoads.delete(clipId);
+      }
+    })();
+
+    this.inflightLoads.set(clipId, loadPromise);
+    return loadPromise;
   }
 
   public playCoachClip(clipId: string, fallbackClipId?: string): void {
     if (!this._enabled) return;
-    const el = this.ensureVoiceElement();
-    if (!el) return;
+    const ctx = this.ensureContext();
+    if (!ctx || typeof ctx.createBufferSource !== 'function') return;
 
-    try {
-      el.onerror = fallbackClipId
-        ? () => {
-            el.onerror = null;
-            el.src = `/audio/coach/${fallbackClipId}.mp3`;
-            const retry = el.play();
-            if (retry && typeof retry.catch === 'function') {
-              retry.catch(() => {});
-            }
-          }
-        : null;
-
-      el.src = `/audio/coach/${clipId}.mp3`;
-      const playPromise = el.play();
-      if (playPromise && typeof playPromise.catch === 'function') {
-        playPromise.catch(() => {});
+    const gen = ++this.playbackGeneration;
+    void (async () => {
+      let buffer = await this.loadCoachBuffer(ctx, clipId);
+      if (!buffer && fallbackClipId) {
+        buffer = await this.loadCoachBuffer(ctx, fallbackClipId);
       }
-    } catch {
-      // Never throw if browser autoplay policy blocks background audio
-    }
+      if (!buffer || !this._enabled || gen !== this.playbackGeneration) return;
+
+      try {
+        if (this.activeVoiceSource) {
+          try {
+            this.activeVoiceSource.stop();
+            this.activeVoiceSource.disconnect();
+          } catch {
+            // Already stopped
+          }
+        }
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        const gain = ctx.createGain();
+        gain.gain.value = 0.92;
+        source.connect(gain);
+        gain.connect(ctx.destination);
+        source.onended = () => {
+          if (this.activeVoiceSource === source) {
+            this.activeVoiceSource = null;
+          }
+        };
+        this.activeVoiceSource = source;
+        source.start(0);
+      } catch {
+        // Never throw if audio output device changes mid-ride
+      }
+    })();
   }
 
   public playSegmentCue(segmentId: string, cueType?: string): void {
@@ -130,6 +202,7 @@ export class WorkoutAudioCue {
 
   private ensureContext(): AudioContext | null {
     if (!this._enabled || typeof window === 'undefined') return null;
+    this.configureAmbientAudioSession();
     if (!this.ctx) {
       const AudioCtx =
         window.AudioContext ||

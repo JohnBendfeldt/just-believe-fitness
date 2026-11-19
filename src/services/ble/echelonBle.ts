@@ -453,6 +453,7 @@ export class EchelonBikeConnection {
   private prevCrankSample: CrankSample | null = null;
   private lastPedalPacketAt = 0;
   private zeroCadenceWatchdog: number | null = null;
+  private connectAttemptId = 0;
   private readonly callbacks: EchelonBleCallbacks;
 
   private readonly boundHandleDisconnect: () => void;
@@ -507,6 +508,7 @@ export class EchelonBikeConnection {
       );
     }
 
+    const attemptId = ++this.connectAttemptId;
     this.manualDisconnect = false;
     this.callbacks.onStatusChange('connecting', null, undefined, null);
 
@@ -520,30 +522,51 @@ export class EchelonBikeConnection {
       'battery_service',
     ];
 
-    const device = options?.acceptAllDevices
-      ? await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices,
-        })
-      : await navigator.bluetooth.requestDevice({
-          filters: [
-            { services: [ECHELON_ADV_SERVICE] },
-            { services: [ECHELON_COMM_SERVICE] },
-            { services: [FTMS_SERVICE] },
-            { services: [CYCLING_POWER_SERVICE] },
-            { services: [CYCLING_SPEED_CADENCE_SERVICE] },
-            ...COMMON_BIKE_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
-          ],
-          optionalServices,
-        });
+    try {
+      const device = options?.acceptAllDevices
+        ? await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices,
+          })
+        : await navigator.bluetooth.requestDevice({
+            filters: [
+              { services: [ECHELON_ADV_SERVICE] },
+              { services: [ECHELON_COMM_SERVICE] },
+              { services: [FTMS_SERVICE] },
+              { services: [CYCLING_POWER_SERVICE] },
+              { services: [CYCLING_SPEED_CADENCE_SERVICE] },
+              ...COMMON_BIKE_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
+            ],
+            optionalServices,
+          });
 
-    if (this.device) {
-      this.cleanupListeners();
+      // Ignore if the user canceled or started a newer scan while the OS picker was open
+      if (attemptId !== this.connectAttemptId || this.manualDisconnect) {
+        if (device.gatt?.connected) {
+          device.gatt.disconnect();
+        }
+        return;
+      }
+
+      if (this.device) {
+        this.cleanupListeners();
+      }
+
+      this.device = device;
+      device.addEventListener('gattserverdisconnected', this.boundHandleDisconnect);
+      await this.establishGattSession(device);
+    } catch (err) {
+      if (attemptId === this.connectAttemptId) {
+        this.cleanupListeners();
+        if (this.device?.gatt?.connected) {
+          this.device.gatt.disconnect();
+        }
+        this.device = null;
+        this.modelProfile = null;
+        this.callbacks.onStatusChange('disconnected', null, undefined, null);
+      }
+      throw err;
     }
-
-    this.device = device;
-    device.addEventListener('gattserverdisconnected', this.boundHandleDisconnect);
-    await this.establishGattSession(device);
   }
 
   private async establishGattSession(device: BluetoothDevice): Promise<void> {
@@ -936,6 +959,7 @@ export class EchelonBikeConnection {
   }
 
   public disconnect(): void {
+    this.connectAttemptId++;
     this.manualDisconnect = true;
     this.clearTimers();
     this.cleanupListeners();

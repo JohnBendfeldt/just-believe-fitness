@@ -236,12 +236,18 @@ export function FocusRideModal({
             </button>
             <button
               type="button"
-              className="btn btn-sm"
+              className={`btn btn-sm ${audioEnabled ? 'btn-primary' : ''}`}
               id="focus-audio-btn"
               onClick={onToggleAudio}
-              title={audioEnabled ? 'Mute coach voice & chimes' : 'Enable coach voice & chimes'}
+              aria-pressed={audioEnabled}
+              title={
+                audioEnabled
+                  ? 'Coach audio ON (mixes over music) — tap to mute'
+                  : 'Coach audio OFF — tap to opt in to coach voice & chimes'
+              }
             >
               {audioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              <span className="focus-hide-xs">{audioEnabled ? 'Coach On' : 'Audio Off'}</span>
             </button>
             <button
               type="button"

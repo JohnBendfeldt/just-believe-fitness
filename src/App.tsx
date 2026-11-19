@@ -105,6 +105,7 @@ import { checkRemoteBuildUpdate } from './utils/pwaUpdater';
 
 const EMPTY_ZONE_SECONDS: Record<ZoneId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 const GAUGE_MODE_STORAGE_KEY = 'jbf_gauge_mode_v1';
+const AUDIO_CUES_STORAGE_KEY = 'jbf_audio_cues_v1';
 
 export type GaugeDisplayMode = 'rings' | 'bars';
 
@@ -114,6 +115,14 @@ function loadGaugeDisplayMode(): GaugeDisplayMode {
     return saved === 'bars' ? 'bars' : 'rings';
   } catch {
     return 'rings';
+  }
+}
+
+function loadAudioCuesEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(AUDIO_CUES_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
   }
 }
 
@@ -186,7 +195,7 @@ export function App() {
   const [garminConfig, setGarminConfig] = useState<GarminConfig>(() => loadGarminConfig());
   const [uploadingRideId, setUploadingRideId] = useState<string | null>(null);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
-  const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(() => loadAudioCuesEnabled());
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [stopConfirmAction, setStopConfirmAction] = useState<'save' | 'discard' | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
@@ -446,7 +455,25 @@ export function App() {
     if (audioRef.current) {
       audioRef.current.enabled = audioEnabled;
     }
+    try {
+      window.localStorage.setItem(AUDIO_CUES_STORAGE_KEY, audioEnabled ? 'true' : 'false');
+    } catch {
+      // Ignore storage quota errors
+    }
   }, [audioEnabled]);
+
+  const handleToggleAudio = useCallback(() => {
+    setAudioEnabled((prev) => {
+      const next = !prev;
+      if (audioRef.current) {
+        audioRef.current.enabled = next;
+        if (next) {
+          audioRef.current.unlock();
+        }
+      }
+      return next;
+    });
+  }, []);
 
   // Selected Workout & Active Segment Resolution
   const selectedWorkout = useMemo(
@@ -1425,14 +1452,17 @@ export function App() {
           <button
             type="button"
             id="toggle-audio-cues-btn"
-            className="btn btn-sm"
-            onClick={() => {
-              audioRef.current?.unlock();
-              setAudioEnabled((v) => !v);
-            }}
-            title={audioEnabled ? 'Mute coach voice & chimes' : 'Enable coach voice & chimes'}
+            className={`btn btn-sm ${audioEnabled ? 'btn-primary' : ''}`}
+            onClick={handleToggleAudio}
+            aria-pressed={audioEnabled}
+            title={
+              audioEnabled
+                ? 'Coach audio ON (mixes over music) — tap to mute'
+                : 'Coach audio OFF (keeps music uninterrupted) — tap to opt in'
+            }
           >
             {audioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            <span>{audioEnabled ? 'Coach On' : 'Audio Off'}</span>
           </button>
         </div>
       </section>
@@ -1758,10 +1788,7 @@ export function App() {
         headlineZone={headlineZone}
         resistanceControl={resistanceControl}
         audioEnabled={audioEnabled}
-        onToggleAudio={() => {
-          audioRef.current?.unlock();
-          setAudioEnabled((v) => !v);
-        }}
+        onToggleAudio={handleToggleAudio}
         isHudPipActive={isHudPipActive}
         onLaunchHudPip={() => void handleLaunchHudPip()}
         onStartOrResume={handleStartOrResume}
