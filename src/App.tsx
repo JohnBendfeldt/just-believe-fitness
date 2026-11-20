@@ -374,12 +374,13 @@ export function App() {
           bikeMaxResistance: maxResistance ?? prev.bikeMaxResistance ?? 32,
         }));
       },
-      onStatusChange: (status, deviceName, message, modelProfile) => {
+      onStatusChange: (status, deviceName, message, modelProfile, unlockStatus) => {
         setTelemetry((prev) => ({
           ...prev,
           bikeStatus: status,
           bikeConnected: status === 'connected',
           bikeName: deviceName,
+          bikeUnlockStatus: status === 'connected' ? (unlockStatus ?? 'idle') : 'idle',
           bikeFamily: modelProfile?.family ?? null,
           bikeShortLabel: modelProfile?.shortLabel ?? null,
           bikeHasMotorizedResistance: modelProfile?.hasMotorizedResistance ?? false,

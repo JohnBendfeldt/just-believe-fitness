@@ -5,9 +5,9 @@ A **100% local-first, privacy-first** 5-zone color-coded indoor cycling studio P
 ## Supported Stationary Bikes & Sensors
 
 - **All Echelon Smart Connect Bikes (`0bf669f0` / `0bf669f1`):**
-  - **Motorized EX-Series (`31–33 lb` Heavy Flywheel + App Stepper Control):** **EX-3**, **EX-4s**, **EX-5**, **EX-5s**, **EX-7s**, **EX-8s**.
+  - **Motorized EX-Series (`31–33 lb` Heavy Flywheel + App Stepper Control):** **EX-3**, **EX-4s**, **EX-4s+**, **EX-5**, **EX-5s**, **EX-7s**, **EX-8s**, **EX-Pro**.
   - **Compact / Manual-Knob Series (`15 lb` Flywheel + Live Digital 1–32 Sensor):** **Connect Sport**, **Sport-s**, **EX-15**, **Connect Prime**, **EX-1 / EX-1LE**, **GT+**.
-  - Speaks both classic handshake and `0xF0 0xE0` BCD challenge-response firmware offline, and automatically selects the matching flywheel power curve and resistance UI. *(Tip: Avoid installing post-July 2025 firmware updates inside the official Echelon app so your bike's Bluetooth remains unlocked offline.)*
+  - Speaks both classic open handshake and **direct offline `0xF0 0xE0` challenge-response unlock for locked Echelon firmware** (zero Echelon app, subscription, or second device required), with post-auth verification and automatic flywheel curve & knob vs. motorized resistance detection. *(Tip: Still avoid unnecessary firmware updates in the official Echelon app in case future updates introduce stricter locks.)*
 - **Other Stationary Bike Brands (Standard Bluetooth FTMS `0x1826`, Cycling Power `0x1818`, & Cadence `0x1816`):**
   - **FTMS Bikes & Trainers (`0x2AD2` + optional `0x2AD9` resistance control):** **Schwinn IC4 / 800IC**, **Bowflex C6**, **Yesoul**, **Merach**, **Domyos**, **Keiser M3i** (with converter), **Stages**, **Wattbike**, **Concept2 BikeErg (`PM5`)**, **Renpho AI Bike**, **Zycle**, **Joroto**, **Wahoo KICKR**, **Garmin Tacx**, **Zwift Ride / Hub**, **Saris**, **Elite**, **JetBlack**.
   - **Power Meter Pedals & Cranks (`0x2A63` watts + crank cadence):** **Favero Assioma**, **Garmin Rally / Vector**, **4iiii**, **Stages**, **Quarq**, **Magene**.

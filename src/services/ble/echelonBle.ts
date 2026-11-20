@@ -1,4 +1,4 @@
-import type { BikeFamilyId } from '../../types/fitness';
+import type { BikeFamilyId, BikeUnlockStatus } from '../../types/fitness';
 import { getBluetoothUnsupportedMessage } from '../../utils/browserSupport';
 
 export const ECHELON_ADV_SERVICE = '0bf669f0-45f2-11e7-9598-0800200c9a66';
@@ -6,6 +6,9 @@ export const ECHELON_COMM_SERVICE = '0bf669f1-45f2-11e7-9598-0800200c9a66';
 export const ECHELON_WRITE_CHAR = '0bf669f2-45f2-11e7-9598-0800200c9a66';
 export const ECHELON_NOTIFY_1_CHAR = '0bf669f3-45f2-11e7-9598-0800200c9a66';
 export const ECHELON_NOTIFY_2_CHAR = '0bf669f4-45f2-11e7-9598-0800200c9a66';
+
+export const ECHELON_ACTIVATION_FRAME = new Uint8Array([0xf0, 0xb0, 0x01, 0x01, 0xa2]);
+export const ECHELON_UNLOCK_ACK_FRAME = new Uint8Array([0xf0, 0xa5, 0x01, 0x0e, 0xa4]);
 
 export const FTMS_SERVICE = 0x1826;
 export const FTMS_INDOOR_BIKE_DATA = 0x2ad2;
@@ -17,6 +20,7 @@ export const CSC_MEASUREMENT = 0x2a5b;
 
 const COMMON_BIKE_NAME_PREFIXES = [
   'ECH',
+  'Echelon',
   'IC Bike',
   'Schwinn',
   'Bowflex',
@@ -52,6 +56,19 @@ const COMMON_BIKE_NAME_PREFIXES = [
 ];
 
 export type BikeProtocolKind = 'echelon' | 'ftms' | 'cps' | 'csc';
+export type EchelonUnlockStatus = BikeUnlockStatus;
+export type EchelonUnlockError =
+  | 'invalid-length'
+  | 'invalid-prefix'
+  | 'invalid-decimal-prefix'
+  | 'zero-divisor'
+  | 'result-out-of-range';
+
+export interface EchelonUnlockResult {
+  response: Uint8Array | null;
+  authValue: number | null;
+  error: EchelonUnlockError | null;
+}
 
 export interface BikeModelProfile {
   family: BikeFamilyId;
@@ -83,7 +100,8 @@ export interface EchelonBleCallbacks {
     status: BikeConnectionStatus,
     deviceName: string | null,
     message?: string,
-    modelProfile?: BikeModelProfile | null
+    modelProfile?: BikeModelProfile | null,
+    unlockStatus?: EchelonUnlockStatus
   ) => void;
 }
 
@@ -161,6 +179,17 @@ export function detectBikeModelProfile(
         recommendedCurve: 'sport-compact',
       };
     }
+    if (upper.includes('EXPRO') || upper.includes('EX-PRO') || upper.includes('ECH-PRO')) {
+      return {
+        family: 'echelon-ex-motorized',
+        protocol: 'echelon',
+        shortLabel: 'EX-Pro',
+        displayName: 'Echelon EX-Pro',
+        hasMotorizedResistance: true,
+        hasBuiltInScreen: true,
+        recommendedCurve: 'ex3-vector',
+      };
+    }
     if (upper.includes('EX8') || upper.includes('EX-8')) {
       return {
         family: 'echelon-ex-motorized',
@@ -201,6 +230,17 @@ export function detectBikeModelProfile(
         shortLabel: 'EX-5',
         displayName: 'Echelon EX-5',
         hasMotorizedResistance: true,
+        recommendedCurve: 'ex3-vector',
+      };
+    }
+    if (upper.includes('EX4S+') || upper.includes('EX-4S+')) {
+      return {
+        family: 'echelon-ex-motorized',
+        protocol: 'echelon',
+        shortLabel: 'EX-4s+',
+        displayName: 'Echelon EX-4s+',
+        hasMotorizedResistance: true,
+        hasBuiltInScreen: true,
         recommendedCurve: 'ex3-vector',
       };
     }
@@ -404,31 +444,87 @@ function parseLeadingDecimalDigitsFromHex(bytes: number[]): number | null {
 }
 
 /**
- * Computes the challenge-response frame for 2023-2024 Echelon bike firmware (0xF0 0xE0 frames),
- * based on the protocol documented by Christian Emerson (@christianbemerson).
+ * Computes the direct offline challenge-response frame for locked Echelon firmware (0xF0 0xE0 frames),
+ * including post-July 2025 firmware locks. Protocol discovery and validation credited to
+ * Christian Emerson (@christianbemerson) and QZ PR #5358.
  */
-export function computeEchelonUnlockResponse(challenge: Uint8Array): Uint8Array | null {
-  if (challenge.length !== 8 || challenge[0] !== 0xf0 || challenge[1] !== 0xe0) {
-    return null;
+export function solveEchelonUnlockChallenge(challenge: Uint8Array): EchelonUnlockResult {
+  if (challenge.length !== 8) {
+    return { response: null, authValue: null, error: 'invalid-length' };
+  }
+  if (challenge[0] !== 0xf0 || challenge[1] !== 0xe0) {
+    return { response: null, authValue: null, error: 'invalid-prefix' };
   }
   const a = parseLeadingDecimalDigitsFromHex([challenge[4], challenge[2]]);
   const b = parseLeadingDecimalDigitsFromHex([challenge[3], challenge[5]]);
   const c = parseLeadingDecimalDigitsFromHex([challenge[6]]);
-  if (a === null || b === null || c === null || c === 0) {
-    return null;
+  if (a === null || b === null || c === null) {
+    return { response: null, authValue: null, error: 'invalid-decimal-prefix' };
   }
-  const authVal = (a * b) % c;
-  if (authVal < 0 || authVal > 99) {
-    return null;
+  if (c === 0) {
+    return { response: null, authValue: null, error: 'zero-divisor' };
   }
-  const packedBcd = ((Math.floor(authVal / 10) & 0x0f) << 4) | (authVal % 10);
+  const authValue = (a * b) % c;
+  if (authValue < 0 || authValue > 99) {
+    return { response: null, authValue: null, error: 'result-out-of-range' };
+  }
+  const packedBcd = ((Math.floor(authValue / 10) & 0x0f) << 4) | (authValue % 10);
   const frame = new Uint8Array([0xf0, 0xe0, 0x00, 0x00, packedBcd, 0x00, 0x00, 0x00]);
   let sum = 0;
   for (let i = 0; i < 7; i++) {
     sum = (sum + frame[i]) & 0xff;
   }
   frame[7] = sum;
-  return frame;
+  return { response: frame, authValue, error: null };
+}
+
+export function computeEchelonUnlockResponse(challenge: Uint8Array): Uint8Array | null {
+  return solveEchelonUnlockChallenge(challenge).response;
+}
+
+function isEchoedEchelonUnlockAck(bytes: Uint8Array, expectedAuthByte: number | null): boolean {
+  if (
+    expectedAuthByte === null ||
+    bytes.length !== 8 ||
+    bytes[0] !== 0xf0 ||
+    bytes[1] !== 0xe0 ||
+    bytes[2] !== 0x00 ||
+    bytes[3] !== 0x00 ||
+    bytes[4] !== expectedAuthByte ||
+    bytes[5] !== 0x00 ||
+    bytes[6] !== 0x00
+  ) {
+    return false;
+  }
+  let sum = 0;
+  for (let i = 0; i < 7; i++) {
+    sum = (sum + bytes[i]) & 0xff;
+  }
+  return bytes[7] === sum;
+}
+
+/**
+ * Returns true if an incoming Echelon GATT notification confirms the bike is in an active,
+ * unlocked telemetry state (F0 A5 01 0E A4 ACK, F0 D1 telemetry, F0 D2 resistance, or an
+ * echoed checksum-valid F0 E0 response carrying the expected auth byte).
+ */
+export function isEchelonPostAuthFrame(
+  bytes: Uint8Array,
+  expectedAuthByte: number | null = null
+): boolean {
+  if (
+    bytes.length === ECHELON_UNLOCK_ACK_FRAME.length &&
+    bytes.every((val, idx) => val === ECHELON_UNLOCK_ACK_FRAME[idx])
+  ) {
+    return true;
+  }
+  if (bytes.length === 13 && bytes[0] === 0xf0 && bytes[1] === 0xd1) {
+    return true;
+  }
+  if (bytes.length === 5 && bytes[0] === 0xf0 && bytes[1] === 0xd2) {
+    return true;
+  }
+  return isEchoedEchelonUnlockAck(bytes, expectedAuthByte);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -446,8 +542,16 @@ export class EchelonBikeConnection {
   private pollCounter = 1;
   private writeChain: Promise<void> = Promise.resolve();
   private manualDisconnect = false;
-  private unlockInProgress = false;
-  private unlockSucceeded = false;
+  private gattSessionId = 0;
+  private echelonSessionReady = false;
+  private unlockState: EchelonUnlockStatus = 'idle';
+  private unlockActivationSent = false;
+  private unlockAuthAckReceived = false;
+  private unlockExpectedAuthByte: number | null = null;
+  private unlockActivationTimer: number | null = null;
+  private unlockFallbackTimer: number | null = null;
+  private unlockRetryUsed = false;
+  private pendingResistanceLevel: number | null = null;
   private cadenceRpm = 0;
   private resistance = 1;
   private maxResistance = 32;
@@ -502,6 +606,14 @@ export class EchelonBikeConnection {
     return this.modelProfile;
   }
 
+  public getUnlockStatus(): EchelonUnlockStatus {
+    return this.unlockState;
+  }
+
+  private getCurrentDeviceLabel(): string {
+    return this.device?.name || this.modelProfile?.displayName || 'Echelon Bike';
+  }
+
   public async requestAndConnect(options?: { acceptAllDevices?: boolean }): Promise<void> {
     if (!EchelonBikeConnection.isSupported()) {
       throw new Error(getBluetoothUnsupportedMessage());
@@ -509,7 +621,7 @@ export class EchelonBikeConnection {
 
     const attemptId = ++this.connectAttemptId;
     this.manualDisconnect = false;
-    this.callbacks.onStatusChange('connecting', null, undefined, null);
+    this.callbacks.onStatusChange('connecting', null, undefined, null, 'idle');
 
     const optionalServices: BluetoothServiceUUID[] = [
       ECHELON_ADV_SERVICE,
@@ -556,13 +668,17 @@ export class EchelonBikeConnection {
       await this.establishGattSession(device);
     } catch (err) {
       if (attemptId === this.connectAttemptId) {
+        this.gattSessionId++;
+        this.echelonSessionReady = false;
+        this.resetDirectUnlockState();
+        this.clearTimers();
         this.cleanupListeners();
         if (this.device?.gatt?.connected) {
           this.device.gatt.disconnect();
         }
         this.device = null;
         this.modelProfile = null;
-        this.callbacks.onStatusChange('disconnected', null, undefined, null);
+        this.callbacks.onStatusChange('disconnected', null, undefined, null, 'idle');
       }
       throw err;
     }
@@ -573,9 +689,10 @@ export class EchelonBikeConnection {
       throw new Error('Selected Bluetooth device does not expose a GATT server.');
     }
 
+    const sessionId = ++this.gattSessionId;
+    this.echelonSessionReady = false;
     this.clearTimers();
-    this.unlockInProgress = false;
-    this.unlockSucceeded = false;
+    this.resetDirectUnlockState();
     this.writeChar = null;
     this.ftmsControlChar = null;
     this.ftmsControlGranted = false;
@@ -584,11 +701,14 @@ export class EchelonBikeConnection {
     this.notifyChars = [];
 
     const server = await device.gatt.connect();
+    if (sessionId !== this.gattSessionId) return;
 
-    // 1. Try native Echelon GATT channel first (Connect Sport, EX-15, Prime, GT+, EX-1/3/4s/5/5s/7s/8s)
+    // 1. Try native Echelon GATT channel first (Connect Sport, EX-15, Prime, GT+, EX-1/3/4s/4s+/5/5s/7s/8s/Pro)
     try {
       const echelonService = await server.getPrimaryService(ECHELON_COMM_SERVICE);
       this.writeChar = await echelonService.getCharacteristic(ECHELON_WRITE_CHAR);
+      this.modelProfile = detectBikeModelProfile(device.name, 'echelon');
+      const label = device.name || this.modelProfile.displayName;
 
       for (const uuid of [ECHELON_NOTIFY_1_CHAR, ECHELON_NOTIFY_2_CHAR]) {
         try {
@@ -601,18 +721,33 @@ export class EchelonBikeConnection {
         }
       }
 
-      this.modelProfile = detectBikeModelProfile(device.name, 'echelon');
-      const label = device.name || this.modelProfile.displayName;
+      if (sessionId !== this.gattSessionId) return;
 
-      // Brief listen window for 2023-2024 0xF0 0xE0 challenge before classic handshake
+      // Brief listen window in case a locked Echelon bike immediately emits an 0xF0 0xE0 challenge
       await sleep(260);
-      if (!this.unlockInProgress && !this.unlockSucceeded) {
-        await this.sendClassicHandshake();
-      }
+      if (sessionId !== this.gattSessionId) return;
 
+      if (this.unlockState === 'idle') {
+        await this.sendClassicHandshake(sessionId);
+      }
+      if (sessionId !== this.gattSessionId) return;
+
+      this.echelonSessionReady = true;
       this.startKeepalivePoll();
       this.startCadenceWatchdog();
-      this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile);
+      const readyMessage =
+        this.unlockState === 'unlocked'
+          ? `${label} unlocked & ready!`
+          : this.unlockState === 'failed'
+            ? `${label} appears firmware-locked and didn't confirm direct unlock. Try unplugging the bike for 10 seconds and pairing again.`
+            : undefined;
+      this.callbacks.onStatusChange(
+        'connected',
+        label,
+        readyMessage,
+        this.modelProfile,
+        this.unlockState
+      );
       return;
     } catch {
       // Fall through to standard FTMS / Cycling Power / CSC if paired with a non-Echelon bike
@@ -640,7 +775,7 @@ export class EchelonBikeConnection {
       this.modelProfile = detectBikeModelProfile(device.name, 'ftms', hasFtmsControl);
       const label = device.name || this.modelProfile.displayName;
       this.startCadenceWatchdog();
-      this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile);
+      this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile, 'idle');
       return;
     } catch {
       // Fall through to Cycling Power
@@ -657,7 +792,7 @@ export class EchelonBikeConnection {
       this.modelProfile = detectBikeModelProfile(device.name, 'cps');
       const label = device.name || this.modelProfile.displayName;
       this.startCadenceWatchdog();
-      this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile);
+      this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile, 'idle');
       return;
     } catch {
       // Fall through to Cycling Speed & Cadence
@@ -676,20 +811,50 @@ export class EchelonBikeConnection {
       this.resistance = 16; // Sensible flat-road virtual starting gear for cadence-only spin bikes
     }
     this.startCadenceWatchdog();
-    this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile);
+    this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile, 'idle');
   }
 
   private enqueueWrite(
     payload: Uint8Array,
-    targetChar?: BluetoothRemoteGATTCharacteristic | null
+    targetChar?: BluetoothRemoteGATTCharacteristic | null,
+    options?: { preferWithResponse?: boolean; sessionId?: number }
   ): Promise<void> {
+    const expectedSession = options?.sessionId ?? this.gattSessionId;
+    const preferWithResponse = options?.preferWithResponse ?? targetChar === undefined;
+
     this.writeChain = this.writeChain
       .then(async () => {
+        if (expectedSession !== this.gattSessionId) return;
         const ch = targetChar ?? this.writeChar;
         if (!ch) return;
         const buf = new Uint8Array(payload);
-        if (ch.properties.writeWithoutResponse) {
+
+        // Echelon's 0bf669f2 channel uses WriteWithResponse in QZ (Android & iOS) for reliable
+        // delivery of unlock responses and activation frames, falling back to WriteWithoutResponse.
+        if (
+          preferWithResponse &&
+          ch.properties.write &&
+          typeof ch.writeValueWithResponse === 'function'
+        ) {
+          try {
+            await ch.writeValueWithResponse(buf);
+          } catch {
+            if (
+              ch.properties.writeWithoutResponse &&
+              typeof ch.writeValueWithoutResponse === 'function'
+            ) {
+              await ch.writeValueWithoutResponse(buf);
+            } else {
+              throw new Error('GATT write with response failed');
+            }
+          }
+        } else if (
+          ch.properties.writeWithoutResponse &&
+          typeof ch.writeValueWithoutResponse === 'function'
+        ) {
           await ch.writeValueWithoutResponse(buf);
+        } else if (ch.properties.write && typeof ch.writeValueWithResponse === 'function') {
+          await ch.writeValueWithResponse(buf);
         } else {
           await ch.writeValue(buf);
         }
@@ -701,32 +866,178 @@ export class EchelonBikeConnection {
     return this.writeChain;
   }
 
-  private async sendClassicHandshake(): Promise<void> {
+  private async sendClassicHandshake(sessionId: number): Promise<void> {
     const initA1 = new Uint8Array([0xf0, 0xa1, 0x00, 0x91]);
     const initA3 = new Uint8Array([0xf0, 0xa3, 0x00, 0x93]);
-    const activateB0 = new Uint8Array([0xf0, 0xb0, 0x01, 0x01, 0xa2]);
+    const frames = [
+      initA1,
+      initA1,
+      initA1,
+      initA1,
+      initA3,
+      initA1,
+      ECHELON_ACTIVATION_FRAME,
+    ];
 
-    await this.enqueueWrite(initA1);
-    await this.enqueueWrite(initA1);
-    await this.enqueueWrite(initA1);
-    await this.enqueueWrite(initA1);
-    await this.enqueueWrite(initA3);
-    await this.enqueueWrite(initA1);
-    if (!this.unlockInProgress && !this.unlockSucceeded) {
-      await this.enqueueWrite(activateB0);
+    for (const frame of frames) {
+      // Abort remaining classic init frames immediately if a locked bike emits 0xF0 0xE0 mid-handshake
+      if (sessionId !== this.gattSessionId || this.unlockState !== 'idle') {
+        return;
+      }
+      await this.enqueueWrite(frame, undefined, { preferWithResponse: true, sessionId });
     }
+  }
+
+  private handleDirectUnlockChallenge(challenge: Uint8Array): void {
+    if (this.unlockState === 'unlocking' || this.unlockState === 'unlocked') {
+      return;
+    }
+
+    const result = solveEchelonUnlockChallenge(challenge);
+    if (!result.response) {
+      this.handleDirectUnlockFailed(`invalid challenge (${result.error ?? 'unknown'})`);
+      return;
+    }
+
+    if (this.unlockState === 'failed') {
+      if (this.unlockRetryUsed) {
+        return;
+      }
+      this.unlockRetryUsed = true;
+    }
+
+    const sessionId = this.gattSessionId;
+    this.clearUnlockTimers();
+    this.unlockState = 'unlocking';
+    this.unlockActivationSent = false;
+    this.unlockAuthAckReceived = false;
+    this.unlockExpectedAuthByte = result.response[4];
+
+    if (this.echelonSessionReady) {
+      this.callbacks.onStatusChange(
+        'connected',
+        this.getCurrentDeviceLabel(),
+        undefined,
+        this.modelProfile,
+        'unlocking'
+      );
+    }
+
+    this.unlockActivationTimer = window.setTimeout(() => {
+      this.sendDirectUnlockActivation(sessionId);
+    }, 500);
+    this.unlockFallbackTimer = window.setTimeout(() => {
+      this.handleDirectUnlockFailed('timeout waiting for post-unlock traffic', sessionId);
+    }, 2500);
+
+    void this.enqueueWrite(result.response, undefined, { preferWithResponse: true, sessionId });
+  }
+
+  private sendDirectUnlockActivation(sessionId: number): void {
+    this.unlockActivationTimer = null;
+    if (
+      sessionId !== this.gattSessionId ||
+      this.unlockState !== 'unlocking' ||
+      this.unlockActivationSent
+    ) {
+      return;
+    }
+    this.unlockActivationSent = true;
+    void this.enqueueWrite(ECHELON_ACTIVATION_FRAME, undefined, {
+      preferWithResponse: true,
+      sessionId,
+    }).then(() => {
+      if (
+        sessionId === this.gattSessionId &&
+        this.unlockState === 'unlocking' &&
+        this.unlockAuthAckReceived
+      ) {
+        this.confirmDirectUnlock();
+      }
+    });
+  }
+
+  private confirmDirectUnlock(): void {
+    if (this.unlockState === 'unlocked') return;
+    this.clearUnlockTimers();
+    this.unlockState = 'unlocked';
+    this.unlockActivationSent = true;
+
+    if (this.echelonSessionReady) {
+      const label = this.getCurrentDeviceLabel();
+      this.callbacks.onStatusChange(
+        'connected',
+        label,
+        `${label} unlocked & ready!`,
+        this.modelProfile,
+        'unlocked'
+      );
+    }
+
+    if (this.pendingResistanceLevel !== null) {
+      const queuedLevel = this.pendingResistanceLevel;
+      this.pendingResistanceLevel = null;
+      void this.writeEchelonResistanceFrame(queuedLevel);
+    }
+  }
+
+  private handleDirectUnlockFailed(_reason: string, sessionId?: number): void {
+    if (sessionId !== undefined && sessionId !== this.gattSessionId) {
+      return;
+    }
+    if (this.unlockState === 'unlocked') {
+      return;
+    }
+    this.clearUnlockTimers();
+    this.unlockState = 'failed';
+    this.unlockActivationSent = false;
+    this.unlockAuthAckReceived = false;
+    this.pendingResistanceLevel = null;
+
+    if (this.echelonSessionReady) {
+      const label = this.getCurrentDeviceLabel();
+      this.callbacks.onStatusChange(
+        'connected',
+        label,
+        `${label} appears firmware-locked and didn't confirm direct unlock. Try unplugging the bike for 10 seconds and pairing again.`,
+        this.modelProfile,
+        'failed'
+      );
+    }
+  }
+
+  private clearUnlockTimers(): void {
+    if (this.unlockActivationTimer !== null) {
+      window.clearTimeout(this.unlockActivationTimer);
+      this.unlockActivationTimer = null;
+    }
+    if (this.unlockFallbackTimer !== null) {
+      window.clearTimeout(this.unlockFallbackTimer);
+      this.unlockFallbackTimer = null;
+    }
+  }
+
+  private resetDirectUnlockState(): void {
+    this.clearUnlockTimers();
+    this.unlockState = 'idle';
+    this.unlockActivationSent = false;
+    this.unlockAuthAckReceived = false;
+    this.unlockExpectedAuthByte = null;
+    this.unlockRetryUsed = false;
+    this.pendingResistanceLevel = null;
   }
 
   private startKeepalivePoll(): void {
     if (this.pollTimer !== null) {
       window.clearInterval(this.pollTimer);
     }
+    const sessionId = this.gattSessionId;
     this.pollCounter = 1;
     this.pollTimer = window.setInterval(() => {
-      if (this.unlockInProgress) return;
+      if (sessionId !== this.gattSessionId || this.unlockState === 'unlocking') return;
       const frame = new Uint8Array([0xf0, 0xa0, 0x01, this.pollCounter, 0x00]);
       frame[4] = (frame[0] + frame[1] + frame[2] + frame[3]) & 0xff;
-      void this.enqueueWrite(frame);
+      void this.enqueueWrite(frame, undefined, { preferWithResponse: true, sessionId });
       this.pollCounter = (this.pollCounter % 255) + 1;
     }, 2000);
   }
@@ -747,6 +1058,13 @@ export class EchelonBikeConnection {
     }, 1500);
   }
 
+  private async writeEchelonResistanceFrame(level: number): Promise<void> {
+    const echelonLevel = Math.max(1, Math.min(32, level));
+    const frame = new Uint8Array([0xf0, 0xb1, 0x01, echelonLevel, 0x00]);
+    frame[4] = (frame[0] + frame[1] + frame[2] + frame[3]) & 0xff;
+    await this.enqueueWrite(frame, undefined, { preferWithResponse: true });
+  }
+
   public async setResistanceLevel(level: number): Promise<void> {
     const upperBound = this.maxResistance > 32 ? this.maxResistance : 32;
     const clamped = Math.max(1, Math.min(upperBound, Math.round(level)));
@@ -757,22 +1075,28 @@ export class EchelonBikeConnection {
       ...(this.maxResistance > 32 ? { maxResistance: this.maxResistance } : {}),
     });
 
-    // 1. Motorized Echelon EX-series bikes (EX-3, EX-4s, EX-5, EX-5s, EX-7s, EX-8s)
+    // 1. Motorized Echelon EX-series bikes (EX-3, EX-4s, EX-4s+, EX-5, EX-5s, EX-7s, EX-8s, EX-Pro)
     if (this.writeChar && (this.modelProfile?.hasMotorizedResistance ?? true)) {
       const echelonLevel = Math.max(1, Math.min(32, clamped));
-      const frame = new Uint8Array([0xf0, 0xb1, 0x01, echelonLevel, 0x00]);
-      frame[4] = (frame[0] + frame[1] + frame[2] + frame[3]) & 0xff;
-      await this.enqueueWrite(frame);
+      if (this.unlockState === 'unlocking') {
+        this.pendingResistanceLevel = echelonLevel;
+        return;
+      }
+      await this.writeEchelonResistanceFrame(echelonLevel);
       return;
     }
 
     // 2. Controllable FTMS smart bikes / trainers (0x2AD9 Request Control + Set Target Resistance)
     if (this.ftmsControlChar) {
       if (!this.ftmsControlGranted) {
-        await this.enqueueWrite(new Uint8Array([0x00]), this.ftmsControlChar);
+        await this.enqueueWrite(new Uint8Array([0x00]), this.ftmsControlChar, {
+          preferWithResponse: false,
+        });
         this.ftmsControlGranted = true;
       }
-      await this.enqueueWrite(new Uint8Array([0x04, clamped & 0xff]), this.ftmsControlChar);
+      await this.enqueueWrite(new Uint8Array([0x04, clamped & 0xff]), this.ftmsControlChar, {
+        preferWithResponse: false,
+      });
     }
   }
 
@@ -780,22 +1104,36 @@ export class EchelonBikeConnection {
     const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
     if (bytes.length === 0) return;
 
-    // 2023-2024 Echelon firmware challenge: 8 bytes starting with 0xF0 0xE0
-    if (bytes.length === 8 && bytes[0] === 0xf0 && bytes[1] === 0xe0) {
-      const response = computeEchelonUnlockResponse(bytes);
-      if (response && !this.unlockInProgress && !this.unlockSucceeded) {
-        this.unlockInProgress = true;
-        void this.enqueueWrite(response).then(async () => {
-          await sleep(500);
-          await this.enqueueWrite(new Uint8Array([0xf0, 0xb0, 0x01, 0x01, 0xa2]));
-          this.unlockInProgress = false;
-          this.unlockSucceeded = true;
-        });
+    // 1. Confirm direct unlock once post-auth traffic arrives (or record early ACK prior to 0xF0 0xB0)
+    if (this.unlockState === 'unlocking') {
+      if (this.unlockActivationSent && isEchelonPostAuthFrame(bytes, this.unlockExpectedAuthByte)) {
+        this.confirmDirectUnlock();
+      } else if (
+        !this.unlockActivationSent &&
+        ((bytes.length === ECHELON_UNLOCK_ACK_FRAME.length &&
+          bytes.every((val, idx) => val === ECHELON_UNLOCK_ACK_FRAME[idx])) ||
+          isEchoedEchelonUnlockAck(bytes, this.unlockExpectedAuthByte))
+      ) {
+        this.unlockAuthAckReceived = true;
       }
+    } else if (
+      this.unlockState === 'failed' &&
+      isEchelonPostAuthFrame(bytes, this.unlockExpectedAuthByte)
+    ) {
+      // Recover automatically if genuine post-auth telemetry starts streaming after an idle timeout
+      this.confirmDirectUnlock();
+    }
+
+    // 2. Locked Echelon firmware challenge: 8 bytes starting with 0xF0 0xE0
+    if (bytes.length === 8 && bytes[0] === 0xf0 && bytes[1] === 0xe0) {
+      if (isEchoedEchelonUnlockAck(bytes, this.unlockExpectedAuthByte)) {
+        return;
+      }
+      this.handleDirectUnlockChallenge(bytes);
       return;
     }
 
-    // Resistance notification: 5 bytes [0xF0, 0xD2, ..., level, checksum]
+    // 3. Resistance notification: 5 bytes [0xF0, 0xD2, ..., level, checksum]
     if (bytes.length === 5 && bytes[0] === 0xf0 && bytes[1] === 0xd2) {
       this.resistance = Math.max(1, Math.min(32, bytes[3]));
       this.callbacks.onReading({
@@ -805,7 +1143,7 @@ export class EchelonBikeConnection {
       return;
     }
 
-    // Telemetry notification: 13 bytes [0xF0, 0xD1, ..., cadence at index 10, ...]
+    // 4. Telemetry notification: 13 bytes [0xF0, 0xD1, ..., cadence at index 10, ...]
     if (bytes.length === 13 && bytes[0] === 0xf0) {
       this.cadenceRpm = bytes[10];
       this.lastPedalPacketAt = Date.now();
@@ -898,9 +1236,12 @@ export class EchelonBikeConnection {
   }
 
   private async handleUnexpectedDisconnect(): Promise<void> {
+    this.gattSessionId++;
+    this.echelonSessionReady = false;
+    this.resetDirectUnlockState();
     this.clearTimers();
     if (this.manualDisconnect || !this.device) {
-      this.callbacks.onStatusChange('disconnected', null, undefined, null);
+      this.callbacks.onStatusChange('disconnected', null, undefined, null, 'idle');
       return;
     }
 
@@ -909,7 +1250,8 @@ export class EchelonBikeConnection {
       'reconnecting',
       label,
       `Reconnecting to ${label}...`,
-      this.modelProfile
+      this.modelProfile,
+      'idle'
     );
 
     const delays = [900, 1800, 3000, 4500];
@@ -929,11 +1271,13 @@ export class EchelonBikeConnection {
       'disconnected',
       null,
       `Lost Bluetooth connection to ${label}.`,
-      null
+      null,
+      'idle'
     );
   }
 
   private clearTimers(): void {
+    this.clearUnlockTimers();
     if (this.pollTimer !== null) {
       window.clearInterval(this.pollTimer);
       this.pollTimer = null;
@@ -959,7 +1303,10 @@ export class EchelonBikeConnection {
 
   public disconnect(): void {
     this.connectAttemptId++;
+    this.gattSessionId++;
+    this.echelonSessionReady = false;
     this.manualDisconnect = true;
+    this.resetDirectUnlockState();
     this.clearTimers();
     this.cleanupListeners();
     if (this.device?.gatt?.connected) {
@@ -972,7 +1319,7 @@ export class EchelonBikeConnection {
     this.modelProfile = null;
     this.prevCrankSample = null;
     this.cadenceRpm = 0;
-    this.callbacks.onStatusChange('disconnected', null, undefined, null);
+    this.callbacks.onStatusChange('disconnected', null, undefined, null, 'idle');
   }
 }
 

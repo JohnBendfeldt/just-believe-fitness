@@ -117,9 +117,60 @@ export function DeviceConnectionModal({
             </div>
             <p style={{ margin: '5px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
               <strong>Echelon Bikes:</strong> Connect Sport, Sport-s, EX-15, Prime, EX-1, EX-3,
-              EX-4s, EX-5, EX-5s, EX-7s, EX-8s &amp; GT+ (auto-detects flywheel curve &amp; knob vs.
-              motorized resistance).
+              EX-4s, EX-4s+, EX-5, EX-5s, EX-7s, EX-8s, EX-Pro &amp; GT+ — including{' '}
+              <strong>automatic offline unlock for locked Echelon firmware</strong> (auto-detects
+              flywheel curve &amp; knob vs. motorized resistance).
             </p>
+            {telemetry.bikeConnected && telemetry.bikeUnlockStatus === 'unlocking' && (
+              <p
+                id="bike-unlock-status"
+                style={{
+                  margin: '6px 0 0',
+                  padding: '6px 9px',
+                  borderRadius: '8px',
+                  background: 'rgba(56, 189, 248, 0.12)',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Unlocking locked Echelon firmware directly over Bluetooth...
+              </p>
+            )}
+            {telemetry.bikeConnected && telemetry.bikeUnlockStatus === 'unlocked' && (
+              <p
+                id="bike-unlock-status"
+                style={{
+                  margin: '6px 0 0',
+                  padding: '6px 9px',
+                  borderRadius: '8px',
+                  background: 'rgba(34, 197, 94, 0.12)',
+                  border: '1px solid rgba(34, 197, 94, 0.35)',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Locked Echelon firmware unlocked directly — live metrics active.
+              </p>
+            )}
+            {telemetry.bikeConnected && telemetry.bikeUnlockStatus === 'failed' && (
+              <p
+                id="bike-unlock-status"
+                style={{
+                  margin: '6px 0 0',
+                  padding: '6px 9px',
+                  borderRadius: '8px',
+                  background: 'rgba(249, 115, 22, 0.14)',
+                  border: '1px solid rgba(249, 115, 22, 0.42)',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <strong>Firmware lock didn&apos;t confirm:</strong> Unplug the bike for 10 seconds
+                so its Bluetooth LED flashes fresh, then tap <strong>Disconnect</strong> and{' '}
+                <strong>Pair Bike</strong> again.
+              </p>
+            )}
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
               <strong>Other Brands:</strong> Works with standard Bluetooth FTMS bikes &amp; trainers
               (Schwinn IC4, Bowflex C6, Yesoul, Merach, Domyos, Keiser M3i, Stages, Wattbike,
@@ -138,9 +189,10 @@ export function DeviceConnectionModal({
               }}
             >
               <strong>Tip:</strong> Force-close the official Echelon/brand app (and put built-in{' '}
-              <code>s</code>-series screens in sleep/freestyle) so Bluetooth is free. Avoid updating
-              firmware in the official Echelon app so your bike stays unlocked for direct offline
-              Bluetooth.
+              <code>s</code>-series screens in sleep/freestyle) so Bluetooth is free. Locked
+              Echelon firmware (<code>0xF0 0xE0</code>) unlocks automatically offline — if metrics
+              stay at 0, power-cycle the bike for 10s and reconnect. Avoid unnecessary firmware
+              updates in the Echelon app in case future updates add stricter locks.
             </p>
           </div>
           {telemetry.bikeConnected ? (

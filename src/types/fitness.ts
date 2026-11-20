@@ -9,6 +9,8 @@ export type BikeFamilyId =
   | 'power-meter-bike'
   | 'cadence-bike';
 
+export type BikeUnlockStatus = 'idle' | 'unlocking' | 'unlocked' | 'failed';
+
 export interface AthleteProfile {
   name: string;
   heightFeet: number;
@@ -46,6 +48,7 @@ export interface LiveTelemetry {
   bikeConnected: boolean;
   bikeName: string | null;
   bikeStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+  bikeUnlockStatus?: BikeUnlockStatus;
   bikeFamily?: BikeFamilyId | null;
   bikeShortLabel?: string | null;
   bikeHasMotorizedResistance?: boolean;

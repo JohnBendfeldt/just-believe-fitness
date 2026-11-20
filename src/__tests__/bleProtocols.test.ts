@@ -4,8 +4,10 @@ import {
   CYCLING_POWER_SERVICE,
   CYCLING_SPEED_CADENCE_SERVICE,
   CSC_MEASUREMENT,
+  ECHELON_ACTIVATION_FRAME,
   ECHELON_COMM_SERVICE,
   ECHELON_NOTIFY_1_CHAR,
+  ECHELON_UNLOCK_ACK_FRAME,
   ECHELON_WRITE_CHAR,
   EchelonBikeConnection,
   FTMS_CONTROL_POINT,
@@ -14,9 +16,12 @@ import {
   StationaryBikeConnection,
   computeEchelonUnlockResponse,
   detectBikeModelProfile,
+  isEchelonPostAuthFrame,
   parseCpsMeasurement,
   parseCscMeasurement,
+  solveEchelonUnlockChallenge,
   type EchelonRawReading,
+  type EchelonUnlockStatus,
 } from '../services/ble/echelonBle';
 import {
   BleHeartRateConnection,
@@ -26,9 +31,26 @@ import {
 
 type ListenerFn = (ev: Event) => void;
 
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.replace(/\s+/g, '');
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = Number.parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 class MockGattCharacteristic {
   public value: DataView | null = null;
-  public properties = { writeWithoutResponse: true };
+  public properties: { write?: boolean; writeWithoutResponse?: boolean } = {
+    writeWithoutResponse: true,
+  };
   public writtenPayloads: Uint8Array[] = [];
   private listeners = new Map<string, Set<ListenerFn>>();
 
@@ -42,6 +64,14 @@ class MockGattCharacteristic {
   }
 
   public startNotifications = vi.fn(async () => this);
+
+  public writeValueWithResponse = vi.fn(async (buf: BufferSource) => {
+    const view =
+      buf instanceof Uint8Array
+        ? new Uint8Array(buf)
+        : new Uint8Array(buf as ArrayBuffer);
+    this.writtenPayloads.push(view);
+  });
 
   public writeValueWithoutResponse = vi.fn(async (buf: BufferSource) => {
     const view =
@@ -68,21 +98,300 @@ describe('Echelon EX-3 & Standard FTMS/CPS Web Bluetooth Protocols', () => {
     delete (navigator as unknown as { bluetooth?: unknown }).bluetooth;
   });
 
-  it('validates and rejects malformed 0xF0 0xE0 unlock challenges and computes valid BCD responses', () => {
-    expect(computeEchelonUnlockResponse(new Uint8Array([0xf0, 0xd1, 0, 0]))).toBeNull();
-    expect(
-      computeEchelonUnlockResponse(new Uint8Array([0xf0, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
-    ).toBeNull(); // c === 0 guard
+  it('matches all recorded QZ PR #5358 / @christianbemerson locked-Echelon challenge vectors and rejects malformed frames', () => {
+    // Recorded real hardware vectors from QZ PR #5358 (bike, JS decimal-prefix, rower, stride)
+    const mailExample = solveEchelonUnlockChallenge(hexToBytes('f0e0354412468122'));
+    expect(mailExample.error).toBeNull();
+    expect(mailExample.authValue).toBe(63);
+    expect(bytesToHex(mailExample.response!)).toBe('f0e0000063000033');
 
-    const challenge = new Uint8Array([0xf0, 0xe0, 0x12, 0x04, 0x03, 0x05, 0x29, 0x00]);
-    const resp = computeEchelonUnlockResponse(challenge);
-    expect(resp).not.toBeNull();
-    expect(resp?.length).toBe(8);
-    expect(resp?.[0]).toBe(0xf0);
-    expect(resp?.[1]).toBe(0xe0);
-    // Checksum byte 7 equals sum of bytes 0..6 & 0xff
-    const expectedSum = resp!.slice(0, 7).reduce((a, b) => (a + b) & 0xff, 0);
-    expect(resp?.[7]).toBe(expectedSum);
+    const jsPrefix = solveEchelonUnlockChallenge(hexToBytes('f0e09c01240d11aa'));
+    expect(jsPrefix.error).toBeNull();
+    expect(jsPrefix.authValue).toBe(4);
+    expect(bytesToHex(jsPrefix.response!)).toBe('f0e00000040000d4');
+
+    const rowerVector = solveEchelonUnlockChallenge(hexToBytes('f0e09800013140da'));
+    expect(rowerVector.error).toBeNull();
+    expect(rowerVector.authValue).toBe(18);
+    expect(bytesToHex(rowerVector.response!)).toBe('f0e00000180000e8');
+
+    const stride1 = solveEchelonUnlockChallenge(hexToBytes('f0e088293570678d'));
+    expect(stride1.authValue).toBe(10);
+    expect(bytesToHex(stride1.response!)).toBe('f0e00000100000e0');
+
+    const stride2 = solveEchelonUnlockChallenge(hexToBytes('f0e0142910648304'));
+    expect(stride2.authValue).toBe(66);
+    expect(bytesToHex(stride2.response!)).toBe('f0e0000066000036');
+
+    // Typed rejections
+    expect(solveEchelonUnlockChallenge(hexToBytes('f0e03544124681')).error).toBe('invalid-length');
+    expect(solveEchelonUnlockChallenge(hexToBytes('f1e0354412468122')).error).toBe(
+      'invalid-prefix'
+    );
+    expect(solveEchelonUnlockChallenge(hexToBytes('f0e0fd3e6548d58d')).error).toBe(
+      'invalid-decimal-prefix'
+    );
+    expect(solveEchelonUnlockChallenge(hexToBytes('f0e03544124600aa')).error).toBe('zero-divisor');
+    expect(computeEchelonUnlockResponse(new Uint8Array([0xf0, 0xd1, 0, 0]))).toBeNull();
+
+    // Post-auth frame classifier
+    expect(isEchelonPostAuthFrame(ECHELON_UNLOCK_ACK_FRAME)).toBe(true);
+    expect(isEchelonPostAuthFrame(new Uint8Array([0xf0, 0xd2, 0x01, 14, 0xd4]))).toBe(true);
+    expect(
+      isEchelonPostAuthFrame(new Uint8Array([0xf0, 0xd1, 0, 0, 0, 0, 0, 0, 0, 0, 82, 0, 0]))
+    ).toBe(true);
+    expect(isEchelonPostAuthFrame(hexToBytes('f0e0000063000033'), 0x63)).toBe(true);
+    expect(isEchelonPostAuthFrame(hexToBytes('f0e0000063000034'), 0x63)).toBe(false); // bad checksum
+    expect(isEchelonPostAuthFrame(hexToBytes('f0e0354412468122'), 0x63)).toBe(false); // challenge, not ACK
+  });
+
+  it('unlocks a locked Echelon EX-4s+ directly offline (WriteWithResponse, 500ms F0 B0, post-auth ACK, queued resistance replay)', async () => {
+    vi.useFakeTimers();
+    const writeChar = new MockGattCharacteristic();
+    writeChar.properties = { write: true, writeWithoutResponse: true };
+    const notifyChar = new MockGattCharacteristic();
+    notifyChar.startNotifications = vi.fn(async () => {
+      // Locked bike emits 0xF0 0xE0 immediately after notifications are enabled
+      window.setTimeout(() => {
+        notifyChar.emitNotification(hexToBytes('f0e0354412468122'));
+      }, 50);
+      return notifyChar;
+    });
+
+    const mockDevice = {
+      name: 'ECH-EX4S+-701',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      gatt: {
+        connected: true,
+        disconnect: vi.fn(),
+        connect: vi.fn(async () => ({
+          getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+            if (uuid === ECHELON_COMM_SERVICE) {
+              return {
+                getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                  if (cUuid === ECHELON_WRITE_CHAR) return writeChar;
+                  if (cUuid === ECHELON_NOTIFY_1_CHAR) return notifyChar;
+                  throw new Error('Characteristic not present');
+                }),
+              };
+            }
+            throw new Error('Unexpected service');
+          }),
+        })),
+      },
+    };
+
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: { requestDevice: vi.fn(async () => mockDevice) },
+    });
+
+    const readings: EchelonRawReading[] = [];
+    const statusLog: Array<{
+      status: string;
+      message?: string;
+      unlockStatus?: EchelonUnlockStatus;
+    }> = [];
+    const conn = new EchelonBikeConnection({
+      onReading: (r) => readings.push(r),
+      onStatusChange: (status, _name, message, _profile, unlockStatus) => {
+        statusLog.push({ status, message, unlockStatus });
+      },
+    });
+
+    const connectPromise = conn.requestAndConnect();
+    // Advance past the 50ms challenge arrival + 260ms listen window
+    await vi.advanceTimersByTimeAsync(320);
+    await connectPromise;
+
+    expect(conn.getModelProfile()?.shortLabel).toBe('EX-4s+');
+    expect(conn.getUnlockStatus()).toBe('unlocking');
+    // Must use WriteWithResponse and must NOT have sent any classic F0 A1 / F0 A3 init frames
+    expect(writeChar.writeValueWithResponse).toHaveBeenCalled();
+    expect(writeChar.writtenPayloads.map(bytesToHex)).toEqual(['f0e0000063000033']);
+
+    // Tap resistance while unlocking -> queued, NOT written mid-unlock
+    await conn.setResistanceLevel(22);
+    expect(writeChar.writtenPayloads.some((p) => p[0] === 0xf0 && p[1] === 0xb1)).toBe(false);
+
+    // Advance to +500ms activation timer -> sends F0 B0 01 01 A2
+    await vi.advanceTimersByTimeAsync(300);
+    expect(writeChar.writtenPayloads.map(bytesToHex)).toEqual([
+      'f0e0000063000033',
+      bytesToHex(ECHELON_ACTIVATION_FRAME),
+    ]);
+    expect(conn.getUnlockStatus()).toBe('unlocking');
+
+    // Bike replies with F0 A5 01 0E A4 unlock confirmation -> transitions to 'unlocked' and replays queued level 22
+    notifyChar.emitNotification(ECHELON_UNLOCK_ACK_FRAME);
+    await vi.advanceTimersByTimeAsync(60);
+
+    expect(conn.getUnlockStatus()).toBe('unlocked');
+    expect(statusLog.at(-1)?.unlockStatus).toBe('unlocked');
+    expect(statusLog.at(-1)?.message).toMatch(/unlocked & ready/i);
+    const queuedB1 = writeChar.writtenPayloads.find((p) => p[0] === 0xf0 && p[1] === 0xb1);
+    expect(queuedB1?.[3]).toBe(22);
+
+    // Live cadence/resistance telemetry flows normally after unlock
+    notifyChar.emitNotification(new Uint8Array([0xf0, 0xd2, 0x01, 22, 0xdc]));
+    notifyChar.emitNotification(
+      new Uint8Array([0xf0, 0xd1, 0, 0, 0, 0, 0, 0, 0, 0, 87, 0, 0])
+    );
+    expect(readings.at(-1)).toEqual({ cadenceRpm: 87, resistance: 22 });
+
+    conn.disconnect();
+  });
+
+  it('aborts remaining classic init frames immediately when a locked Echelon emits 0xF0 0xE0 mid-handshake', async () => {
+    vi.useFakeTimers();
+    const writeChar = new MockGattCharacteristic();
+    const notifyChar = new MockGattCharacteristic();
+    let challengeSent = false;
+
+    writeChar.writeValueWithoutResponse = vi.fn(async (buf: BufferSource) => {
+      const view =
+        buf instanceof Uint8Array
+          ? new Uint8Array(buf)
+          : new Uint8Array(buf as ArrayBuffer);
+      writeChar.writtenPayloads.push(view);
+      // Simulate bike emitting 0xF0 0xE0 right after the first 0xF0 0xA1 init poke
+      if (!challengeSent && view[0] === 0xf0 && view[1] === 0xa1) {
+        challengeSent = true;
+        notifyChar.emitNotification(hexToBytes('f0e0354412468122'));
+      }
+    });
+
+    const mockDevice = {
+      name: 'ECHEX-3-00412',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      gatt: {
+        connected: true,
+        disconnect: vi.fn(),
+        connect: vi.fn(async () => ({
+          getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+            if (uuid === ECHELON_COMM_SERVICE) {
+              return {
+                getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                  if (cUuid === ECHELON_WRITE_CHAR) return writeChar;
+                  if (cUuid === ECHELON_NOTIFY_1_CHAR) return notifyChar;
+                  throw new Error('Not present');
+                }),
+              };
+            }
+            throw new Error('Unexpected');
+          }),
+        })),
+      },
+    };
+
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: { requestDevice: vi.fn(async () => mockDevice) },
+    });
+
+    const readings: EchelonRawReading[] = [];
+    const conn = new EchelonBikeConnection({
+      onReading: (r) => readings.push(r),
+      onStatusChange: () => {},
+    });
+
+    const connectPromise = conn.requestAndConnect();
+    await vi.advanceTimersByTimeAsync(400);
+    await connectPromise;
+
+    // Only ONE 0xF0 0xA1 frame was written before aborting classic init and writing the unlock response!
+    expect(writeChar.writtenPayloads.map(bytesToHex)).toEqual([
+      'f0a10091',
+      'f0e0000063000033',
+    ]);
+    expect(conn.getUnlockStatus()).toBe('unlocking');
+
+    // +500ms sends activation frame, then post-auth D2 frame confirms unlock + updates resistance
+    await vi.advanceTimersByTimeAsync(500);
+    expect(writeChar.writtenPayloads.map(bytesToHex)).toEqual([
+      'f0a10091',
+      'f0e0000063000033',
+      bytesToHex(ECHELON_ACTIVATION_FRAME),
+    ]);
+
+    notifyChar.emitNotification(new Uint8Array([0xf0, 0xd2, 0x01, 17, 0xd7]));
+    expect(conn.getUnlockStatus()).toBe('unlocked');
+    expect(readings.at(-1)?.resistance).toBe(17);
+
+    conn.disconnect();
+  });
+
+  it('reports locked-firmware timeout after 2.5s, allows one retry on fresh challenge, and auto-recovers if telemetry arrives later', async () => {
+    vi.useFakeTimers();
+    const writeChar = new MockGattCharacteristic();
+    const notifyChar = new MockGattCharacteristic();
+
+    const mockDevice = {
+      name: 'ECH-EX7S-88',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      gatt: {
+        connected: true,
+        disconnect: vi.fn(),
+        connect: vi.fn(async () => ({
+          getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+            if (uuid === ECHELON_COMM_SERVICE) {
+              return {
+                getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                  if (cUuid === ECHELON_WRITE_CHAR) return writeChar;
+                  if (cUuid === ECHELON_NOTIFY_1_CHAR) return notifyChar;
+                  throw new Error('Not present');
+                }),
+              };
+            }
+            throw new Error('Unexpected');
+          }),
+        })),
+      },
+    };
+
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: { requestDevice: vi.fn(async () => mockDevice) },
+    });
+
+    const readings: EchelonRawReading[] = [];
+    const messages: string[] = [];
+    const conn = new EchelonBikeConnection({
+      onReading: (r) => readings.push(r),
+      onStatusChange: (_s, _n, msg) => {
+        if (msg) messages.push(msg);
+      },
+    });
+
+    const connectPromise = conn.requestAndConnect();
+    await vi.advanceTimersByTimeAsync(700);
+    await connectPromise;
+
+    // Bike emits challenge after handshake, then stays silent past the 2500ms timeout
+    notifyChar.emitNotification(hexToBytes('f0e0354412468122'));
+    expect(conn.getUnlockStatus()).toBe('unlocking');
+
+    await vi.advanceTimersByTimeAsync(2600);
+    expect(conn.getUnlockStatus()).toBe('failed');
+    expect(messages.at(-1)).toMatch(/unplugging the bike/i);
+
+    // Fresh challenge triggers a single clean retry
+    notifyChar.emitNotification(hexToBytes('f0e09c01240d11aa'));
+    expect(conn.getUnlockStatus()).toBe('unlocking');
+    await vi.advanceTimersByTimeAsync(2600);
+    expect(conn.getUnlockStatus()).toBe('failed');
+
+    // Genuine telemetry arriving later automatically clears failed state to 'unlocked'
+    notifyChar.emitNotification(
+      new Uint8Array([0xf0, 0xd1, 0, 0, 0, 0, 0, 0, 0, 0, 88, 0, 0])
+    );
+    expect(conn.getUnlockStatus()).toBe('unlocked');
+    expect(readings.at(-1)?.cadenceRpm).toBe(88);
+
+    conn.disconnect();
   });
 
   it('connects to Echelon EX-3 GATT service, performs handshake, parses D1/D2 frames, and writes B1 resistance', async () => {
@@ -221,6 +530,7 @@ describe('Echelon EX-3 & Standard FTMS/CPS Web Bluetooth Protocols', () => {
     expect(sportS.hasBuiltInScreen).toBe(true);
 
     expect(detectBikeModelProfile('ECH-EX15-088', 'echelon').shortLabel).toBe('EX-15');
+    expect(detectBikeModelProfile('ECHEX-15-023230', 'echelon').shortLabel).toBe('EX-15');
     expect(detectBikeModelProfile('ECH-PRIME-12', 'echelon').shortLabel).toBe('Prime');
     expect(detectBikeModelProfile('ECH-GT-55', 'echelon').shortLabel).toBe('GT+');
     expect(detectBikeModelProfile('ECH-EX1-03', 'echelon').family).toBe('echelon-sport-knob');
@@ -230,9 +540,16 @@ describe('Echelon EX-3 & Standard FTMS/CPS Web Bluetooth Protocols', () => {
     expect(ex5s.family).toBe('echelon-ex-motorized');
     expect(ex5s.hasMotorizedResistance).toBe(true);
     expect(ex5s.hasBuiltInScreen).toBe(true);
+    expect(detectBikeModelProfile('ECHEX-3-00412', 'echelon').shortLabel).toBe('EX-3');
     expect(detectBikeModelProfile('ECH-EX4S-22', 'echelon').shortLabel).toBe('EX-4s');
+    expect(detectBikeModelProfile('ECH-EX4S+-099', 'echelon').shortLabel).toBe('EX-4s+');
+    expect(detectBikeModelProfile('Echelon EX-5', 'echelon').shortLabel).toBe('EX-5');
     expect(detectBikeModelProfile('ECH-EX7S-01', 'echelon').shortLabel).toBe('EX-7s');
     expect(detectBikeModelProfile('ECH-EX8S-09', 'echelon').shortLabel).toBe('EX-8s');
+    const exPro = detectBikeModelProfile('ECH-EX-PRO-007', 'echelon');
+    expect(exPro.shortLabel).toBe('EX-Pro');
+    expect(exPro.hasMotorizedResistance).toBe(true);
+    expect(exPro.hasBuiltInScreen).toBe(true);
 
     // Third-party FTMS, Power Meter, and Cadence bikes
     expect(detectBikeModelProfile('IC Bike', 'ftms', false).displayName).toBe('Schwinn IC4');
