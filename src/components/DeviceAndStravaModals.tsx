@@ -29,9 +29,7 @@ import { ZONE_PALETTE, formatDuration, metersToMiles } from '../utils/zones';
 import { buildStravaAuthorizeUrl } from '../services/strava';
 import {
   fetchGarminServerStatus,
-  loginGarminConnect,
   syncGarminPersonalApi,
-  verifyGarminConnectMfa,
   verifyGarminSessionTokens,
 } from '../services/garminConnect';
 import type { FitDevicePresetId } from '../services/fitExporter';
@@ -330,12 +328,8 @@ export function HistoryAndStravaModal({
   const [clientSecret, setClientSecret] = useState(stravaConfig.clientSecret);
   const [showStravaSetup, setShowStravaSetup] = useState(false);
 
-  // Garmin Connect SSO, MFA, Token Paste & Personal API State
+  // Garmin Connect Personal API & Optional Desktop Session Token State
   const [showGarminSetup, setShowGarminSetup] = useState(false);
-  const [garminEmail, setGarminEmail] = useState(garminConfig.email || '');
-  const [garminPassword, setGarminPassword] = useState('');
-  const [garminMfaState, setGarminMfaState] = useState<unknown | null>(null);
-  const [garminMfaCode, setGarminMfaCode] = useState('');
   const [garminAuthBusy, setGarminAuthBusy] = useState(false);
   const [garminTokenJson, setGarminTokenJson] = useState('');
   const [showGarminTokenPaste, setShowGarminTokenPaste] = useState(false);
@@ -417,48 +411,8 @@ export function HistoryAndStravaModal({
     });
   };
 
-  const handleGarminSignIn = async () => {
-    if (!garminEmail.trim() || !garminPassword) return;
-    setGarminAuthBusy(true);
-    try {
-      const res = await loginGarminConnect(garminEmail, garminPassword);
-      if (res.mfaRequired) {
-        setGarminMfaState(res.mfaState);
-        onNotify('Enter the 6-digit verification code Garmin sent to finish connecting.');
-      } else {
-        onSaveGarminConfig(res.config);
-        setGarminPassword('');
-        setShowGarminSetup(false);
-        onNotify(`Garmin Connect linked as ${res.config.athleteName}!`);
-      }
-    } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Garmin sign-in failed.');
-    } finally {
-      setGarminAuthBusy(false);
-    }
-  };
-
-  const handleGarminVerifyMfa = async () => {
-    if (!garminMfaState || !garminMfaCode.trim()) return;
-    setGarminAuthBusy(true);
-    try {
-      const cfg = await verifyGarminConnectMfa(garminMfaState, garminMfaCode, garminEmail);
-      onSaveGarminConfig(cfg);
-      setGarminMfaState(null);
-      setGarminMfaCode('');
-      setGarminPassword('');
-      setShowGarminSetup(false);
-      onNotify(`Garmin Connect linked as ${cfg.athleteName}!`);
-    } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Garmin MFA verification failed.');
-    } finally {
-      setGarminAuthBusy(false);
-    }
-  };
-
   const handleDisconnectGarmin = () => {
     onSaveGarminConfig({});
-    setGarminMfaState(null);
     setGarminPersonalKey('');
     setGarminTokenJson('');
     onNotify('Disconnected Garmin Connect.');
@@ -497,7 +451,7 @@ export function HistoryAndStravaModal({
     if (!garminTokenJson.trim()) return;
     setGarminAuthBusy(true);
     try {
-      const cfg = await verifyGarminSessionTokens(garminTokenJson, garminEmail);
+      const cfg = await verifyGarminSessionTokens(garminTokenJson, garminConfig.email);
       onSaveGarminConfig(cfg);
       setGarminTokenJson('');
       setShowGarminTokenPaste(false);
@@ -544,7 +498,7 @@ export function HistoryAndStravaModal({
           </button>
         )}
 
-        {/* Garmin Connect Button / View Link */}
+        {/* Garmin Connect Button / View Link (only shown when already synced or upload token is linked) */}
         {hasGarmin ? (
           ride.garminActivityId ? (
             <a
@@ -560,7 +514,7 @@ export function HistoryAndStravaModal({
               <CheckCircle2 size={14} /> Garmin Synced
             </span>
           )
-        ) : (
+        ) : isGarminConnected ? (
           <button
             type="button"
             id={isHero ? 'push-highlighted-garmin' : undefined}
@@ -575,7 +529,7 @@ export function HistoryAndStravaModal({
                 ? 'Push to Garmin'
                 : 'Garmin'}
           </button>
-        )}
+        ) : null}
 
         {/* Strava Button / View Link */}
         {hasStrava ? (
@@ -759,12 +713,25 @@ export function HistoryAndStravaModal({
               <button
                 type="button"
                 id="download-highlighted-fit"
-                className="btn"
+                className="btn btn-garmin"
                 onClick={() => downloadRideFit(highlightedRide, fitPreset)}
                 title={`Download Garmin .FIT file (${FIT_DEVICE_PRESETS[fitPreset].label})`}
               >
                 <Download size={16} /> .FIT
               </button>
+
+              {!isGarminConnected && !highlightedRide.garminActivityId && (
+                <a
+                  href="https://connect.garmin.com/modern/import-data"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  id="open-garmin-import-link"
+                  className="btn"
+                  title="Open Garmin Connect Import in your browser to upload the downloaded .FIT file"
+                >
+                  Garmin Import <ExternalLink size={14} />
+                </a>
+              )}
 
               <button
                 type="button"
@@ -819,7 +786,7 @@ export function HistoryAndStravaModal({
                       Profile &amp; History Synced ({garminConfig.athleteName || 'Personal API'})
                     </span>
                   ) : (
-                    <span style={{ color: 'var(--text-muted)' }}>Not Connected</span>
+                    <span style={{ color: '#38BDF8' }}>Ready via .FIT Upload</span>
                   )}
                 </strong>
                 {isGarminConnected && isPersonalApiLinked && (
@@ -854,7 +821,40 @@ export function HistoryAndStravaModal({
                   marginTop: '10px',
                 }}
               >
-                {/* Section A: Official Garmin Personal API (GCDC_... · Profile & History, Zero Rate Limits) */}
+                {/* Section A: Recommended Mobile & Desktop .FIT Upload (Zero Passwords / Zero Rate Limits) */}
+                <div
+                  style={{
+                    background: 'rgba(14, 165, 233, 0.08)',
+                    border: '1px solid rgba(14, 165, 233, 0.28)',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#38BDF8' }}>
+                    <ShieldCheck size={13} style={{ verticalAlign: '-2px', marginRight: '5px' }} />
+                    Recommended: Upload Workouts via .FIT (Works on Phone &amp; Desktop)
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Tap <strong>.FIT</strong> on any workout below, then open Garmin Connect Import
+                    in your browser to upload it with full Power, Cadence, Heart Rate &amp; Garmin
+                    Training Load — no password sharing and zero cloud rate limits.
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <a
+                      href="https://connect.garmin.com/modern/import-data"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-garmin btn-sm"
+                    >
+                      Open Garmin Connect Import <ExternalLink size={13} />
+                    </a>
+                  </div>
+                </div>
+
+                {/* Section B: Official Garmin Personal API (GCDC_... · Profile & History, Zero Rate Limits) */}
                 <div
                   style={{
                     background: 'rgba(18, 185, 129, 0.08)',
@@ -868,12 +868,12 @@ export function HistoryAndStravaModal({
                 >
                   <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#34D399' }}>
                     <KeyRound size={13} style={{ verticalAlign: '-2px', marginRight: '5px' }} />
-                    Garmin Personal API Key (Profile &amp; History Sync · No SSO Rate Limits)
+                    Garmin Personal API Key (Profile &amp; History Sync · No Rate Limits)
                   </div>
                   <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                     Uses Garmin&apos;s official read-only Personal API (<code>GCDC_...</code>) to
-                    import your weight, height, Max HR, and recent Garmin activities without
-                    hitting <code>sso.garmin.com</code>.
+                    import your weight, height, Max HR, FTP, and recent Garmin activities without
+                    passwords.
                     {hasServerPersonalKey &&
                       ' Server GARMIN_PERSONAL_API_KEY detected in environment — leave blank to use it or override below.'}
                   </p>
@@ -916,88 +916,8 @@ export function HistoryAndStravaModal({
                   </div>
                 </div>
 
-                {/* Section B: Workout Upload Connection (Garmin SSO or Local Session Token Paste) */}
-                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  <ShieldCheck
-                    size={13}
-                    style={{ verticalAlign: '-2px', marginRight: '4px', color: '#0EA5E9' }}
-                  />
-                  For <strong>pushing new workouts</strong> to Garmin Connect (write access),
-                  sign in via Garmin SSO below or paste a local session token if cloud IPs hit a
-                  429 cooldown. Only rolling OAuth tokens are stored in this browser. When both
-                  Garmin and Strava are linked, uploads use import mode to prevent duplicates.
-                </p>
-
-                {!garminMfaState ? (
-                  <div className="form-grid">
-                    <div className="field">
-                      <label htmlFor="garmin-email-input">Garmin Connect Email</label>
-                      <input
-                        id="garmin-email-input"
-                        type="email"
-                        placeholder="you@example.com"
-                        value={garminEmail}
-                        onChange={(e) => setGarminEmail(e.target.value)}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="garmin-password-input">Garmin Password (Not Stored)</label>
-                      <input
-                        id="garmin-password-input"
-                        type="password"
-                        placeholder="Used once to obtain OAuth token"
-                        value={garminPassword}
-                        onChange={(e) => setGarminPassword(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="field">
-                    <label htmlFor="garmin-mfa-input">
-                      Garmin 2FA Verification Code (Check Email / SMS)
-                    </label>
-                    <input
-                      id="garmin-mfa-input"
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="6-digit code"
-                      value={garminMfaCode}
-                      onChange={(e) => setGarminMfaCode(e.target.value)}
-                    />
-                  </div>
-                )}
-
+                {/* Section C: Optional Advanced Desktop Session Token (collapsed by default) */}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {!garminMfaState ? (
-                    <button
-                      type="button"
-                      id="connect-garmin-btn"
-                      className="btn btn-garmin btn-sm"
-                      disabled={garminAuthBusy || !garminEmail.trim() || !garminPassword}
-                      onClick={() => void handleGarminSignIn()}
-                    >
-                      {garminAuthBusy ? 'Signing in...' : 'Connect Garmin Account'}
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        id="verify-garmin-mfa-btn"
-                        className="btn btn-garmin btn-sm"
-                        disabled={garminAuthBusy || !garminMfaCode.trim()}
-                        onClick={() => void handleGarminVerifyMfa()}
-                      >
-                        {garminAuthBusy ? 'Verifying...' : 'Verify 2FA Code'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => setGarminMfaState(null)}
-                      >
-                        Back
-                      </button>
-                    </>
-                  )}
                   <button
                     type="button"
                     id="toggle-garmin-token-paste-btn"
@@ -1005,8 +925,8 @@ export function HistoryAndStravaModal({
                     onClick={() => setShowGarminTokenPaste((v) => !v)}
                   >
                     {showGarminTokenPaste
-                      ? 'Hide Token Paste'
-                      : 'Paste Session Token (Bypass Cloud 429)'}
+                      ? 'Hide Advanced Token Paste'
+                      : 'Advanced: Desktop Session Token'}
                   </button>
                   {isGarminConnected && (
                     <button
@@ -1041,9 +961,9 @@ export function HistoryAndStravaModal({
                     }}
                   >
                     <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      If Garmin SSO rate-limits Netlify&apos;s cloud IP, run{' '}
-                      <code>npm run garmin:token</code> on your computer (uses your home IP) and
-                      paste the resulting single-line JSON below:
+                      Desktop power users can enable 1-click Garmin uploads by running{' '}
+                      <code>npm run garmin:token</code> on a home computer and pasting the
+                      resulting single-line JSON below:
                     </p>
                     <div className="field">
                       <label htmlFor="garmin-token-json-input">Garmin Session Token JSON</label>
