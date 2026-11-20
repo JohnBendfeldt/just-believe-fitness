@@ -136,7 +136,7 @@ export function App() {
   const [gaugeMode, setGaugeMode] = useState<GaugeDisplayMode>(() => loadGaugeDisplayMode());
 
   // Workout Selection & Active Session State
-  const [selectedWorkoutId, setSelectedWorkoutId] = useState<string>(WORKOUT_TEMPLATES[1].id);
+  const [selectedWorkoutId, setSelectedWorkoutId] = useState<string>('free-ride');
   const [rideState, setRideState] = useState<'idle' | 'running' | 'paused'>('idle');
   const [elapsedSec, setElapsedSec] = useState<number>(0);
   const [startedAtMs, setStartedAtMs] = useState<number | null>(null);
