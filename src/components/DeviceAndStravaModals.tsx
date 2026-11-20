@@ -348,6 +348,7 @@ export function HistoryAndStravaModal({
     return 'edge-830';
   });
   const tcxFileInputRef = useRef<HTMLInputElement | null>(null);
+  const modalCardRef = useRef<HTMLDivElement | null>(null);
 
   const handleSelectFitPreset = (next: FitDevicePresetId) => {
     setFitPreset(next);
@@ -565,6 +566,7 @@ export function HistoryAndStravaModal({
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div
+        ref={modalCardRef}
         className="modal-card"
         style={{ width: 'min(780px, 100%)' }}
         onClick={(e) => e.stopPropagation()}
@@ -574,8 +576,8 @@ export function HistoryAndStravaModal({
           <div>
             <h2 className="modal-title">
               {highlightedRide
-                ? 'Workout Summary, Photo Card & Cloud Sync'
-                : 'Ride History · Garmin & Strava Sync'}
+                ? 'Workout Summary, Photo Card & Sync'
+                : 'Ride History · Strava & Garmin'}
             </h2>
             <p className="modal-subtitle">
               Snap a post-ride stat photo, sync directly to Strava, or download .FIT files to upload
@@ -589,49 +591,19 @@ export function HistoryAndStravaModal({
 
         {/* Highlighted Ride Summary + Photo Overlay Studio */}
         {highlightedRide && (
-          <div
-            style={{
-              background: 'rgba(249, 115, 22, 0.08)',
-              border: '1px solid rgba(249, 115, 22, 0.32)',
-              borderRadius: '14px',
-              padding: '14px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '8px',
-                alignItems: 'center',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{highlightedRide.title}</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  {formatDuration(highlightedRide.durationSec)} ·{' '}
-                  {metersToMiles(highlightedRide.distanceMeters).toFixed(2)} mi ·{' '}
-                  {Math.round(highlightedRide.caloriesKcal)} kcal
+          <div className="hero-ride-card">
+            <div className="hero-ride-head">
+              <div style={{ minWidth: 0 }}>
+                <div className="hero-ride-title">{highlightedRide.title}</div>
+                <div className="history-stat-chips tabular">
+                  <span>{formatDuration(highlightedRide.durationSec)}</span>
+                  <span>{metersToMiles(highlightedRide.distanceMeters).toFixed(2)} mi</span>
+                  <span>{Math.round(highlightedRide.caloriesKcal)} kcal</span>
                 </div>
               </div>
               {highlightedRide.burnPoints > 0 && (
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    background: '#F97316',
-                    color: '#140700',
-                    fontWeight: 800,
-                    padding: '6px 12px',
-                    borderRadius: '999px',
-                    fontSize: '0.88rem',
-                  }}
-                >
-                  <Flame size={16} /> {highlightedRide.burnPoints} BURN PTS
+                <div className="hero-burn-badge">
+                  <Flame size={15} /> {highlightedRide.burnPoints} BURN PTS
                 </div>
               )}
             </div>
@@ -699,8 +671,8 @@ export function HistoryAndStravaModal({
               })}
             </div>
 
-            {/* Cloud Push + Photo Toggle + TCX Actions */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+            {/* Cloud Push + Photo Toggle + FIT/TCX Actions */}
+            <div className="hero-ride-actions">
               {renderSyncButtonsForRide(highlightedRide, true)}
 
               <button
@@ -762,272 +734,114 @@ export function HistoryAndStravaModal({
           </div>
         )}
 
-        {/* Dual Cloud Connections: Garmin Connect & Strava */}
-        <div style={{ display: 'grid', gap: '10px' }}>
-          {/* Garmin Connect Box */}
-          <div className="zone-preview-table">
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '8px',
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <strong style={{ fontSize: '0.86rem' }}>
-                  Garmin Connect:{' '}
-                  {isGarminConnected ? (
-                    <span style={{ color: '#0EA5E9' }}>
-                      Upload Ready (
-                      {(garminConfig.athleteName &&
-                      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-                        garminConfig.athleteName.trim()
-                      )
-                        ? garminConfig.athleteName
-                        : garminConfig.email) || 'Linked'}
-                      )
-                    </span>
-                  ) : isPersonalApiLinked ? (
-                    <span style={{ color: '#12B981' }}>
-                      Profile &amp; History Synced (
-                      {garminConfig.athleteName &&
-                      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-                        garminConfig.athleteName.trim()
-                      )
-                        ? garminConfig.athleteName
-                        : 'Personal API'}
-                      )
-                    </span>
-                  ) : (
-                    <span style={{ color: '#38BDF8' }}>Ready via .FIT Upload</span>
-                  )}
-                </strong>
-                {isGarminConnected && isPersonalApiLinked && (
-                  <span
-                    style={{
-                      marginLeft: '8px',
-                      fontSize: '0.72rem',
-                      color: '#12B981',
-                      fontWeight: 600,
-                    }}
-                  >
-                    · Personal API Linked
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                className="btn btn-sm"
-                id="toggle-garmin-setup-btn"
-                onClick={() => setShowGarminSetup((v) => !v)}
-              >
-                {showGarminSetup ? 'Hide Garmin Settings' : 'Configure Garmin'}
-              </button>
+        {/* Saved Local Workouts — Front & Center */}
+        <div className="history-section">
+          <h3 className="panel-heading">Saved Local Workouts ({rides.length})</h3>
+          {rides.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem', padding: '10px 0' }}>
+              No saved rides yet. Start a workout and tap Stop &amp; Save when you&apos;re done!
             </div>
+          ) : (
+            rides.map((r) => {
+              const isConfirmingDelete = confirmDeleteId === r.id;
+              return (
+                <div className="history-item history-ride-card" key={r.id}>
+                  <div className="history-ride-head">
+                    <div className="history-ride-meta">
+                      <div className="history-ride-title">{r.title}</div>
+                      {r.burnPoints > 0 && (
+                        <div className="history-ride-burn">
+                          <Flame size={12} /> {r.burnPoints} Burn pts
+                        </div>
+                      )}
+                      <div className="history-stat-chips tabular">
+                        <span>{new Date(r.startedAtIso).toLocaleDateString()}</span>
+                        <span>{formatDuration(r.durationSec)}</span>
+                        <span>
+                          {r.avgWatts}W ({r.avgWkg.toFixed(2)} W/kg)
+                        </span>
+                        {r.avgHr > 0 && <span>{r.avgHr} bpm</span>}
+                        <span>{Math.round(r.caloriesKcal)} kcal</span>
+                      </div>
+                    </div>
 
-            {showGarminSetup && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  marginTop: '10px',
-                }}
-              >
-                {/* Section A: Recommended Mobile & Desktop .FIT Upload (Zero Passwords / Zero Rate Limits) */}
-                <div
-                  style={{
-                    background: 'rgba(14, 165, 233, 0.08)',
-                    border: '1px solid rgba(14, 165, 233, 0.28)',
-                    borderRadius: '10px',
-                    padding: '10px 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                  }}
-                >
-                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#38BDF8' }}>
-                    <ShieldCheck size={13} style={{ verticalAlign: '-2px', marginRight: '5px' }} />
-                    Recommended: Upload Workouts via .FIT (Works on Phone &amp; Desktop)
-                  </div>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    Tap <strong>.FIT</strong> on any workout below, then open Garmin Connect Import
-                    in your browser to upload it with full Power, Cadence, Heart Rate &amp; Garmin
-                    Training Load — no password sharing and zero cloud rate limits.
-                  </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <a
-                      href="https://connect.garmin.com/modern/import-data"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-garmin btn-sm"
-                    >
-                      Open Garmin Connect Import <ExternalLink size={13} />
-                    </a>
-                  </div>
-                </div>
-
-                {/* Section B: Official Garmin Personal API (GCDC_... · Profile & History, Zero Rate Limits) */}
-                <div
-                  style={{
-                    background: 'rgba(18, 185, 129, 0.08)',
-                    border: '1px solid rgba(18, 185, 129, 0.28)',
-                    borderRadius: '10px',
-                    padding: '10px 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                  }}
-                >
-                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#34D399' }}>
-                    <KeyRound size={13} style={{ verticalAlign: '-2px', marginRight: '5px' }} />
-                    Garmin Personal API Key (Profile &amp; History Sync · No Rate Limits)
-                  </div>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    Uses Garmin&apos;s official read-only Personal API (<code>GCDC_...</code>) to
-                    import your weight, height, Max HR, FTP, and recent Garmin activities without
-                    passwords.
-                    {hasServerPersonalKey &&
-                      ' Server GARMIN_PERSONAL_API_KEY detected in environment — leave blank to use it or override below.'}
-                  </p>
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: '8px',
-                      flexWrap: 'wrap',
-                      alignItems: 'flex-end',
-                    }}
-                  >
-                    <div className="field" style={{ flex: '1 1 240px' }}>
-                      <label htmlFor="garmin-personal-key-input">
-                        Garmin Personal API Key (<code>GCDC_...</code>)
-                      </label>
-                      <input
-                        id="garmin-personal-key-input"
-                        type="password"
-                        placeholder={
-                          hasServerPersonalKey
-                            ? 'Using server GARMIN_PERSONAL_API_KEY (or paste override)'
-                            : 'GCDC_...'
+                    <button
+                      type="button"
+                      className={`btn btn-sm btn-danger history-delete-btn ${
+                        isConfirmingDelete ? 'confirming' : ''
+                      }`}
+                      onClick={() => {
+                        if (isConfirmingDelete) {
+                          setConfirmDeleteId(null);
+                          onDeleteRide(r.id);
+                        } else {
+                          setConfirmDeleteId(r.id);
+                          window.setTimeout(() => {
+                            setConfirmDeleteId((curr) => (curr === r.id ? null : curr));
+                          }, 4000);
                         }
-                        value={garminPersonalKey}
-                        onChange={(e) => setGarminPersonalKey(e.target.value)}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      id="sync-garmin-personal-api-btn"
-                      className="btn btn-sm"
-                      disabled={
-                        garminPersonalBusy || (!garminPersonalKey.trim() && !hasServerPersonalKey)
-                      }
-                      onClick={() => void handleSyncPersonalApi()}
+                      }}
+                      title={isConfirmingDelete ? 'Tap again to permanently delete' : 'Delete ride'}
+                      aria-label={isConfirmingDelete ? 'Confirm delete ride' : 'Delete ride'}
                     >
-                      <RefreshCw size={14} />
-                      {garminPersonalBusy ? 'Syncing...' : 'Sync Profile & Garmin History'}
+                      <Trash2 size={14} />
+                      {isConfirmingDelete && <span>Delete?</span>}
                     </button>
                   </div>
-                </div>
 
-                {/* Section C: Optional Advanced Desktop Session Token (collapsed by default) */}
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    id="toggle-garmin-token-paste-btn"
-                    className="btn btn-sm"
-                    onClick={() => setShowGarminTokenPaste((v) => !v)}
-                  >
-                    {showGarminTokenPaste
-                      ? 'Hide Advanced Token Paste'
-                      : 'Advanced: Desktop Session Token'}
-                  </button>
-                  {isGarminConnected && (
+                  <div className="history-ride-actions">
+                    {renderSyncButtonsForRide(r, false)}
+
                     <button
                       type="button"
                       className="btn btn-sm"
-                      onClick={() => void handleCopyGarminTokens()}
+                      onClick={() => {
+                        onSelectHighlightedRide(r);
+                        setShowPhotoStudio(true);
+                        modalCardRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      title="Create stat overlay photo or edit title & notes"
                     >
-                      <Copy size={13} /> Copy Session Token
+                      <Camera size={14} /> Photo
                     </button>
-                  )}
-                  {(isGarminConnected || isPersonalApiLinked) && (
+
                     <button
                       type="button"
-                      className="btn btn-danger btn-sm"
-                      onClick={handleDisconnectGarmin}
+                      className="btn btn-sm"
+                      onClick={() => downloadRideFit(r, fitPreset)}
+                      title={`Download .FIT file (${FIT_DEVICE_PRESETS[fitPreset].label})`}
                     >
-                      Disconnect Garmin
+                      <Download size={14} /> .FIT
                     </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => onDownloadTcx(r)}
+                      title="Download .TCX file"
+                    >
+                      <Download size={14} /> .TCX
+                    </button>
+                  </div>
+
+                  {uploadingRideId === r.id && uploadStatusText && (
+                    <div className="sync-status-line" role="status">
+                      {uploadStatusText}
+                    </div>
                   )}
                 </div>
+              );
+            })
+          )}
+        </div>
 
-                {showGarminTokenPaste && (
-                  <div
-                    style={{
-                      background: 'rgba(14, 165, 233, 0.08)',
-                      border: '1px solid rgba(14, 165, 233, 0.28)',
-                      borderRadius: '10px',
-                      padding: '10px 12px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                    }}
-                  >
-                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      Desktop power users can enable 1-click Garmin uploads by running{' '}
-                      <code>npm run garmin:token</code> on a home computer and pasting the
-                      resulting single-line JSON below:
-                    </p>
-                    <div className="field">
-                      <label htmlFor="garmin-token-json-input">Garmin Session Token JSON</label>
-                      <textarea
-                        id="garmin-token-json-input"
-                        rows={3}
-                        placeholder='{"oauth1":...,"oauth2":...}'
-                        value={garminTokenJson}
-                        onChange={(e) => setGarminTokenJson(e.target.value)}
-                        style={{
-                          width: '100%',
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: '0.75rem',
-                          background: 'var(--bg-canvas)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--hairline-strong)',
-                          borderRadius: '8px',
-                          padding: '8px',
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        id="verify-garmin-token-btn"
-                        className="btn btn-garmin btn-sm"
-                        disabled={garminAuthBusy || !garminTokenJson.trim()}
-                        onClick={() => void handleVerifyGarminTokens()}
-                      >
-                        {garminAuthBusy ? 'Verifying...' : 'Verify & Link Session Token'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+        {/* Cloud Sync & Export Settings */}
+        <div className="history-section">
+          <h3 className="panel-heading">Cloud Sync &amp; Export Settings</h3>
 
           {/* Strava OAuth Configuration Box */}
           <div className="zone-preview-table">
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '8px',
-                flexWrap: 'wrap',
-              }}
-            >
+            <div className="settings-card-head">
               <div>
                 <strong style={{ fontSize: '0.86rem' }}>
                   Strava Connection:{' '}
@@ -1138,222 +952,301 @@ export function HistoryAndStravaModal({
               </div>
             )}
           </div>
-        </div>
 
-        {/* FIT Export & Existing TCX -> FIT Converter */}
-        <div
-          className="surface-card"
-          style={{
-            padding: '10px 12px',
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: '220px', flex: 1 }}>
-            <label
-              htmlFor="fit-device-preset-select"
-              style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}
-            >
-              Garmin .FIT Device Header (Training Status)
-            </label>
-            <select
-              id="fit-device-preset-select"
-              value={fitPreset}
-              onChange={(e) => handleSelectFitPreset(e.target.value as FitDevicePresetId)}
-              style={{ fontSize: '0.8rem', padding: '5px 8px' }}
-            >
-              {(Object.keys(FIT_DEVICE_PRESETS) as FitDevicePresetId[]).map((key) => (
-                <option key={key} value={key}>
-                  {FIT_DEVICE_PRESETS[key].label}
-                </option>
-              ))}
-            </select>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {FIT_DEVICE_PRESETS[fitPreset].description}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input
-              ref={tcxFileInputRef}
-              id="convert-tcx-file-input"
-              type="file"
-              accept=".tcx,.xml"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  void handleConvertTcxUpload(file);
-                }
-                e.target.value = '';
-              }}
-            />
-            <button
-              type="button"
-              id="convert-tcx-to-fit-btn"
-              className="btn btn-sm"
-              onClick={() => tcxFileInputRef.current?.click()}
-              title="Convert any existing .TCX ride file into a Garmin .FIT file locally in your browser"
-            >
-              <FileUp size={14} /> Convert .TCX → .FIT
-            </button>
-          </div>
-        </div>
-
-        {/* Saved Ride List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <h3 className="panel-heading">Saved Local Workouts ({rides.length})</h3>
-          {rides.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem', padding: '12px 0' }}>
-              No saved rides yet. Start a workout and tap Save when you&apos;re done!
+          {/* Garmin Connect Box */}
+          <div className="zone-preview-table">
+            <div className="settings-card-head">
+              <div>
+                <strong style={{ fontSize: '0.86rem' }}>
+                  Garmin Connect:{' '}
+                  {isGarminConnected ? (
+                    <span style={{ color: '#0EA5E9' }}>
+                      Upload Ready (
+                      {(garminConfig.athleteName &&
+                      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                        garminConfig.athleteName.trim()
+                      )
+                        ? garminConfig.athleteName
+                        : garminConfig.email) || 'Linked'}
+                      )
+                    </span>
+                  ) : isPersonalApiLinked ? (
+                    <span style={{ color: '#12B981' }}>
+                      Profile &amp; History Synced (
+                      {garminConfig.athleteName &&
+                      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                        garminConfig.athleteName.trim()
+                      )
+                        ? garminConfig.athleteName
+                        : 'Personal API'}
+                      )
+                    </span>
+                  ) : (
+                    <span style={{ color: '#38BDF8' }}>Ready via .FIT Upload</span>
+                  )}
+                </strong>
+                {isGarminConnected && isPersonalApiLinked && (
+                  <span
+                    style={{
+                      marginLeft: '8px',
+                      fontSize: '0.72rem',
+                      color: '#12B981',
+                      fontWeight: 600,
+                    }}
+                  >
+                    · Personal API Linked
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                id="toggle-garmin-setup-btn"
+                onClick={() => setShowGarminSetup((v) => !v)}
+              >
+                {showGarminSetup ? 'Hide Garmin Settings' : 'Configure Garmin'}
+              </button>
             </div>
-          ) : (
-            rides.map((r) => {
-              const isConfirmingDelete = confirmDeleteId === r.id;
-              return (
-                <div className="history-item history-ride-card" key={r.id}>
-                  <div className="history-ride-head">
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>
-                        {r.title}
-                        {r.burnPoints > 0 && (
-                          <span style={{ color: '#f97316', fontSize: '0.8rem' }}>
-                            {' '}
-                            · ★ {r.burnPoints} Burn pts
-                          </span>
-                        )}
-                      </div>
-                      <div
-                        className="tabular"
-                        style={{
-                          fontSize: '0.76rem',
-                          color: 'var(--text-secondary)',
-                          marginTop: '2px',
-                        }}
-                      >
-                        {new Date(r.startedAtIso).toLocaleDateString()} ·{' '}
-                        {formatDuration(r.durationSec)} · Avg {r.avgWatts}W (
-                        {r.avgWkg.toFixed(2)} W/kg) · {r.avgHr > 0 ? `${r.avgHr} bpm · ` : ''}
-                        {Math.round(r.caloriesKcal)} kcal
-                      </div>
-                    </div>
 
-                    <button
-                      type="button"
-                      className={`btn btn-sm btn-danger history-delete-btn ${
-                        isConfirmingDelete ? 'confirming' : ''
-                      }`}
-                      onClick={() => {
-                        if (isConfirmingDelete) {
-                          setConfirmDeleteId(null);
-                          onDeleteRide(r.id);
-                        } else {
-                          setConfirmDeleteId(r.id);
-                          window.setTimeout(() => {
-                            setConfirmDeleteId((curr) => (curr === r.id ? null : curr));
-                          }, 4000);
+            {showGarminSetup && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  marginTop: '10px',
+                }}
+              >
+                {/* Section A: Recommended Mobile & Desktop .FIT Upload (Zero Passwords / Zero Rate Limits) */}
+                <div className="garmin-callout-box">
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#38BDF8' }}>
+                    <ShieldCheck size={13} style={{ verticalAlign: '-2px', marginRight: '5px' }} />
+                    Recommended: Upload Workouts via .FIT (Works on Phone &amp; Desktop)
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Tap <strong>.FIT</strong> on any workout above, then open Garmin Connect Import
+                    in your browser to upload it with full Power, Cadence, Heart Rate &amp; Garmin
+                    Training Load — no password sharing and zero cloud rate limits.
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <a
+                      href="https://connect.garmin.com/modern/import-data"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-garmin btn-sm"
+                    >
+                      Open Garmin Connect Import <ExternalLink size={13} />
+                    </a>
+                  </div>
+                </div>
+
+                {/* Section B: Official Garmin Personal API (GCDC_... · Profile & History, Zero Rate Limits) */}
+                <div className="garmin-callout-box garmin-callout-green">
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#34D399' }}>
+                    <KeyRound size={13} style={{ verticalAlign: '-2px', marginRight: '5px' }} />
+                    Garmin Personal API Key (Profile &amp; History Sync · No Rate Limits)
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Uses Garmin&apos;s official read-only Personal API (<code>GCDC_...</code>) to
+                    import your weight, height, Max HR, FTP, and recent Garmin activities without
+                    passwords.
+                    {hasServerPersonalKey &&
+                      ' Server GARMIN_PERSONAL_API_KEY detected in environment — leave blank to use it or override below.'}
+                  </p>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '8px',
+                      flexWrap: 'wrap',
+                      alignItems: 'flex-end',
+                    }}
+                  >
+                    <div className="field" style={{ flex: '1 1 240px' }}>
+                      <label htmlFor="garmin-personal-key-input">
+                        Garmin Personal API Key (<code>GCDC_...</code>)
+                      </label>
+                      <input
+                        id="garmin-personal-key-input"
+                        type="password"
+                        placeholder={
+                          hasServerPersonalKey
+                            ? 'Using server GARMIN_PERSONAL_API_KEY (or paste override)'
+                            : 'GCDC_...'
                         }
-                      }}
-                      title={isConfirmingDelete ? 'Tap again to permanently delete' : 'Delete ride'}
-                      aria-label={isConfirmingDelete ? 'Confirm delete ride' : 'Delete ride'}
-                    >
-                      <Trash2 size={14} />
-                      {isConfirmingDelete && <span>Delete?</span>}
-                    </button>
-                  </div>
-
-                  <div className="history-ride-actions">
-                    {renderSyncButtonsForRide(r, false)}
-
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => {
-                        onSelectHighlightedRide(r);
-                        setShowPhotoStudio(true);
-                      }}
-                      title="Create stat overlay photo or edit title & notes"
-                    >
-                      <Camera size={14} /> Photo
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => downloadRideFit(r, fitPreset)}
-                      title={`Download .FIT file (${FIT_DEVICE_PRESETS[fitPreset].label})`}
-                    >
-                      <Download size={14} /> .FIT
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => onDownloadTcx(r)}
-                      title="Download .TCX file"
-                    >
-                      <Download size={14} /> .TCX
-                    </button>
-                  </div>
-
-                  {uploadingRideId === r.id && uploadStatusText && (
-                    <div className="sync-status-line" role="status">
-                      {uploadStatusText}
+                        value={garminPersonalKey}
+                        onChange={(e) => setGarminPersonalKey(e.target.value)}
+                      />
                     </div>
+                    <button
+                      type="button"
+                      id="sync-garmin-personal-api-btn"
+                      className="btn btn-sm"
+                      disabled={
+                        garminPersonalBusy || (!garminPersonalKey.trim() && !hasServerPersonalKey)
+                      }
+                      onClick={() => void handleSyncPersonalApi()}
+                    >
+                      <RefreshCw size={14} />
+                      {garminPersonalBusy ? 'Syncing...' : 'Sync Profile & Garmin History'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Section C: Optional Advanced Desktop Session Token (collapsed by default) */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    id="toggle-garmin-token-paste-btn"
+                    className="btn btn-sm"
+                    onClick={() => setShowGarminTokenPaste((v) => !v)}
+                  >
+                    {showGarminTokenPaste
+                      ? 'Hide Advanced Token Paste'
+                      : 'Advanced: Desktop Session Token'}
+                  </button>
+                  {isGarminConnected && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => void handleCopyGarminTokens()}
+                    >
+                      <Copy size={13} /> Copy Session Token
+                    </button>
+                  )}
+                  {(isGarminConnected || isPersonalApiLinked) && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={handleDisconnectGarmin}
+                    >
+                      Disconnect Garmin
+                    </button>
                   )}
                 </div>
-              );
-            })
-          )}
+
+                {showGarminTokenPaste && (
+                  <div className="garmin-callout-box">
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      Desktop power users can enable 1-click Garmin uploads by running{' '}
+                      <code>npm run garmin:token</code> on a home computer and pasting the
+                      resulting single-line JSON below:
+                    </p>
+                    <div className="field">
+                      <label htmlFor="garmin-token-json-input">Garmin Session Token JSON</label>
+                      <textarea
+                        id="garmin-token-json-input"
+                        rows={3}
+                        placeholder='{"oauth1":...,"oauth2":...}'
+                        value={garminTokenJson}
+                        onChange={(e) => setGarminTokenJson(e.target.value)}
+                        style={{
+                          width: '100%',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.75rem',
+                          background: 'var(--bg-canvas)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--hairline-strong)',
+                          borderRadius: '8px',
+                          padding: '8px',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        id="verify-garmin-token-btn"
+                        className="btn btn-garmin btn-sm"
+                        disabled={garminAuthBusy || !garminTokenJson.trim()}
+                        onClick={() => void handleVerifyGarminTokens()}
+                      >
+                        {garminAuthBusy ? 'Verifying...' : 'Verify & Link Session Token'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* FIT Export & Existing TCX -> FIT Converter */}
+          <div className="zone-preview-table fit-preset-card">
+            <div className="field" style={{ flex: '1 1 240px' }}>
+              <label htmlFor="fit-device-preset-select">
+                Garmin .FIT Device Header (Training Status)
+              </label>
+              <select
+                id="fit-device-preset-select"
+                value={fitPreset}
+                onChange={(e) => handleSelectFitPreset(e.target.value as FitDevicePresetId)}
+              >
+                {(Object.keys(FIT_DEVICE_PRESETS) as FitDevicePresetId[]).map((key) => (
+                  <option key={key} value={key}>
+                    {FIT_DEVICE_PRESETS[key].label}
+                  </option>
+                ))}
+              </select>
+              <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                {FIT_DEVICE_PRESETS[fitPreset].description}
+              </span>
+            </div>
+
+            <div className="fit-convert-wrap">
+              <input
+                ref={tcxFileInputRef}
+                id="convert-tcx-file-input"
+                type="file"
+                accept=".tcx,.xml"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    void handleConvertTcxUpload(file);
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                id="convert-tcx-to-fit-btn"
+                className="btn btn-sm"
+                onClick={() => tcxFileInputRef.current?.click()}
+                title="Convert any existing .TCX ride file into a Garmin .FIT file locally in your browser"
+              >
+                <FileUp size={14} /> Convert .TCX → .FIT
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Recent Garmin Connect History (Synced via Official Garmin Personal API) */}
         {garminConfig.recentActivities && garminConfig.recentActivities.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="history-section">
             <h3 className="panel-heading">
               Recent Garmin Connect Activities ({garminConfig.recentActivities.length})
             </h3>
             {garminConfig.recentActivities.map((act) => (
-              <div className="history-item" key={act.activityId}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-                    {act.name}{' '}
-                    <span
-                      style={{
-                        fontSize: '0.74rem',
-                        color: '#38BDF8',
-                        textTransform: 'capitalize',
-                      }}
-                    >
-                      · {act.typeKey.replace(/_/g, ' ')}
+              <div className="history-item history-garmin-card" key={act.activityId}>
+                <div className="history-ride-meta">
+                  <div className="history-ride-title">{act.name}</div>
+                  <div className="history-garmin-type">{act.typeKey.replace(/_/g, ' ')}</div>
+                  <div className="history-stat-chips tabular">
+                    <span>
+                      {act.startedAtLocal
+                        ? new Date(act.startedAtLocal.replace(' ', 'T')).toLocaleDateString()
+                        : 'Recent'}
                     </span>
-                  </div>
-                  <div
-                    className="tabular"
-                    style={{
-                      fontSize: '0.75rem',
-                      color: 'var(--text-secondary)',
-                      marginTop: '2px',
-                    }}
-                  >
-                    {act.startedAtLocal
-                      ? new Date(act.startedAtLocal.replace(' ', 'T')).toLocaleDateString()
-                      : 'Recent'}{' '}
-                    · {formatDuration(act.durationSec)} ·{' '}
-                    {metersToMiles(act.distanceMeters).toFixed(2)} mi
-                    {act.avgWatts ? ` · Avg ${act.avgWatts}W` : ''}
-                    {act.avgHr ? ` · ${act.avgHr} bpm` : ''}
-                    {act.caloriesKcal > 0 ? ` · ${act.caloriesKcal} kcal` : ''}
+                    <span>{formatDuration(act.durationSec)}</span>
+                    <span>{metersToMiles(act.distanceMeters).toFixed(2)} mi</span>
+                    {act.avgWatts && <span>{act.avgWatts}W avg</span>}
+                    {act.avgHr && <span>{act.avgHr} bpm</span>}
+                    {act.caloriesKcal > 0 && <span>{act.caloriesKcal} kcal</span>}
                   </div>
                 </div>
                 <a
                   href={`https://connect.garmin.com/modern/activity/${act.activityId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn btn-garmin btn-sm"
+                  className="btn btn-garmin btn-sm history-garmin-open-btn"
                 >
                   Open in Garmin <ExternalLink size={13} />
                 </a>

@@ -259,6 +259,12 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-decoration: none;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-orange);
+  outline-offset: 2px;
 }
 
 .btn:hover:not(:disabled) {
@@ -1346,6 +1352,59 @@ button {
   gap: 10px;
 }
 
+.history-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hero-ride-card {
+  background: var(--surface-gradient);
+  box-shadow: var(--surface-inset);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hero-ride-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.hero-ride-title {
+  font-weight: 800;
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.hero-burn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent-orange);
+  color: #140700;
+  font-weight: 800;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hero-ride-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .history-ride-card {
   flex-direction: column;
   align-items: stretch;
@@ -1358,6 +1417,49 @@ button {
   justify-content: space-between;
   gap: 10px;
   width: 100%;
+}
+
+.history-ride-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.history-ride-title {
+  font-weight: 700;
+  font-size: 0.94rem;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+.history-ride-burn {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fb923c;
+  background: rgba(249, 115, 22, 0.12);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.history-stat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.history-stat-chips > span {
+  white-space: nowrap;
 }
 
 .history-delete-btn {
@@ -1379,7 +1481,75 @@ button {
   flex-wrap: wrap;
 }
 
+.settings-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+}
+
+.garmin-callout-box {
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.24);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.garmin-callout-green {
+  background: rgba(18, 185, 129, 0.08);
+  border-color: rgba(18, 185, 129, 0.24);
+}
+
+.fit-preset-card {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+
+.fit-convert-wrap {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.history-garmin-card {
+  align-items: center;
+}
+
+.history-garmin-type {
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: #38bdf8;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
 @media (max-width: 520px) {
+  .hero-ride-card {
+    padding: 12px;
+  }
+
+  .hero-ride-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .hero-ride-actions .btn {
+    width: 100%;
+  }
+
+  #push-both-btn,
+  #push-highlighted-strava {
+    grid-column: 1 / -1;
+  }
+
   .history-ride-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1387,6 +1557,12 @@ button {
   }
 
   .history-ride-actions .btn {
+    width: 100%;
+  }
+
+  .fit-convert-wrap,
+  .fit-convert-wrap .btn,
+  .history-garmin-open-btn {
     width: 100%;
   }
 }
@@ -1833,6 +2009,16 @@ button {
 
 /* Phone Portrait (< 600px): 2-Column Speedometer Ring Grid + Clean Stacked Top Controls */
 @media (max-width: 599px) {
+  .modal-backdrop {
+    padding: 8px;
+  }
+
+  .modal-card {
+    max-height: calc(100dvh - 16px);
+    padding: 14px;
+    gap: 12px;
+  }
+
   .app-shell {
     padding: 8px 9px 20px;
     gap: 9px;
