@@ -937,88 +937,133 @@ export function HistoryAndStravaModal({
 
             {showStravaSetup && (
               <div
+                id="strava-setup-panel"
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '10px',
-                  marginTop: '8px',
+                  marginTop: '10px',
                 }}
               >
-                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  1. Create a free Personal API app at{' '}
-                  <a
-                    href="https://www.strava.com/settings/api"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#fb923c' }}
-                  >
-                    strava.com/settings/api
-                  </a>{' '}
-                  and set <strong>Authorization Callback Domain</strong> to{' '}
-                  <code>{callbackDomain}</code>.<br />
-                  2. Paste your Client ID &amp; Client Secret below (stored only in this browser)
-                  and tap <strong>Connect with Strava</strong>.
-                </p>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <a
-                    href="/jbf-strava-icon.png"
-                    download="jbf-strava-icon.png"
-                    id="download-strava-app-icon"
-                    className="btn btn-sm"
-                  >
-                    <Download size={14} /> Download App Icon (.PNG · 256×256)
-                  </a>
-                  <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
-                    Upload this PNG on Strava&apos;s &ldquo;Update App Icon&rdquo; page (SVGs are
-                    rejected).
-                  </span>
-                </div>
-
-                <div className="form-grid">
-                  <div className="field">
-                    <label htmlFor="strava-client-id">Strava Client ID</label>
-                    <input
-                      id="strava-client-id"
-                      type="text"
-                      placeholder="e.g. 128491"
-                      value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
-                    />
+                <div className="garmin-callout-box">
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fb923c' }}>
+                    1-Click Strava Sync (Use Your Own Free Personal API Key)
                   </div>
-                  <div className="field">
-                    <label htmlFor="strava-client-secret">
-                      Strava Client Secret (or set in Netlify Env)
-                    </label>
-                    <input
-                      id="strava-client-secret"
-                      type="password"
-                      placeholder="Optional if STRAVA_CLIENT_SECRET is set on Netlify"
-                      value={clientSecret}
-                      onChange={(e) => setClientSecret(e.target.value)}
-                    />
-                  </div>
-                </div>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Strava caps shared free apps to a small number of connected athletes. Creating
+                    your own free Personal API app (~2 minutes, stored only in this browser) gives
+                    you reliable 1-click uploads with no shared-app limit:
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                    1. Open{' '}
+                    <a
+                      href="https://www.strava.com/settings/api"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#fb923c' }}
+                    >
+                      strava.com/settings/api
+                    </a>{' '}
+                    and set <strong>Authorization Callback Domain</strong> to{' '}
+                    <code>{callbackDomain}</code>.<br />
+                    2. Paste <strong>both</strong> your <strong>Client ID</strong> and{' '}
+                    <strong>Client Secret</strong> below and tap{' '}
+                    <strong>Connect with Strava</strong>.
+                  </p>
 
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    id="authorize-strava-btn"
-                    className="btn btn-strava btn-sm"
-                    disabled={!clientId.trim()}
-                    onClick={handleConnectStrava}
-                  >
-                    Connect with Strava
-                  </button>
-                  {isStravaConnected && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <a
+                      href="/jbf-strava-icon.png"
+                      download="jbf-strava-icon.png"
+                      id="download-strava-app-icon"
+                      className="btn btn-sm"
+                    >
+                      <Download size={14} /> Download App Icon (.PNG · 256×256)
+                    </a>
+                    <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                      Upload this PNG on Strava&apos;s &ldquo;Update App Icon&rdquo; page (SVGs are
+                      rejected).
+                    </span>
+                  </div>
+
+                  <div className="form-grid">
+                    <div className="field">
+                      <label htmlFor="strava-client-id">Your Strava Client ID</label>
+                      <input
+                        id="strava-client-id"
+                        type="text"
+                        placeholder="e.g. 128491"
+                        value={clientId}
+                        onChange={(e) => setClientId(e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="strava-client-secret">Your Strava Client Secret</label>
+                      <input
+                        id="strava-client-secret"
+                        type="password"
+                        placeholder="Paste your personal Client Secret"
+                        value={clientSecret}
+                        onChange={(e) => setClientSecret(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <button
                       type="button"
-                      className="btn btn-danger btn-sm"
-                      onClick={handleDisconnectStrava}
+                      id="authorize-strava-btn"
+                      className="btn btn-strava btn-sm"
+                      disabled={!clientId.trim() || !clientSecret.trim()}
+                      onClick={handleConnectStrava}
                     >
-                      Disconnect Strava
+                      Connect with Strava
                     </button>
-                  )}
+                    {isStravaConnected && (
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={handleDisconnectStrava}
+                      >
+                        Disconnect Strava
+                      </button>
+                    )}
+                    {Boolean(clientId.trim()) !== Boolean(clientSecret.trim()) && (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        Enter both your Client ID and Client Secret to connect.
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    flexWrap: 'wrap',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--hairline)',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  <span>
+                    <strong>Prefer no API setup?</strong> Tap <strong>.FIT</strong> or{' '}
+                    <strong>.TCX</strong> on any saved ride and upload it straight to Strava.
+                  </span>
+                  <a
+                    href="https://www.strava.com/upload/select"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    id="open-strava-manual-upload-link"
+                    className="btn btn-sm"
+                  >
+                    Open Strava Upload <ExternalLink size={13} />
+                  </a>
                 </div>
               </div>
             )}

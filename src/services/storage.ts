@@ -60,15 +60,14 @@ export function saveAthleteProfile(profile: AthleteProfile): void {
 }
 
 export function loadStravaConfig(): StravaConfig {
-  const envClientId = (import.meta.env.VITE_STRAVA_CLIENT_ID as string | undefined) ?? '';
   try {
     const raw = localStorage.getItem(STRAVA_STORAGE_KEY);
     if (!raw) {
-      return { clientId: envClientId, clientSecret: '' };
+      return { clientId: '', clientSecret: '' };
     }
     const parsed = JSON.parse(raw) as Partial<StravaConfig>;
     return {
-      clientId: parsed.clientId || envClientId,
+      clientId: parsed.clientId || '',
       clientSecret: parsed.clientSecret || '',
       accessToken: parsed.accessToken,
       refreshToken: parsed.refreshToken,
@@ -78,7 +77,7 @@ export function loadStravaConfig(): StravaConfig {
       athleteId: parsed.athleteId,
     };
   } catch {
-    return { clientId: envClientId, clientSecret: '' };
+    return { clientId: '', clientSecret: '' };
   }
 }
 

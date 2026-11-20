@@ -99,6 +99,20 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
     expect(res.importedFtp).toBe(195);
     expect(res.importedWeightLbs).toBe(154);
     expect(loadStravaConfig().accessToken).toBe('strava-acc-1');
+
+    // Athlete-cap error translates to clear personal API key + manual upload guidance
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          message: 'Forbidden',
+          errors: [{ resource: 'Application', field: '', code: 'Limit of connected athletes exceeded' }],
+        }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    await expect(
+      exchangeStravaOAuthCode('oauth-code-capped', { clientId: '111', clientSecret: '222' })
+    ).rejects.toThrow(/connected-athlete limit.*strava\.com\/settings\/api.*strava\.com\/upload\/select/i);
   });
 
   it('automatically refreshes expired Strava access tokens before uploading or updating activities', async () => {

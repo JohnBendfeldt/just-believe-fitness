@@ -420,8 +420,24 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     fireEvent.click(document.getElementById('open-history-btn')!);
     expect(document.getElementById('history-strava-modal')).toBeInTheDocument();
 
-    // Verify Strava PNG App Icon download link is exposed inside Configure Strava
+    // Verify Strava setup clearly requires personal API key, omits Netlify jargon, and exposes PNG icon + manual upload
     fireEvent.click(document.getElementById('toggle-strava-setup-btn')!);
+    const stravaPanel = document.getElementById('strava-setup-panel');
+    expect(stravaPanel).toBeInTheDocument();
+    expect(stravaPanel?.textContent).toContain('Use Your Own Free Personal API Key');
+    expect(stravaPanel?.textContent).not.toMatch(/netlify/i);
+    const stravaConnectBtn = document.getElementById('authorize-strava-btn') as HTMLButtonElement;
+    expect(stravaConnectBtn.disabled).toBe(true);
+    fireEvent.change(document.getElementById('strava-client-id')!, { target: { value: '12345' } });
+    expect(stravaConnectBtn.disabled).toBe(true);
+    fireEvent.change(document.getElementById('strava-client-secret')!, {
+      target: { value: 'my-personal-secret' },
+    });
+    expect(stravaConnectBtn.disabled).toBe(false);
+    expect(
+      document.getElementById('open-strava-manual-upload-link')?.getAttribute('href')
+    ).toBe('https://www.strava.com/upload/select');
+
     const stravaIconLink = document.getElementById('download-strava-app-icon') as HTMLAnchorElement | null;
     expect(stravaIconLink).not.toBeNull();
     expect(stravaIconLink?.getAttribute('href')).toBe('/jbf-strava-icon.png');

@@ -129,6 +129,40 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
     expect(okPost.statusCode).toBe(200);
     expect(okPost.headers['Cache-Control']).toBe('no-store');
     expect(JSON.parse(okPost.body).access_token).toBe('ok-acc');
+
+    // Guard: never pair a rider's personal client_id with a different server STRAVA_CLIENT_SECRET
+    vi.stubEnv('STRAVA_CLIENT_ID', '99999');
+    vi.stubEnv('STRAVA_CLIENT_SECRET', 'server-secret-only');
+
+    const mismatchedPersonal = await stravaHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({
+        client_id: '55555',
+        client_secret: '',
+        code: 'oauth-456',
+        grant_type: 'authorization_code',
+      }),
+    });
+    expect(mismatchedPersonal.statusCode).toBe(400);
+    expect(JSON.parse(mismatchedPersonal.body).error).toContain('personal Strava Client ID');
+
+    // When client_id matches the server env var, server secret fallback still works for self-hosters
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ access_token: 'srv-acc', refresh_token: 'srv-ref', expires_at: 999999 }), {
+        status: 200,
+      })
+    );
+    const matchedServer = await stravaHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({
+        client_id: '99999',
+        client_secret: '',
+        code: 'oauth-789',
+        grant_type: 'authorization_code',
+      }),
+    });
+    expect(matchedServer.statusCode).toBe(200);
+    expect(JSON.parse(matchedServer.body).access_token).toBe('srv-acc');
   });
 
   it('garmin-sync: handles login, 2FA/MFA, import vs device TCX uploads, and title/notes updates statelessly', async () => {

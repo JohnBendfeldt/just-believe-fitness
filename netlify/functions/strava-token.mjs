@@ -27,15 +27,30 @@ export async function handler(event) {
 
   try {
     const payload = JSON.parse(event.body || '{}');
-    const clientId = (payload.client_id || process.env.STRAVA_CLIENT_ID || process.env.VITE_STRAVA_CLIENT_ID || '').trim();
-    const clientSecret = (payload.client_secret || process.env.STRAVA_CLIENT_SECRET || '').trim();
+    const serverClientId = (
+      process.env.STRAVA_CLIENT_ID ||
+      process.env.VITE_STRAVA_CLIENT_ID ||
+      ''
+    ).trim();
+    const serverClientSecret = (process.env.STRAVA_CLIENT_SECRET || '').trim();
+
+    const reqClientId = String(payload.client_id || '').trim();
+    const reqClientSecret = String(payload.client_secret || '').trim();
+
+    const clientId = reqClientId || serverClientId;
+    const isPersonalClientId = Boolean(reqClientId && reqClientId !== serverClientId);
+    const clientSecret = isPersonalClientId
+      ? reqClientSecret
+      : reqClientSecret || serverClientSecret;
 
     if (!clientId || !clientSecret) {
       return {
         statusCode: 400,
         headers: JSON_SECURITY_HEADERS,
         body: JSON.stringify({
-          error: 'Missing Strava Client ID or Client Secret (set in Netlify env vars or in app Strava Settings).',
+          error: isPersonalClientId
+            ? 'Enter your Strava Client Secret alongside your personal Strava Client ID in Strava Settings.'
+            : 'Missing Strava Client ID or Client Secret. Enter both from strava.com/settings/api in Strava Settings.',
         }),
       };
     }

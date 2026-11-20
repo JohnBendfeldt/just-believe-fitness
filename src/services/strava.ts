@@ -35,8 +35,26 @@ interface StravaUploadStatusResponse {
   activity_id: number | null;
 }
 
+function formatStravaTokenError(status: number, errText: string): string {
+  const lower = errText.toLowerCase();
+  if (lower.includes('limit of connected athletes') || lower.includes('connected athletes')) {
+    return (
+      'This Strava API app has reached Strava’s connected-athlete limit. Create your own free ' +
+      'Personal API app at strava.com/settings/api and enter both your Client ID and Client ' +
+      'Secret in Strava Settings — or upload your .FIT/.TCX file manually at strava.com/upload/select.'
+    );
+  }
+  if (lower.includes('client_secret') && lower.includes('invalid')) {
+    return (
+      'Strava rejected the Client ID / Client Secret pair. Double-check that both values were ' +
+      'copied from the same Personal API app at strava.com/settings/api.'
+    );
+  }
+  return `Strava token request failed (${status}): ${errText}`;
+}
+
 async function postStravaTokenRequest(body: Record<string, string>): Promise<StravaTokenResponse> {
-  // Prefer Netlify serverless function when deployed on Netlify (avoids CORS & supports Netlify env vars)
+  // Prefer Netlify serverless function when deployed on Netlify (avoids browser CORS)
   try {
     const proxyResp = await fetch(NETLIFY_TOKEN_PROXY, {
       method: 'POST',
@@ -47,12 +65,17 @@ async function postStravaTokenRequest(body: Record<string, string>): Promise<Str
     if (contentType.includes('application/json')) {
       if (!proxyResp.ok) {
         const errText = await proxyResp.text();
-        throw new Error(`Strava token request failed (${proxyResp.status}): ${errText}`);
+        throw new Error(formatStravaTokenError(proxyResp.status, errText));
       }
       return (await proxyResp.json()) as StravaTokenResponse;
     }
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith('Strava token request failed')) {
+    if (
+      err instanceof Error &&
+      (err.message.startsWith('Strava token request failed') ||
+        err.message.includes('Strava') ||
+        err.message.includes('strava.com'))
+    ) {
       throw err;
     }
     // Fall back to direct Strava endpoint when running locally without Netlify Functions
@@ -66,7 +89,7 @@ async function postStravaTokenRequest(body: Record<string, string>): Promise<Str
 
   if (!directResp.ok) {
     const text = await directResp.text();
-    throw new Error(`Strava token exchange failed (${directResp.status}): ${text}`);
+    throw new Error(formatStravaTokenError(directResp.status, text));
   }
 
   return (await directResp.json()) as StravaTokenResponse;
