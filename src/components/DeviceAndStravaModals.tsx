@@ -1171,9 +1171,7 @@ export function HistoryAndStravaModal({
           {/* FIT Export & Existing TCX -> FIT Converter */}
           <div className="zone-preview-table fit-preset-card">
             <div className="field" style={{ flex: '1 1 240px' }}>
-              <label htmlFor="fit-device-preset-select">
-                Garmin .FIT Device Header (Training Status)
-              </label>
+              <label htmlFor="fit-device-preset-select">Garmin .FIT Device Header</label>
               <select
                 id="fit-device-preset-select"
                 value={fitPreset}
