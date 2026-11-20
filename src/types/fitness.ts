@@ -80,6 +80,8 @@ export interface WorkoutSegment {
   label: string;
   cue: EffortCue;
   durationSec: number;
+  /** Distance length (meters) for distance-driven challenge stages. */
+  distanceMeters?: number;
   targetZone: ZoneId;
   ftpPctRange: [number, number];
   cadenceRange: [number, number];
@@ -90,9 +92,41 @@ export interface WorkoutTemplate {
   id: string;
   name: string;
   subtitle: string;
-  category: 'free' | 'jbf' | 'hiit' | 'climb' | 'endurance';
+  category: 'free' | 'jbf' | 'hiit' | 'climb' | 'endurance' | 'distance';
   isFreeRide?: boolean;
+  /** Total target distance (meters) for distance-based challenge rides (e.g. 50K, 50 mi, 100K, 100 mi). */
+  targetDistanceMeters?: number;
+  /** Native display unit for distance-based challenge rides. */
+  distanceUnit?: 'km' | 'mi';
   segments: WorkoutSegment[];
+}
+
+export interface DistanceProgressInfo {
+  unit: 'km' | 'mi';
+  totalTargetMeters: number;
+  totalRemainingMeters: number;
+  overallProgressPct: number;
+  stageTargetMeters: number;
+  stageRemainingMeters: number;
+  stageProgressPct: number;
+  etaRemainingSec: number | null;
+  isGoalComplete: boolean;
+}
+
+export interface ActiveSegmentSummary {
+  index: number;
+  totalSegments: number;
+  segment: WorkoutSegment;
+  remainingSec: number;
+  distanceMode?: DistanceProgressInfo;
+  nextSegment: WorkoutSegment | null;
+  targets: {
+    minWatts: number;
+    maxWatts: number;
+    midWatts: number;
+    suggestedResistanceLow: number;
+    suggestedResistanceHigh: number;
+  };
 }
 
 export interface SavedRide {

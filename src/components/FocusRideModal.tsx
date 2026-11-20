@@ -14,9 +14,9 @@ import {
   X,
 } from 'lucide-react';
 import type {
+  ActiveSegmentSummary,
   AthleteProfile,
   LiveTelemetry,
-  WorkoutSegment,
   WorkoutTemplate,
   ZoneDefinition,
 } from '../types/fitness';
@@ -25,27 +25,16 @@ import {
   computeWattsPerKg,
   cueDisplayLabel,
   formatBikeGearBadge,
+  formatDistanceTarget,
+  formatDistanceValue,
   formatDuration,
 } from '../utils/zones';
 import { isBrowserFullscreen, toggleBrowserFullscreen } from '../utils/fullscreen';
-import { formatWorkoutOptionLabel } from '../data/workouts';
+import { formatWorkoutOptionLabel, groupWorkoutTemplates } from '../data/workouts';
 import { ZoneSpeedometerCard } from './ZoneSpeedometerCard';
 import { RideStatsQuadCard } from './RideStatsQuadCard';
 
-export interface ActiveSegmentSummary {
-  index: number;
-  totalSegments: number;
-  segment: WorkoutSegment;
-  remainingSec: number;
-  nextSegment: WorkoutSegment | null;
-  targets: {
-    minWatts: number;
-    maxWatts: number;
-    midWatts: number;
-    suggestedResistanceLow: number;
-    suggestedResistanceHigh: number;
-  };
-}
+export type { ActiveSegmentSummary };
 
 interface FocusRideModalProps {
   isOpen: boolean;
@@ -159,13 +148,17 @@ export function FocusRideModal({
       ? ZONE_PALETTE[headlineZone.zone]
       : null;
 
+  const dist = activeSegmentInfo?.distanceMode;
   const segDuration = activeSegmentInfo?.segment.durationSec ?? 1;
   const segElapsed = activeSegmentInfo
     ? Math.max(0, segDuration - activeSegmentInfo.remainingSec)
     : 0;
   const segProgressPct = activeSegmentInfo
-    ? Math.min(100, Math.max(0, (segElapsed / Math.max(1, segDuration)) * 100))
+    ? dist
+      ? dist.overallProgressPct
+      : Math.min(100, Math.max(0, (segElapsed / Math.max(1, segDuration)) * 100))
     : 0;
+  const groupedWorkouts = groupWorkoutTemplates(workouts);
 
   return (
     <div
@@ -204,10 +197,14 @@ export function FocusRideModal({
               onChange={(e) => onSelectWorkoutId(e.target.value)}
               aria-label="Select workout"
             >
-              {workouts.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {formatWorkoutOptionLabel(w, 'm')}
-                </option>
+              {groupedWorkouts.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.workouts.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {formatWorkoutOptionLabel(w, 'm')}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -265,20 +262,36 @@ export function FocusRideModal({
         <section
           className="focus-instructions-card"
           style={{
-            borderColor: targetPalette ? `${targetPalette.color}66` : 'var(--hairline-strong)',
+            borderColor: dist?.isGoalComplete
+              ? '#22C55E99'
+              : targetPalette
+                ? `${targetPalette.color}66`
+                : 'var(--hairline-strong)',
           }}
         >
           <div
             className="focus-cue-banner"
             style={{
-              backgroundColor: targetPalette ? targetPalette.color : '#232B38',
-              color: targetPalette ? targetPalette.textOnFill : '#F8FAFC',
+              backgroundColor: dist?.isGoalComplete
+                ? '#22C55E'
+                : targetPalette
+                  ? targetPalette.color
+                  : '#232B38',
+              color: dist?.isGoalComplete
+                ? '#052E16'
+                : targetPalette
+                  ? targetPalette.textOnFill
+                  : '#F8FAFC',
             }}
           >
             <div className="focus-cue-left">
               <span className="focus-cue-pill">
                 {activeSegmentInfo
-                  ? `BLOCK ${activeSegmentInfo.index + 1}/${activeSegmentInfo.totalSegments} · ${cueDisplayLabel(activeSegmentInfo.segment.cue)}`
+                  ? dist
+                    ? dist.isGoalComplete
+                      ? `CHALLENGE COMPLETE · ${selectedWorkout.name.toUpperCase()}`
+                      : `STAGE ${activeSegmentInfo.index + 1}/${activeSegmentInfo.totalSegments} · ${Math.round(dist.overallProgressPct)}% · ${cueDisplayLabel(activeSegmentInfo.segment.cue)}`
+                    : `BLOCK ${activeSegmentInfo.index + 1}/${activeSegmentInfo.totalSegments} · ${cueDisplayLabel(activeSegmentInfo.segment.cue)}`
                   : isAnySensorLive
                     ? `ZONE ${headlineZone.zone} · ${headlineZone.stageLabel}`
                     : 'OPEN STUDIO'}
@@ -289,13 +302,35 @@ export function FocusRideModal({
             </div>
 
             <div className="focus-cue-timers tabular">
-              {activeSegmentInfo && (
+              {activeSegmentInfo && !dist && (
                 <div className="focus-timer-block">
                   <span className="focus-timer-label">Block Left</span>
                   <span className="focus-timer-val">
                     {formatDuration(activeSegmentInfo.remainingSec)}
                   </span>
                 </div>
+              )}
+              {dist && (
+                <>
+                  <div className="focus-timer-block">
+                    <span className="focus-timer-label">To Go</span>
+                    <span className="focus-timer-val" id="focus-distance-remaining">
+                      {dist.isGoalComplete
+                        ? 'DONE'
+                        : formatDistanceValue(dist.totalRemainingMeters, dist.unit)}
+                    </span>
+                  </div>
+                  <div className="focus-timer-block">
+                    <span className="focus-timer-label">ETA</span>
+                    <span className="focus-timer-val" id="focus-distance-eta">
+                      {dist.isGoalComplete
+                        ? '00:00'
+                        : dist.etaRemainingSec !== null
+                          ? formatDuration(dist.etaRemainingSec)
+                          : '--'}
+                    </span>
+                  </div>
+                </>
               )}
               <div className="focus-timer-block">
                 <span className="focus-timer-label">Elapsed</span>
@@ -317,7 +352,9 @@ export function FocusRideModal({
             {activeSegmentInfo ? (
               <>
                 <p className="focus-coaching-note">
-                  {activeSegmentInfo.segment.coachingNote}
+                  {dist?.isGoalComplete
+                    ? `${selectedWorkout.name} complete (${formatDistanceTarget(dist.totalTargetMeters, dist.unit)})! Keep spinning easy to cool down or tap Stop & Save.`
+                    : activeSegmentInfo.segment.coachingNote}
                 </p>
 
                 <div className="focus-targets-row tabular">
@@ -330,6 +367,18 @@ export function FocusRideModal({
                   <span className="focus-target-chip">
                     Gear <strong>{activeSegmentInfo.targets.suggestedResistanceLow}–{activeSegmentInfo.targets.suggestedResistanceHigh}</strong>
                   </span>
+                  {dist && (
+                    <span className="focus-target-chip">
+                      <strong>{formatDistanceValue(distanceMeters, dist.unit)}</strong> /{' '}
+                      {formatDistanceTarget(dist.totalTargetMeters, dist.unit)}
+                      {!dist.isGoalComplete && (
+                        <>
+                          {' '}· Stage left{' '}
+                          <strong>{formatDistanceValue(dist.stageRemainingMeters, dist.unit)}</strong>
+                        </>
+                      )}
+                    </span>
+                  )}
                   {activeSegmentInfo.nextSegment && (
                     <span className="focus-next-preview">
                       Next: <strong>{activeSegmentInfo.nextSegment.label}</strong>
@@ -342,7 +391,9 @@ export function FocusRideModal({
                     className="focus-progress-fill"
                     style={{
                       width: `${segProgressPct}%`,
-                      backgroundColor: targetPalette?.color ?? 'var(--accent-orange)',
+                      backgroundColor: dist?.isGoalComplete
+                        ? '#22C55E'
+                        : (targetPalette?.color ?? 'var(--accent-orange)'),
                     }}
                   />
                 </div>
@@ -380,7 +431,7 @@ export function FocusRideModal({
             </button>
           )}
 
-          {activeSegmentInfo && activeSegmentInfo.nextSegment && rideState !== 'idle' && (
+          {activeSegmentInfo && !dist && activeSegmentInfo.nextSegment && rideState !== 'idle' && (
             <button
               type="button"
               id="focus-next-block-btn"

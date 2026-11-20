@@ -5,6 +5,10 @@ import type {
   WorkoutTemplate,
 } from '../types/fitness';
 import { suggestBikeResistance } from '../services/ble/echelonPowerCurve';
+import { METERS_PER_MILE } from '../utils/zones';
+
+const km = (kilometers: number): number => Math.round(kilometers * 1000);
+const mi = (miles: number): number => miles * METERS_PER_MILE;
 
 export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
   {
@@ -894,21 +898,667 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
       },
     ],
   },
+  {
+    id: 'distance-50k',
+    name: '50K Challenge',
+    subtitle: '31.1-mile distance route with flats, saddle breaks, hills, aid station & 5K finish',
+    category: 'distance',
+    targetDistanceMeters: km(50),
+    distanceUnit: 'km',
+    segments: [
+      {
+        id: 'd50k-s1',
+        label: 'Km 0–4 · Roll-Out Warm-Up',
+        cue: 'warmup',
+        durationSec: 0,
+        distanceMeters: km(4),
+        targetZone: 2,
+        ftpPctRange: [0.54, 0.68],
+        cadenceRange: [80, 90],
+        coachingNote: 'Ease out of the start chute and settle smoothly into your 50K rhythm.',
+      },
+      {
+        id: 'd50k-s2',
+        label: 'Km 4–12 · Tailwind Flats',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(8),
+        targetZone: 2,
+        ftpPctRange: [0.62, 0.74],
+        cadenceRange: [84, 92],
+        coachingNote: 'Conversational Blue Zone flats — relaxed shoulders, crisp pedal circles.',
+      },
+      {
+        id: 'd50k-s3',
+        label: 'Km 12–14 · Standing Saddle Break',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(2),
+        targetZone: 3,
+        ftpPctRange: [0.75, 0.84],
+        cadenceRange: [64, 72],
+        coachingNote: 'Add 2–3 clicks and stand for 2 km to stretch hips and relieve saddle pressure.',
+      },
+      {
+        id: 'd50k-s4',
+        label: 'Km 14–20 · Rolling Hill Climb',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: km(6),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.86],
+        cadenceRange: [74, 82],
+        coachingNote: 'Seated muscular tempo over the rollers — steady torque and controlled breath.',
+      },
+      {
+        id: 'd50k-s5',
+        label: 'Km 20–25 · Aid Station & Spin-Up',
+        cue: 'recovery',
+        durationSec: 0,
+        distanceMeters: km(5),
+        targetZone: 2,
+        ftpPctRange: [0.58, 0.7],
+        cadenceRange: [88, 96],
+        coachingNote: 'Halfway (25K) ahead — sip water, grab carbs, and spin the legs light and quick.',
+      },
+      {
+        id: 'd50k-s6',
+        label: 'Km 25–34 · Valley Cruise',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(9),
+        targetZone: 2,
+        ftpPctRange: [0.64, 0.75],
+        cadenceRange: [84, 92],
+        coachingNote: 'Past halfway! Lock into smooth aerobic cruise speed on the valley road.',
+      },
+      {
+        id: 'd50k-s7',
+        label: 'Km 34–36 · Standing Saddle Break',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(2),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.85],
+        cadenceRange: [64, 72],
+        coachingNote: '2 km out of the saddle — shake out hands and reset posture for the run-in.',
+      },
+      {
+        id: 'd50k-s8',
+        label: 'Km 36–45 · Fast Tempo Run-In',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: km(9),
+        targetZone: 3,
+        ftpPctRange: [0.78, 0.88],
+        cadenceRange: [84, 92],
+        coachingNote: 'Steady Green Tempo — watch your finish ETA drop as speed climbs.',
+      },
+      {
+        id: 'd50k-s9',
+        label: 'Km 45–50 · Final 5K Kick',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: km(5),
+        targetZone: 4,
+        ftpPctRange: [0.88, 0.98],
+        cadenceRange: [86, 96],
+        coachingNote: 'Final 5K to the finish banner — empty the tank or cruise home strong!',
+      },
+    ],
+  },
+  {
+    id: 'distance-50mi',
+    name: '50-Mile Half Century',
+    subtitle: '80.5K distance challenge with rolling hills, halfway aid station & 3-mile kick',
+    category: 'distance',
+    targetDistanceMeters: mi(50),
+    distanceUnit: 'mi',
+    segments: [
+      {
+        id: 'd50m-s1',
+        label: 'Mi 0–4 · Roll-Out Warm-Up',
+        cue: 'warmup',
+        durationSec: 0,
+        distanceMeters: mi(4),
+        targetZone: 2,
+        ftpPctRange: [0.54, 0.68],
+        cadenceRange: [80, 90],
+        coachingNote: 'Smooth opening miles — check bottles, fan, and dial into Half Century pace.',
+      },
+      {
+        id: 'd50m-s2',
+        label: 'Mi 4–11 · Opening Endurance Flats',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(7),
+        targetZone: 2,
+        ftpPctRange: [0.6, 0.72],
+        cadenceRange: [84, 92],
+        coachingNote: 'Economical Blue Zone cruising — conserve matches for the second 25 miles.',
+      },
+      {
+        id: 'd50m-s3',
+        label: 'Mi 11–12.5 · Standing Saddle Break',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(1.5),
+        targetZone: 3,
+        ftpPctRange: [0.75, 0.84],
+        cadenceRange: [64, 72],
+        coachingNote: 'Stand tall for 1.5 miles to keep blood flowing and shoulders loose.',
+      },
+      {
+        id: 'd50m-s4',
+        label: 'Mi 12.5–18 · Quarter-Mark Tempo Rollers',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: mi(5.5),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.86],
+        cadenceRange: [76, 84],
+        coachingNote: 'Passing 25% — steady seated torque over rolling terrain, sip electrolytes.',
+      },
+      {
+        id: 'd50m-s5',
+        label: 'Mi 18–25 · Midpoint Aid Station Cruise',
+        cue: 'recovery',
+        durationSec: 0,
+        distanceMeters: mi(7),
+        targetZone: 2,
+        ftpPctRange: [0.58, 0.7],
+        cadenceRange: [82, 90],
+        coachingNote: 'Approaching Mile 25 halfway — fuel with 30–60g carbs and top off hydration.',
+      },
+      {
+        id: 'd50m-s6',
+        label: 'Mi 25–31 · Second-Half Steady Miles',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(6),
+        targetZone: 2,
+        ftpPctRange: [0.62, 0.74],
+        cadenceRange: [84, 92],
+        coachingNote: 'Halfway down! Cruise cleanly in Blue Zone and enjoy the miles ticking off.',
+      },
+      {
+        id: 'd50m-s7',
+        label: 'Mi 31–32.5 · Standing Climb',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(1.5),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.85],
+        cadenceRange: [64, 72],
+        coachingNote: 'Out of the saddle for 1.5 miles — stretch calves and reset posture.',
+      },
+      {
+        id: 'd50m-s8',
+        label: 'Mi 32.5–37.5 · High-Cadence Flush',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(5),
+        targetZone: 3,
+        ftpPctRange: [0.74, 0.84],
+        cadenceRange: [88, 96],
+        coachingNote: 'Crossing 75% (Mile 37.5) — quick smooth cadence to keep tired legs snappy.',
+      },
+      {
+        id: 'd50m-s9',
+        label: 'Mi 37.5–43 · Valley Recovery Flats',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(5.5),
+        targetZone: 2,
+        ftpPctRange: [0.62, 0.73],
+        cadenceRange: [82, 90],
+        coachingNote: 'Take your final drink & carb top-off before the closing 7-mile push.',
+      },
+      {
+        id: 'd50m-s10',
+        label: 'Mi 43–47 · Sweet-Spot Tempo Drive',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: mi(4),
+        targetZone: 3,
+        ftpPctRange: [0.8, 0.89],
+        cadenceRange: [84, 92],
+        coachingNote: '4 miles in strong Green Tempo — build momentum toward the finish line.',
+      },
+      {
+        id: 'd50m-s11',
+        label: 'Mi 47–50 · Final 3-Mile Finish Kick',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: mi(3),
+        targetZone: 4,
+        ftpPctRange: [0.88, 0.98],
+        cadenceRange: [86, 96],
+        coachingNote: 'Final 3 miles to 50.0! Push into Orange or ride steady across the line.',
+      },
+    ],
+  },
+  {
+    id: 'distance-100k',
+    name: 'Metric Century (100K)',
+    subtitle: '62.1-mile metric century with 25K/50K/75K aid stations, saddle breaks & negative split',
+    category: 'distance',
+    targetDistanceMeters: km(100),
+    distanceUnit: 'km',
+    segments: [
+      {
+        id: 'd100k-s1',
+        label: 'Km 0–6 · Roll-Out Warm-Up',
+        cue: 'warmup',
+        durationSec: 0,
+        distanceMeters: km(6),
+        targetZone: 2,
+        ftpPctRange: [0.52, 0.66],
+        cadenceRange: [80, 90],
+        coachingNote: 'Unrushed 6K roll-out — settle breathing and pace smart for 100K.',
+      },
+      {
+        id: 'd100k-s2',
+        label: 'Km 6–20 · Opening Diesel Flats',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(14),
+        targetZone: 2,
+        ftpPctRange: [0.58, 0.7],
+        cadenceRange: [84, 92],
+        coachingNote: 'Easy, economical Blue Zone — should feel smooth and conversational.',
+      },
+      {
+        id: 'd100k-s3',
+        label: 'Km 20–22 · Standing Saddle Break',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(2),
+        targetZone: 2,
+        ftpPctRange: [0.68, 0.75],
+        cadenceRange: [64, 72],
+        coachingNote: '2 km standing stretch to keep comfort high early in the metric century.',
+      },
+      {
+        id: 'd100k-s4',
+        label: 'Km 22–30 · Aid Station 1 (25K Mark)',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(8),
+        targetZone: 2,
+        ftpPctRange: [0.6, 0.72],
+        cadenceRange: [82, 90],
+        coachingNote: 'Quarter-century check-in — drink up and take 30–60g carbs every hour.',
+      },
+      {
+        id: 'd100k-s5',
+        label: 'Km 30–38 · Rolling Hills Stage',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: km(8),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.86],
+        cadenceRange: [74, 82],
+        coachingNote: '8K of seated rollers — shift muscle recruitment with steady torque.',
+      },
+      {
+        id: 'd100k-s6',
+        label: 'Km 38–50 · Halfway Aid Station Cruise',
+        cue: 'recovery',
+        durationSec: 0,
+        distanceMeters: km(12),
+        targetZone: 2,
+        ftpPctRange: [0.58, 0.68],
+        cadenceRange: [82, 90],
+        coachingNote: 'Crossing 50K halfway! Refuel carbs & electrolytes so the second half flies.',
+      },
+      {
+        id: 'd100k-s7',
+        label: 'Km 50–52 · Standing Reset',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(2),
+        targetZone: 3,
+        ftpPctRange: [0.75, 0.84],
+        cadenceRange: [64, 72],
+        coachingNote: 'Stand tall into the second half — shake out tension in hands and back.',
+      },
+      {
+        id: 'd100k-s8',
+        label: 'Km 52–64 · Tailwind Aerobic Cruise',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(12),
+        targetZone: 2,
+        ftpPctRange: [0.62, 0.73],
+        cadenceRange: [84, 92],
+        coachingNote: 'Lock into smooth Zone 2 endurance — enjoy your show, music, or podcast.',
+      },
+      {
+        id: 'd100k-s9',
+        label: 'Km 64–68 · High-Cadence Spin-Up',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(4),
+        targetZone: 2,
+        ftpPctRange: [0.65, 0.75],
+        cadenceRange: [92, 100],
+        coachingNote: '4K fast-leg spin-up at lighter resistance to flush heavy legs.',
+      },
+      {
+        id: 'd100k-s10',
+        label: 'Km 68–78 · Aid Station 3 (75K Mark)',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(10),
+        targetZone: 2,
+        ftpPctRange: [0.6, 0.72],
+        cadenceRange: [82, 90],
+        coachingNote: 'Past 75K — three-quarters done! Final bottle & carb top-off before the push.',
+      },
+      {
+        id: 'd100k-s11',
+        label: 'Km 78–80 · Final Standing Climb',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: km(2),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.85],
+        cadenceRange: [64, 72],
+        coachingNote: 'Last standing saddle break before the closing 20K.',
+      },
+      {
+        id: 'd100k-s12',
+        label: 'Km 80–94 · Negative Split Tempo',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: km(14),
+        targetZone: 3,
+        ftpPctRange: [0.78, 0.88],
+        cadenceRange: [84, 92],
+        coachingNote: 'Lift into proud Green Tempo — strong durability on late-ride legs.',
+      },
+      {
+        id: 'd100k-s13',
+        label: 'Km 94–100 · Final 6K Metric Finish',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: km(6),
+        targetZone: 4,
+        ftpPctRange: [0.88, 0.96],
+        cadenceRange: [86, 94],
+        coachingNote: 'Final 6K to 100.0 km! Drive home your Metric Century finish!',
+      },
+    ],
+  },
+  {
+    id: 'distance-100mi',
+    name: 'Full Century (100 Mi)',
+    subtitle: 'Four 25-mile quarters with aid stations, saddle breaks, hills & 5-mile century finish',
+    category: 'distance',
+    targetDistanceMeters: mi(100),
+    distanceUnit: 'mi',
+    segments: [
+      {
+        id: 'd100m-s1',
+        label: 'Mi 0–5 · Century Roll-Out',
+        cue: 'warmup',
+        durationSec: 0,
+        distanceMeters: mi(5),
+        targetZone: 2,
+        ftpPctRange: [0.52, 0.66],
+        cadenceRange: [80, 90],
+        coachingNote: 'Calm 5-mile roll-out — patience in Quarter 1 builds a strong Mile 90.',
+      },
+      {
+        id: 'd100m-s2',
+        label: 'Mi 5–15 · Q1 Diesel Flats',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(10),
+        targetZone: 2,
+        ftpPctRange: [0.58, 0.7],
+        cadenceRange: [84, 92],
+        coachingNote: 'Effortless Blue Zone cruise — sip every 10–15 minutes from the start.',
+      },
+      {
+        id: 'd100m-s3',
+        label: 'Mi 15–17 · Q1 Saddle Relief Stand',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(2),
+        targetZone: 2,
+        ftpPctRange: [0.68, 0.75],
+        cadenceRange: [64, 72],
+        coachingNote: '2 miles out of the saddle early to stay fresh all day.',
+      },
+      {
+        id: 'd100m-s4',
+        label: 'Mi 17–25 · Aid Station 1 (Mile 25)',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(8),
+        targetZone: 2,
+        ftpPctRange: [0.6, 0.72],
+        cadenceRange: [82, 90],
+        coachingNote: 'First quarter nearly in the books — eat 30–60g carbs and stay ahead on water.',
+      },
+      {
+        id: 'd100m-s5',
+        label: 'Mi 25–33 · Q2 Rolling Country Roads',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(8),
+        targetZone: 3,
+        ftpPctRange: [0.74, 0.84],
+        cadenceRange: [74, 82],
+        coachingNote: 'Steady seated rollers into Quarter 2 — smooth cadence, zero surging.',
+      },
+      {
+        id: 'd100m-s6',
+        label: 'Mi 33–35 · Q2 Standing Climb',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(2),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.85],
+        cadenceRange: [64, 72],
+        coachingNote: 'Stand tall for 2 miles — stretch hips, calves, and lower back.',
+      },
+      {
+        id: 'd100m-s7',
+        label: 'Mi 35–41 · Q2 Valley Cruise',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(6),
+        targetZone: 2,
+        ftpPctRange: [0.6, 0.72],
+        cadenceRange: [84, 92],
+        coachingNote: 'Spin off the climb gear and settle into relaxed Zone 2.',
+      },
+      {
+        id: 'd100m-s8',
+        label: 'Mi 41–50 · Halfway Aid Station (Mile 50)',
+        cue: 'recovery',
+        durationSec: 0,
+        distanceMeters: mi(9),
+        targetZone: 2,
+        ftpPctRange: [0.58, 0.68],
+        cadenceRange: [80, 88],
+        coachingNote: 'Half Century down at Mile 50! Refill bottles, eat real food, and reset.',
+      },
+      {
+        id: 'd100m-s9',
+        label: 'Mi 50–60 · Q3 Steady Endurance Miles',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(10),
+        targetZone: 2,
+        ftpPctRange: [0.62, 0.73],
+        cadenceRange: [84, 92],
+        coachingNote: 'On the back half now — steady aerobic cruise through Mile 60.',
+      },
+      {
+        id: 'd100m-s10',
+        label: 'Mi 60–62 · Q3 Standing Saddle Break',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(2),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.85],
+        cadenceRange: [64, 72],
+        coachingNote: '2-mile standing reset — loosen grip and roll your shoulders back.',
+      },
+      {
+        id: 'd100m-s11',
+        label: 'Mi 62–66 · Q3 Cadence Spin-Up',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(4),
+        targetZone: 2,
+        ftpPctRange: [0.64, 0.74],
+        cadenceRange: [92, 100],
+        coachingNote: 'Light gear, brisk cadence to keep your legs supple past Mile 65.',
+      },
+      {
+        id: 'd100m-s12',
+        label: 'Mi 66–75 · Aid Station 3 (Mile 75)',
+        cue: 'recovery',
+        durationSec: 0,
+        distanceMeters: mi(9),
+        targetZone: 2,
+        ftpPctRange: [0.58, 0.7],
+        cadenceRange: [80, 88],
+        coachingNote: 'Three-quarters done at Mile 75! Final carb & hydration reload for the last 25.',
+      },
+      {
+        id: 'd100m-s13',
+        label: 'Mi 75–84 · Q4 Durability Cruise',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(9),
+        targetZone: 2,
+        ftpPctRange: [0.63, 0.75],
+        cadenceRange: [82, 90],
+        coachingNote: 'Final quarter! Hold crisp form in top Zone 2 as the countdown dips under 20 mi.',
+      },
+      {
+        id: 'd100m-s14',
+        label: 'Mi 84–86 · Q4 Final Standing Break',
+        cue: 'base',
+        durationSec: 0,
+        distanceMeters: mi(2),
+        targetZone: 3,
+        ftpPctRange: [0.76, 0.85],
+        cadenceRange: [64, 72],
+        coachingNote: 'Last standing saddle break before the century finale.',
+      },
+      {
+        id: 'd100m-s15',
+        label: 'Mi 86–95 · Q4 Negative Split Tempo',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: mi(9),
+        targetZone: 3,
+        ftpPctRange: [0.78, 0.88],
+        cadenceRange: [84, 92],
+        coachingNote: 'Single-digit miles left soon — steady Green Tempo to bring it inside 5 miles.',
+      },
+      {
+        id: 'd100m-s16',
+        label: 'Mi 95–100 · Final 5-Mile Century Finish',
+        cue: 'push',
+        durationSec: 0,
+        distanceMeters: mi(5),
+        targetZone: 4,
+        ftpPctRange: [0.86, 0.96],
+        cadenceRange: [86, 94],
+        coachingNote: 'Final 5 miles to 100.0! Ride proud across the century finish line!',
+      },
+    ],
+  },
 ];
+
+export function isDistanceWorkout(workout: WorkoutTemplate): boolean {
+  return typeof workout.targetDistanceMeters === 'number' && workout.targetDistanceMeters > 0;
+}
 
 export function getTotalWorkoutDurationSec(workout: WorkoutTemplate): number {
   return workout.segments.reduce((acc, s) => acc + s.durationSec, 0);
 }
 
+export function getTotalWorkoutDistanceMeters(workout: WorkoutTemplate): number {
+  if (typeof workout.targetDistanceMeters === 'number' && workout.targetDistanceMeters > 0) {
+    return workout.targetDistanceMeters;
+  }
+  return workout.segments.reduce((acc, s) => acc + (s.distanceMeters ?? 0), 0);
+}
+
+/**
+ * Returns the 0-based active stage index for a distance-driven workout,
+ * or `workout.segments.length` once the rider reaches/exceeds the target distance.
+ */
+export function getDistanceStageIndex(workout: WorkoutTemplate, distanceMeters: number): number {
+  if (!isDistanceWorkout(workout) || workout.segments.length === 0) return 0;
+  const totalTarget = getTotalWorkoutDistanceMeters(workout);
+  if (distanceMeters >= totalTarget) return workout.segments.length;
+  let cursor = 0;
+  for (let i = 0; i < workout.segments.length; i++) {
+    const segDist = workout.segments[i].distanceMeters ?? 0;
+    if (distanceMeters < cursor + segDist) {
+      return i;
+    }
+    cursor += segDist;
+  }
+  return workout.segments.length;
+}
+
+export interface WorkoutOptionGroup {
+  label: string;
+  workouts: WorkoutTemplate[];
+}
+
+/** Groups templates into scannable dropdown sections while preserving order. */
+export function groupWorkoutTemplates(workouts: WorkoutTemplate[]): WorkoutOptionGroup[] {
+  const openRide: WorkoutTemplate[] = [];
+  const studioTimed: WorkoutTemplate[] = [];
+  const enduranceTimed: WorkoutTemplate[] = [];
+  const distanceRides: WorkoutTemplate[] = [];
+
+  for (const w of workouts) {
+    if (w.isFreeRide || w.category === 'free') {
+      openRide.push(w);
+    } else if (isDistanceWorkout(w) || w.category === 'distance') {
+      distanceRides.push(w);
+    } else if (w.category === 'endurance') {
+      enduranceTimed.push(w);
+    } else {
+      studioTimed.push(w);
+    }
+  }
+
+  return [
+    { label: 'Open Studio', workouts: openRide },
+    { label: 'Studio Workouts', workouts: studioTimed },
+    { label: 'Endurance Rides', workouts: enduranceTimed },
+    { label: 'Distance Challenges', workouts: distanceRides },
+  ].filter((g) => g.workouts.length > 0);
+}
+
 /**
  * Formats a workout's selector label without repeating the duration when
- * the workout name already includes the time (e.g. "23-Min Signature Burn" or "2-Hour Endurance").
+ * the workout is free-ride, distance-based, or already includes the time
+ * (e.g. "23-Min Signature Burn", "2-Hour Endurance", "50K Challenge").
  */
 export function formatWorkoutOptionLabel(
   workout: WorkoutTemplate,
   unit: 'min' | 'm' = 'min'
 ): string {
-  if (workout.isFreeRide || /\b\d+\s*-?\s*(?:min|hr|hour)s?\b/i.test(workout.name)) {
+  if (
+    workout.isFreeRide ||
+    isDistanceWorkout(workout) ||
+    /\b\d+\s*-?\s*(?:min|hr|hour)s?\b/i.test(workout.name)
+  ) {
     return workout.name;
   }
   const mins = Math.round(getTotalWorkoutDurationSec(workout) / 60);

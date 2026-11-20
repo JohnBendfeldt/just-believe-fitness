@@ -1,15 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_ATHLETE_PROFILE,
+  METERS_PER_MILE,
   ZONE_PALETTE,
   computeNormalizedPower,
   computeSegmentedGaugeProgress,
   computeWattsPerKg,
   cueDisplayLabel,
+  estimateDistanceEtaSec,
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
   feetInchesToCm,
   formatBikeGearBadge,
+  formatDistanceTarget,
+  formatDistanceValue,
   formatDuration,
   formatHeightImperial,
   getCadenceZones,
@@ -31,8 +35,12 @@ import {
 import {
   WORKOUT_TEMPLATES,
   formatWorkoutOptionLabel,
+  getDistanceStageIndex,
   getSegmentTargetsForAthlete,
+  getTotalWorkoutDistanceMeters,
   getTotalWorkoutDurationSec,
+  groupWorkoutTemplates,
+  isDistanceWorkout,
 } from '../data/workouts';
 import {
   enterBrowserFullscreen,
@@ -252,8 +260,8 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
     ).toBe('EST GEAR 18/32');
   });
 
-  it('validates all workout templates, durations, cues, and dynamic segment targets without prohibited terms', () => {
-    expect(WORKOUT_TEMPLATES.length).toBeGreaterThanOrEqual(8);
+  it('validates all workout templates, durations, distance challenges, cues, and dynamic targets without prohibited terms', () => {
+    expect(WORKOUT_TEMPLATES.length).toBeGreaterThanOrEqual(12);
     const bannedTerms = ['ot' + 'f', 'orange' + 'theory', 'sp' + 'lat', 'sp' + 'lats'];
     const bannedPattern = new RegExp(`\\b(${bannedTerms.join('|')})\\b`, 'i');
 
@@ -279,6 +287,30 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
       if (tpl.isFreeRide) {
         expect(getTotalWorkoutDurationSec(tpl)).toBe(0);
         expect(formatWorkoutOptionLabel(tpl)).toBe(tpl.name);
+      } else if (isDistanceWorkout(tpl)) {
+        const targetMeters = getTotalWorkoutDistanceMeters(tpl);
+        const stageSumMeters = tpl.segments.reduce((acc, s) => acc + (s.distanceMeters ?? 0), 0);
+        expect(targetMeters).toBeGreaterThanOrEqual(50_000);
+        expect(Math.abs(stageSumMeters - targetMeters)).toBeLessThan(1);
+        expect(tpl.distanceUnit === 'km' || tpl.distanceUnit === 'mi').toBe(true);
+        expect(formatWorkoutOptionLabel(tpl)).toBe(tpl.name);
+        expect(formatWorkoutOptionLabel(tpl, 'm')).toBe(tpl.name);
+
+        for (const seg of tpl.segments) {
+          expect(seenSegmentIds.has(seg.id)).toBe(false);
+          seenSegmentIds.add(seg.id);
+
+          expect(seg.distanceMeters).toBeGreaterThan(0);
+          expect(seg.coachingNote).not.toMatch(bannedPattern);
+          const starterTargets = getSegmentTargetsForAthlete(seg, DEFAULT_ATHLETE_PROFILE);
+          expect(starterTargets.maxWatts).toBeGreaterThanOrEqual(starterTargets.minWatts);
+          expect(starterTargets.suggestedResistanceLow).toBeGreaterThanOrEqual(1);
+          expect(starterTargets.suggestedResistanceHigh).toBeLessThanOrEqual(32);
+
+          const strongerAthlete: AthleteProfile = { ...DEFAULT_ATHLETE_PROFILE, ftpWatts: 260 };
+          const strongerTargets = getSegmentTargetsForAthlete(seg, strongerAthlete);
+          expect(strongerTargets.midWatts).toBeGreaterThan(starterTargets.midWatts);
+        }
       } else {
         expect(getTotalWorkoutDurationSec(tpl)).toBeGreaterThanOrEqual(1200);
         expect(formatWorkoutOptionLabel(tpl)).toBe(tpl.name);
@@ -317,6 +349,63 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
       expect(formatWorkoutOptionLabel(ride!)).toBe(spec.name);
       expect(formatWorkoutOptionLabel(ride!, 'm')).toBe(spec.name);
     }
+
+    // Distance challenges hit exact 50K, 50 mi, Metric Century (100K), and Full Century (100 mi) targets
+    const distanceSpecs = [
+      { id: 'distance-50k', name: '50K Challenge', expectedMeters: 50_000, unit: 'km' as const },
+      {
+        id: 'distance-50mi',
+        name: '50-Mile Half Century',
+        expectedMeters: 50 * METERS_PER_MILE,
+        unit: 'mi' as const,
+      },
+      {
+        id: 'distance-100k',
+        name: 'Metric Century (100K)',
+        expectedMeters: 100_000,
+        unit: 'km' as const,
+      },
+      {
+        id: 'distance-100mi',
+        name: 'Full Century (100 Mi)',
+        expectedMeters: 100 * METERS_PER_MILE,
+        unit: 'mi' as const,
+      },
+    ];
+
+    for (const spec of distanceSpecs) {
+      const ride = WORKOUT_TEMPLATES.find((w) => w.id === spec.id);
+      expect(ride).toBeDefined();
+      expect(ride?.name).toBe(spec.name);
+      expect(ride?.category).toBe('distance');
+      expect(ride?.distanceUnit).toBe(spec.unit);
+      expect(getTotalWorkoutDistanceMeters(ride!)).toBeCloseTo(spec.expectedMeters, 2);
+      expect(getDistanceStageIndex(ride!, 0)).toBe(0);
+      expect(getDistanceStageIndex(ride!, spec.expectedMeters / 2)).toBeGreaterThan(0);
+      expect(getDistanceStageIndex(ride!, spec.expectedMeters / 2)).toBeLessThan(
+        ride!.segments.length
+      );
+      expect(getDistanceStageIndex(ride!, spec.expectedMeters)).toBe(ride!.segments.length);
+      expect(getDistanceStageIndex(ride!, spec.expectedMeters + 500)).toBe(ride!.segments.length);
+    }
+
+    // Distance formatting, ETA estimation, and dropdown grouping
+    expect(formatDistanceValue(50_000, 'km')).toBe('50.00 km');
+    expect(formatDistanceValue(50 * METERS_PER_MILE, 'mi')).toBe('50.00 mi');
+    expect(formatDistanceTarget(100_000, 'km')).toBe('100 km');
+    expect(formatDistanceTarget(1.5 * METERS_PER_MILE, 'mi')).toBe('1.5 mi');
+    expect(estimateDistanceEtaSec(10_000, 0, 0)).toBeNull();
+    expect(estimateDistanceEtaSec(0, 8, 8)).toBe(0);
+    expect(estimateDistanceEtaSec(10_000, 10, 10)).toBe(1000);
+
+    const groups = groupWorkoutTemplates(WORKOUT_TEMPLATES);
+    expect(groups.map((g) => g.label)).toEqual([
+      'Open Studio',
+      'Studio Workouts',
+      'Endurance Rides',
+      'Distance Challenges',
+    ]);
+    expect(groups.reduce((sum, g) => sum + g.workouts.length, 0)).toBe(WORKOUT_TEMPLATES.length);
 
     // Custom workout without duration in its name still appends "(15 min)" / "(15m)"
     const customNoTime = {

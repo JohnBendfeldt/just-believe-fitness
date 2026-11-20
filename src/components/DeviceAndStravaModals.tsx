@@ -243,7 +243,7 @@ export function DeviceConnectionModal({
         </div>
 
         {/* Universal BLE Heart Rate Monitor Card (Any Brand) */}
-        <div className="history-item">
+        <div className="history-item" style={{ alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 260px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
               <span
@@ -259,8 +259,26 @@ export function DeviceConnectionModal({
             </div>
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
               Works with <strong>any Bluetooth HR sensor</strong>: Polar, Wahoo TICKR, WHOOP,
-              Coospo, Scosche, COROS, Suunto, or Garmin (on watches, enable{' '}
-              <strong>Broadcast Heart Rate</strong> first).
+              Coospo, Scosche, COROS, Suunto, Garmin (enable <strong>Broadcast Heart Rate</strong>{' '}
+              on Garmin watches), and <strong>Apple Watch</strong> (via an HR broadcast app).
+            </p>
+            <p
+              id="apple-watch-hr-tip"
+              style={{
+                margin: '6px 0 0',
+                padding: '6px 9px',
+                borderRadius: '8px',
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid var(--hairline)',
+                fontSize: '0.74rem',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <strong>Apple Watch:</strong> Apple Watch doesn&apos;t broadcast standard Bluetooth
+              heart rate natively — just open an HR broadcast app on your Apple Watch &amp; iPhone
+              (such as <strong>HeartCast</strong>, <strong>ECHO Heart Rate</strong>, or{' '}
+              <strong>BlueHeart</strong>) to broadcast live heart rate, then tap{' '}
+              <strong>Pair Heart Rate</strong> here.
             </p>
           </div>
           {telemetry.hrConnected ? (

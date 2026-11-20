@@ -118,9 +118,20 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(mainOptionLabels).toContain('1-Hour Endurance');
     expect(mainOptionLabels).toContain('2-Hour Endurance');
     expect(mainOptionLabels).toContain('3-Hour Endurance');
-    expect(mainOptionLabels.some((t) => t?.includes('(23 min)') || t?.includes('(60 min)'))).toBe(
-      false
-    );
+    expect(mainOptionLabels).toContain('50K Challenge');
+    expect(mainOptionLabels).toContain('50-Mile Half Century');
+    expect(mainOptionLabels).toContain('Metric Century (100K)');
+    expect(mainOptionLabels).toContain('Full Century (100 Mi)');
+    expect(
+      mainOptionLabels.some(
+        (t) => t?.includes('(23 min)') || t?.includes('(60 min)') || t?.includes('(0 min)')
+      )
+    ).toBe(false);
+
+    // Selecting a distance challenge displays distance countdown & ETA without skipping real distance
+    fireEvent.change(mainSelect, { target: { value: 'distance-50k' } });
+    expect(document.getElementById('ride-distance-remaining')?.textContent).toBe('50.00 km');
+    expect(document.getElementById('ride-distance-eta')?.textContent).toBe('--');
 
     fireEvent.click(document.getElementById('open-focus-mode-btn')!);
     const modal = document.getElementById('focus-workout-modal');
@@ -133,9 +144,16 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(focusOptionLabels).toContain('1-Hour Endurance');
     expect(focusOptionLabels).toContain('2-Hour Endurance');
     expect(focusOptionLabels).toContain('3-Hour Endurance');
-    expect(focusOptionLabels.some((t) => t?.includes('(23m)') || t?.includes('(120m)'))).toBe(
-      false
-    );
+    expect(focusOptionLabels).toContain('50K Challenge');
+    expect(focusOptionLabels).toContain('50-Mile Half Century');
+    expect(focusOptionLabels).toContain('Metric Century (100K)');
+    expect(focusOptionLabels).toContain('Full Century (100 Mi)');
+    expect(
+      focusOptionLabels.some(
+        (t) => t?.includes('(23m)') || t?.includes('(120m)') || t?.includes('(0m)')
+      )
+    ).toBe(false);
+    expect(document.getElementById('focus-distance-remaining')?.textContent).toBe('50.00 km');
 
     // Regression guard: Start Workout button must be prominently rendered inside .focus-transport-dock
     const startBtn = document.getElementById('focus-play-resume-btn');
@@ -143,11 +161,12 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(startBtn?.closest('.focus-transport-dock')).not.toBeNull();
     expect(startBtn?.textContent).toContain('Start Workout');
 
-    // Start and Pause inside Focus Cockpit
+    // Start and Pause inside Focus Cockpit — distance rides keep distance authentic (no Next skip button)
     fireEvent.click(startBtn!);
     const pauseBtn = document.getElementById('focus-pause-btn');
     expect(pauseBtn).toBeInTheDocument();
     expect(pauseBtn?.textContent).toContain('Pause Workout');
+    expect(document.getElementById('focus-next-block-btn')).not.toBeInTheDocument();
 
     fireEvent.click(pauseBtn!);
     const resumeBtn = document.getElementById('focus-play-resume-btn');
@@ -169,6 +188,10 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(modal?.textContent).toContain('Keiser M3i');
     expect(modal?.textContent).toContain('Wahoo KICKR');
     expect(modal?.textContent).toContain('any Bluetooth HR sensor');
+    const appleWatchTip = document.getElementById('apple-watch-hr-tip');
+    expect(appleWatchTip).toBeInTheDocument();
+    expect(appleWatchTip?.textContent).toContain('Apple Watch');
+    expect(appleWatchTip?.textContent).toContain('HeartCast');
     expect(document.getElementById('connect-bike-btn')).toBeInTheDocument();
     expect(document.getElementById('connect-bike-all-btn')).toBeInTheDocument();
     expect(document.getElementById('connect-hr-btn')).toBeInTheDocument();

@@ -127,12 +127,59 @@ export function estimateIndoorSpeedMps(watts: number, profile: AthleteProfile): 
   return v;
 }
 
+export const METERS_PER_MILE = 1609.344;
+
 export function mpsToMph(mps: number): number {
   return mps * 2.23693629;
 }
 
 export function metersToMiles(meters: number): number {
-  return meters * 0.000621371192;
+  return meters / METERS_PER_MILE;
+}
+
+/** Formats a live distance readout (e.g. "49.82 km" or "31.07 mi"). */
+export function formatDistanceValue(
+  meters: number,
+  unit: 'km' | 'mi',
+  decimals = 2
+): string {
+  const safeMeters = Math.max(0, meters);
+  const val = unit === 'km' ? safeMeters / 1000 : metersToMiles(safeMeters);
+  return `${val.toFixed(decimals)} ${unit}`;
+}
+
+/** Formats a clean route/stage target label (e.g. "50 km", "100 mi", "1.5 mi"). */
+export function formatDistanceTarget(meters: number, unit: 'km' | 'mi'): string {
+  const safeMeters = Math.max(0, meters);
+  const val = unit === 'km' ? safeMeters / 1000 : metersToMiles(safeMeters);
+  const rounded = Math.round(val * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)} ${unit}`;
+}
+
+/**
+ * Estimates remaining seconds to finish a distance challenge using a smooth blend
+ * of overall ride average speed and live instantaneous speed so ETA doesn't jump
+ * wildly during brief standing surges or water breaks.
+ */
+export function estimateDistanceEtaSec(
+  remainingMeters: number,
+  currentSpeedMps: number,
+  avgSpeedMps: number
+): number | null {
+  if (remainingMeters <= 0) return 0;
+  const hasAvg = avgSpeedMps > 0.5;
+  const hasCurr = currentSpeedMps > 0.5;
+  let effectiveSpeedMps = 0;
+  if (hasAvg && hasCurr) {
+    effectiveSpeedMps = avgSpeedMps * 0.65 + currentSpeedMps * 0.35;
+  } else if (hasAvg) {
+    effectiveSpeedMps = avgSpeedMps;
+  } else if (hasCurr) {
+    effectiveSpeedMps = currentSpeedMps;
+  } else {
+    return null;
+  }
+  return Math.max(1, Math.round(remainingMeters / effectiveSpeedMps));
 }
 
 /**

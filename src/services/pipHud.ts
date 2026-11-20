@@ -19,6 +19,7 @@ export interface HudRenderSnapshot {
   gaugeMode?: 'rings' | 'bars';
   segmentLabel?: string;
   segmentRemainingSec?: number;
+  segmentRemainingLabel?: string;
 }
 
 function drawRoundedRect(
@@ -155,6 +156,7 @@ export function renderTelemetryHudCanvas(
     gaugeMode = 'rings',
     segmentLabel,
     segmentRemainingSec,
+    segmentRemainingLabel,
   } = snap;
 
   const hrZones = getHrZones(profile.maxHrBpm);
@@ -186,13 +188,14 @@ export function renderTelemetryHudCanvas(
   const leftText = segmentLabel
     ? `${headline.stageLabel}  ·  ${segmentLabel.toUpperCase()}`
     : `JUST BELIEVE FITNESS  ·  ${headline.stageLabel}`;
-  ctx.fillText(leftText, 20, bannerH / 2, 360);
+  ctx.fillText(leftText, 20, bannerH / 2, 340);
 
-  // Timer + Burn Points badge on right of banner
+  // Timer / Distance Remaining + Burn Points badge on right of banner
   ctx.textAlign = 'right';
-  ctx.font = '800 25px ui-monospace, SFMono-Regular, monospace';
-  const timerStr =
-    typeof segmentRemainingSec === 'number'
+  ctx.font = '800 24px ui-monospace, SFMono-Regular, monospace';
+  const timerStr = segmentRemainingLabel
+    ? segmentRemainingLabel
+    : typeof segmentRemainingSec === 'number'
       ? `${formatDuration(segmentRemainingSec)} LEFT`
       : formatDuration(elapsedSec);
   ctx.fillText(`${timerStr}   ★ ${burnPoints}`, W - 20, bannerH / 2);

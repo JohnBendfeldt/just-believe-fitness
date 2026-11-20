@@ -18,6 +18,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import type {
+  ActiveSegmentSummary,
   AthleteProfile,
   GarminConfig,
   GarminImportedProfile,
@@ -31,9 +32,12 @@ import {
   computeNormalizedPower,
   computeWattsPerKg,
   cueDisplayLabel,
+  estimateDistanceEtaSec,
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
   formatBikeGearBadge,
+  formatDistanceTarget,
+  formatDistanceValue,
   formatDuration,
   formatHeightImperial,
   getCadenceZones,
@@ -53,7 +57,11 @@ import { GarminHeartRateConnection } from './services/ble/garminHrBle';
 import {
   WORKOUT_TEMPLATES,
   formatWorkoutOptionLabel,
+  getDistanceStageIndex,
   getSegmentTargetsForAthlete,
+  getTotalWorkoutDistanceMeters,
+  groupWorkoutTemplates,
+  isDistanceWorkout,
 } from './data/workouts';
 import {
   deleteSavedRide,
@@ -81,7 +89,7 @@ import {
 } from './services/garminConnect';
 import { renderTelemetryHudCanvas } from './services/pipHud';
 import { ScreenWakeManager, WorkoutAudioCue } from './services/wakeAndAudio';
-import { getBluetoothUnsupportedMessage } from './utils/browserSupport';
+import { getBluetoothUnsupportedMessage, isIosDevice } from './utils/browserSupport';
 import { enterBrowserFullscreen, exitBrowserFullscreen } from './utils/fullscreen';
 import { ZoneMetricCard } from './components/ZoneMetricCard';
 import { ZoneSpeedometerCard } from './components/ZoneSpeedometerCard';
@@ -141,6 +149,7 @@ export function App() {
   const [elapsedSec, setElapsedSec] = useState<number>(0);
   const [startedAtMs, setStartedAtMs] = useState<number | null>(null);
   const [distanceMeters, setDistanceMeters] = useState<number>(0);
+  const distanceMetersRef = useRef<number>(0);
   const [caloriesKcal, setCaloriesKcal] = useState<number>(0);
   const [hrZoneSeconds, setHrZoneSeconds] = useState<Record<ZoneId, number>>({
     ...EMPTY_ZONE_SECONDS,
@@ -490,10 +499,84 @@ export function App() {
     [selectedWorkoutId]
   );
 
-  const activeSegmentInfo = (() => {
+  const activeSegmentInfo: ActiveSegmentSummary | null = (() => {
     if (selectedWorkout.isFreeRide || selectedWorkout.segments.length === 0) {
       return null;
     }
+
+    if (isDistanceWorkout(selectedWorkout)) {
+      const totalTargetMeters = getTotalWorkoutDistanceMeters(selectedWorkout);
+      const unit = selectedWorkout.distanceUnit ?? 'mi';
+      const totalRemainingMeters = Math.max(0, totalTargetMeters - distanceMeters);
+      const overallProgressPct = Math.min(
+        100,
+        Math.max(0, (distanceMeters / Math.max(1, totalTargetMeters)) * 100)
+      );
+      const isGoalComplete = distanceMeters >= totalTargetMeters;
+      const currentSpeedMps = telemetry.speedMph / 2.23693629;
+      const avgSpeedMps = elapsedSec > 0 ? distanceMeters / elapsedSec : 0;
+      const etaRemainingSec = estimateDistanceEtaSec(
+        totalRemainingMeters,
+        currentSpeedMps,
+        avgSpeedMps
+      );
+
+      let cursorMeters = 0;
+      for (let i = 0; i < selectedWorkout.segments.length; i++) {
+        const seg = selectedWorkout.segments[i];
+        const segDist = seg.distanceMeters ?? 0;
+        if (distanceMeters < cursorMeters + segDist) {
+          const stageElapsedMeters = Math.max(0, distanceMeters - cursorMeters);
+          const stageRemainingMeters = Math.max(0, segDist - stageElapsedMeters);
+          const stageProgressPct =
+            segDist > 0 ? Math.min(100, Math.max(0, (stageElapsedMeters / segDist) * 100)) : 100;
+          const nextSeg = selectedWorkout.segments[i + 1] ?? null;
+          return {
+            index: i,
+            totalSegments: selectedWorkout.segments.length,
+            segment: seg,
+            remainingSec: 0,
+            distanceMode: {
+              unit,
+              totalTargetMeters,
+              totalRemainingMeters,
+              overallProgressPct,
+              stageTargetMeters: segDist,
+              stageRemainingMeters,
+              stageProgressPct,
+              etaRemainingSec,
+              isGoalComplete,
+            },
+            nextSegment: nextSeg,
+            targets: getSegmentTargetsForAthlete(seg, profile, telemetry.bikeFamily),
+          };
+        }
+        cursorMeters += segDist;
+      }
+
+      const lastSeg = selectedWorkout.segments[selectedWorkout.segments.length - 1];
+      const lastSegDist = lastSeg.distanceMeters ?? 0;
+      return {
+        index: selectedWorkout.segments.length - 1,
+        totalSegments: selectedWorkout.segments.length,
+        segment: lastSeg,
+        remainingSec: 0,
+        distanceMode: {
+          unit,
+          totalTargetMeters,
+          totalRemainingMeters: 0,
+          overallProgressPct: 100,
+          stageTargetMeters: lastSegDist,
+          stageRemainingMeters: 0,
+          stageProgressPct: 100,
+          etaRemainingSec: 0,
+          isGoalComplete: true,
+        },
+        nextSegment: null,
+        targets: getSegmentTargetsForAthlete(lastSeg, profile, telemetry.bikeFamily),
+      };
+    }
+
     const virtualClock = elapsedSec + segmentOffsetSec;
     let cursor = 0;
     for (let i = 0; i < selectedWorkout.segments.length; i++) {
@@ -617,7 +700,7 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [rideState, telemetry.isSimulating, telemetry.bikeConnected, telemetry.hrConnected]);
 
-  // 1-Second Active Workout Recording & Interval Cue Loop
+  // 1-Second Active Workout Recording & Interval / Distance Stage Cue Loop
   useEffect(() => {
     if (rideState !== 'running') return;
 
@@ -634,11 +717,49 @@ export function App() {
         currProf
       );
 
+      const prevDist = distanceMetersRef.current;
+      const nextDist = prevDist + speedMps;
+      distanceMetersRef.current = nextDist;
+
+      // Distance-driven challenge transitions, milestone toasts (25/50/75%), and finish celebration
+      if (isDistanceWorkout(selectedWorkout) && selectedWorkout.segments.length > 0) {
+        const totalTarget = getTotalWorkoutDistanceMeters(selectedWorkout);
+        const unit = selectedWorkout.distanceUnit ?? 'mi';
+        const prevStage = getDistanceStageIndex(selectedWorkout, prevDist);
+        const nextStage = getDistanceStageIndex(selectedWorkout, nextDist);
+
+        if (nextStage > prevStage) {
+          audioRef.current?.playTick(true);
+          if (nextStage >= selectedWorkout.segments.length) {
+            audioRef.current?.playCoachClip('workout-complete');
+            showToast(
+              `${selectedWorkout.name} complete (${formatDistanceTarget(totalTarget, unit)})! Spin easy to cool down or tap Stop & Save.`
+            );
+          } else {
+            const nextSeg = selectedWorkout.segments[nextStage];
+            audioRef.current?.playSegmentCue(nextSeg.id, nextSeg.cue);
+          }
+        }
+
+        const prevPct = (prevDist / Math.max(1, totalTarget)) * 100;
+        const nextPct = (nextDist / Math.max(1, totalTarget)) * 100;
+        for (const milestone of [25, 50, 75] as const) {
+          if (prevPct < milestone && nextPct >= milestone && nextDist < totalTarget) {
+            const rem = formatDistanceValue(totalTarget - nextDist, unit);
+            showToast(`${milestone}% of ${selectedWorkout.name} complete · ${rem} to go!`);
+          }
+        }
+      }
+
       setElapsedSec((prevElapsed) => {
         const nextElapsed = prevElapsed + 1;
 
-        // Play 10s heads-up, 3-2-1-GO chimes, and pre-rendered Coach Jenny MP3 prompts on interval transitions
-        if (!selectedWorkout.isFreeRide && selectedWorkout.segments.length > 0) {
+        // Play 10s heads-up, 3-2-1-GO chimes, and pre-rendered Coach Jenny MP3 prompts on timed interval transitions
+        if (
+          !selectedWorkout.isFreeRide &&
+          !isDistanceWorkout(selectedWorkout) &&
+          selectedWorkout.segments.length > 0
+        ) {
           const vClock = nextElapsed + segmentOffsetSec;
           let acc = 0;
           for (let i = 0; i < selectedWorkout.segments.length; i++) {
@@ -661,27 +782,24 @@ export function App() {
           }
         }
 
-        setDistanceMeters((prevDist) => {
-          const nextDist = prevDist + speedMps;
-          setCaloriesKcal((prevCal) => {
-            const nextCal = prevCal + kcalDelta;
-            const point: TrackPoint = {
-              timestampMs: Date.now(),
-              elapsedSec: nextElapsed,
-              powerWatts: currTel.powerWatts,
-              cadenceRpm: currTel.cadenceRpm,
-              resistance: currTel.resistance,
-              heartRateBpm: currTel.heartRateBpm,
-              speedMps,
-              distanceMeters: nextDist,
-              caloriesKcal: nextCal,
-              hrZone: hrZ,
-              powerZone: pwrZ,
-            };
-            setTrackPoints((prevPts) => [...prevPts, point]);
-            return nextCal;
-          });
-          return nextDist;
+        setDistanceMeters(nextDist);
+        setCaloriesKcal((prevCal) => {
+          const nextCal = prevCal + kcalDelta;
+          const point: TrackPoint = {
+            timestampMs: Date.now(),
+            elapsedSec: nextElapsed,
+            powerWatts: currTel.powerWatts,
+            cadenceRpm: currTel.cadenceRpm,
+            resistance: currTel.resistance,
+            heartRateBpm: currTel.heartRateBpm,
+            speedMps,
+            distanceMeters: nextDist,
+            caloriesKcal: nextCal,
+            hrZone: hrZ,
+            powerZone: pwrZ,
+          };
+          setTrackPoints((prevPts) => [...prevPts, point]);
+          return nextCal;
         });
 
         if (currTel.heartRateBpm > 0) {
@@ -694,7 +812,7 @@ export function App() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [rideState, selectedWorkout, segmentOffsetSec]);
+  }, [rideState, selectedWorkout, segmentOffsetSec, showToast]);
 
   // Derived Burn Points: 1 Burn Point per 60s spent in Orange/Red (Zone 4-5) by EITHER heart rate
   // OR power. Indoor riders often hit Orange/Red power while HR lags, so each second counts once
@@ -718,6 +836,15 @@ export function App() {
     }
   }, [burnPoints, rideState]);
 
+  const pipRemainingLabel = activeSegmentInfo?.distanceMode
+    ? activeSegmentInfo.distanceMode.isGoalComplete
+      ? 'GOAL DONE'
+      : `${formatDistanceValue(
+          activeSegmentInfo.distanceMode.totalRemainingMeters,
+          activeSegmentInfo.distanceMode.unit
+        ).toUpperCase()} LEFT`
+    : undefined;
+
   // Keep Picture-in-Picture Canvas continuously updated
   useEffect(() => {
     const canvas = hudCanvasRef.current;
@@ -729,19 +856,36 @@ export function App() {
       burnPoints,
       gaugeMode,
       segmentLabel: activeSegmentInfo?.segment.label,
-      segmentRemainingSec: activeSegmentInfo?.remainingSec,
+      segmentRemainingSec: activeSegmentInfo?.distanceMode
+        ? undefined
+        : activeSegmentInfo?.remainingSec,
+      segmentRemainingLabel: pipRemainingLabel,
     });
-  }, [telemetry, profile, elapsedSec, burnPoints, gaugeMode, activeSegmentInfo]);
+  }, [telemetry, profile, elapsedSec, burnPoints, gaugeMode, activeSegmentInfo, pipRemainingLabel]);
 
   // Launch Picture-in-Picture Floating HUD (works over YouTube App on Android/Desktop)
   const handleLaunchHudPip = useCallback(async () => {
     const canvas = hudCanvasRef.current;
-    const video = hudVideoRef.current;
+    const video = hudVideoRef.current as
+      | (HTMLVideoElement & {
+          webkitPresentationMode?: string;
+          webkitSupportsPresentationMode?: (mode: string) => boolean;
+          webkitSetPresentationMode?: (mode: string) => void;
+        })
+      | null;
     if (!canvas || !video) return;
 
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
+        setIsHudPipActive(false);
+        return;
+      }
+      if (
+        video.webkitPresentationMode === 'picture-in-picture' &&
+        typeof video.webkitSetPresentationMode === 'function'
+      ) {
+        video.webkitSetPresentationMode('inline');
         setIsHudPipActive(false);
         return;
       }
@@ -753,10 +897,21 @@ export function App() {
         burnPoints,
         gaugeMode,
         segmentLabel: activeSegmentInfo?.segment.label,
-        segmentRemainingSec: activeSegmentInfo?.remainingSec,
+        segmentRemainingSec: activeSegmentInfo?.distanceMode
+          ? undefined
+          : activeSegmentInfo?.remainingSec,
+        segmentRemainingLabel: pipRemainingLabel,
       });
 
       if (!hudStreamAttachedRef.current) {
+        if (typeof canvas.captureStream !== 'function') {
+          showToast(
+            isIosDevice()
+              ? 'iPhone/Bluefy blocks PiP pop-out for live gauges — use the built-in YouTube Split/Corner player so Bluetooth stays connected!'
+              : 'Use the built-in YouTube Split/Corner player on this device.'
+          );
+          return;
+        }
         const stream = canvas.captureStream(10);
         video.srcObject = stream;
         hudStreamAttachedRef.current = true;
@@ -764,30 +919,51 @@ export function App() {
 
       await video.play();
 
-      if ('requestPictureInPicture' in video) {
+      if ('requestPictureInPicture' in video && typeof video.requestPictureInPicture === 'function') {
         await video.requestPictureInPicture();
         setIsHudPipActive(true);
         showToast('Telemetry HUD popped out! Open YouTube and ride along.');
+      } else if (
+        typeof video.webkitSetPresentationMode === 'function' &&
+        video.webkitSupportsPresentationMode?.('picture-in-picture')
+      ) {
+        video.webkitSetPresentationMode('picture-in-picture');
+        setIsHudPipActive(true);
+        showToast('Telemetry HUD popped out! Note: keep this tab active if Bluetooth pauses on iOS.');
       } else {
         showToast(
-          'Use the built-in YouTube Split/Corner player on this device, or enable PiP in Chrome settings.'
+          isIosDevice()
+            ? 'iPhone/Bluefy blocks PiP pop-out for live gauges — use the built-in YouTube Split/Corner player right inside the app so Bluetooth stays connected!'
+            : 'Use the built-in YouTube Split/Corner player on this device, or enable PiP in Chrome settings.'
         );
       }
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error
+      const msg = isIosDevice()
+        ? 'iPhone/Bluefy blocks system PiP pop-out for live canvas gauges — use the built-in YouTube Split/Corner player inside the app so Bluetooth stays live!'
+        : err instanceof Error
           ? err.message
           : 'Could not open system PiP window — try the built-in YouTube Split/Corner player!';
       showToast(msg);
     }
-  }, [elapsedSec, burnPoints, gaugeMode, activeSegmentInfo, showToast]);
+  }, [elapsedSec, burnPoints, gaugeMode, activeSegmentInfo, pipRemainingLabel, showToast]);
 
   useEffect(() => {
-    const video = hudVideoRef.current;
+    const video = hudVideoRef.current as
+      | (HTMLVideoElement & { webkitPresentationMode?: string })
+      | null;
     if (!video) return;
     const onLeave = () => setIsHudPipActive(false);
+    const onWebkitModeChange = () => {
+      if (video.webkitPresentationMode !== 'picture-in-picture') {
+        setIsHudPipActive(false);
+      }
+    };
     video.addEventListener('leavepictureinpicture', onLeave);
-    return () => video.removeEventListener('leavepictureinpicture', onLeave);
+    video.addEventListener('webkitpresentationmodechanged', onWebkitModeChange);
+    return () => {
+      video.removeEventListener('leavepictureinpicture', onLeave);
+      video.removeEventListener('webkitpresentationmodechanged', onWebkitModeChange);
+    };
   }, []);
 
   // Workout Controls
@@ -814,7 +990,7 @@ export function App() {
   };
 
   const handleSkipSegment = () => {
-    if (!activeSegmentInfo) return;
+    if (!activeSegmentInfo || activeSegmentInfo.distanceMode) return;
     setSegmentOffsetSec((prev) => prev + activeSegmentInfo.remainingSec);
     if (rideState === 'running' && activeSegmentInfo.nextSegment) {
       audioRef.current?.playTick(true);
@@ -834,6 +1010,7 @@ export function App() {
     setElapsedSec(0);
     setSegmentOffsetSec(0);
     setStartedAtMs(null);
+    distanceMetersRef.current = 0;
     setDistanceMeters(0);
     setCaloriesKcal(0);
     setHrZoneSeconds({ ...EMPTY_ZONE_SECONDS });
@@ -1315,13 +1492,24 @@ export function App() {
           </span>
           <span className="effort-cue-meta">
             {activeSegmentInfo ? (
-              <>
-                <strong>{cueDisplayLabel(activeSegmentInfo.segment.cue)}:</strong>{' '}
-                {activeSegmentInfo.segment.label} ({activeSegmentInfo.targets.minWatts}–
-                {activeSegmentInfo.targets.maxWatts}W · ~Res{' '}
-                {activeSegmentInfo.targets.suggestedResistanceLow}–
-                {activeSegmentInfo.targets.suggestedResistanceHigh})
-              </>
+              activeSegmentInfo.distanceMode?.isGoalComplete ? (
+                <>
+                  <strong>CHALLENGE COMPLETE:</strong> {selectedWorkout.name} (
+                  {formatDistanceTarget(
+                    activeSegmentInfo.distanceMode.totalTargetMeters,
+                    activeSegmentInfo.distanceMode.unit
+                  )}
+                  ) — spin easy to cool down or Stop &amp; Save
+                </>
+              ) : (
+                <>
+                  <strong>{cueDisplayLabel(activeSegmentInfo.segment.cue)}:</strong>{' '}
+                  {activeSegmentInfo.segment.label} ({activeSegmentInfo.targets.minWatts}–
+                  {activeSegmentInfo.targets.maxWatts}W · ~Res{' '}
+                  {activeSegmentInfo.targets.suggestedResistanceLow}–
+                  {activeSegmentInfo.targets.suggestedResistanceHigh})
+                </>
+              )
             ) : (
               <>
                 Threshold {profile.ftpWatts}W (
@@ -1333,13 +1521,39 @@ export function App() {
         </div>
 
         <div className="effort-ribbon-right tabular">
-          {activeSegmentInfo && (
+          {activeSegmentInfo && !activeSegmentInfo.distanceMode && (
             <div className="ribbon-stat">
               <span className="ribbon-stat-label">Interval Left</span>
               <span className="ribbon-stat-val">
                 {formatDuration(activeSegmentInfo.remainingSec)}
               </span>
             </div>
+          )}
+
+          {activeSegmentInfo?.distanceMode && (
+            <>
+              <div className="ribbon-stat">
+                <span className="ribbon-stat-label">To Go</span>
+                <span className="ribbon-stat-val" id="ride-distance-remaining">
+                  {activeSegmentInfo.distanceMode.isGoalComplete
+                    ? 'DONE'
+                    : formatDistanceValue(
+                        activeSegmentInfo.distanceMode.totalRemainingMeters,
+                        activeSegmentInfo.distanceMode.unit
+                      )}
+                </span>
+              </div>
+              <div className="ribbon-stat">
+                <span className="ribbon-stat-label">ETA</span>
+                <span className="ribbon-stat-val" id="ride-distance-eta">
+                  {activeSegmentInfo.distanceMode.isGoalComplete
+                    ? '00:00'
+                    : activeSegmentInfo.distanceMode.etaRemainingSec !== null
+                      ? formatDuration(activeSegmentInfo.distanceMode.etaRemainingSec)
+                      : '--'}
+                </span>
+              </div>
+            </>
           )}
 
           <div className="ribbon-stat">
@@ -1374,10 +1588,14 @@ export function App() {
               setSegmentOffsetSec(0);
             }}
           >
-            {WORKOUT_TEMPLATES.map((w) => (
-              <option key={w.id} value={w.id}>
-                {formatWorkoutOptionLabel(w)}
-              </option>
+            {groupWorkoutTemplates(WORKOUT_TEMPLATES).map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.workouts.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {formatWorkoutOptionLabel(w)}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
 
@@ -1389,8 +1607,33 @@ export function App() {
               title="Open Full-Screen Focused Workout Mode with instructions & 4-grid"
             >
               <span>
-                <strong>Block {activeSegmentInfo.index + 1}/{activeSegmentInfo.totalSegments}:</strong>{' '}
-                {activeSegmentInfo.segment.coachingNote}
+                {activeSegmentInfo.distanceMode ? (
+                  activeSegmentInfo.distanceMode.isGoalComplete ? (
+                    <>
+                      <strong>Goal Complete (100%):</strong> {selectedWorkout.name} reached!
+                    </>
+                  ) : (
+                    <>
+                      <strong>
+                        Stage {activeSegmentInfo.index + 1}/{activeSegmentInfo.totalSegments} (
+                        {Math.round(activeSegmentInfo.distanceMode.overallProgressPct)}% ·{' '}
+                        {formatDistanceValue(
+                          activeSegmentInfo.distanceMode.stageRemainingMeters,
+                          activeSegmentInfo.distanceMode.unit
+                        )}{' '}
+                        left):
+                      </strong>{' '}
+                      {activeSegmentInfo.segment.coachingNote}
+                    </>
+                  )
+                ) : (
+                  <>
+                    <strong>
+                      Block {activeSegmentInfo.index + 1}/{activeSegmentInfo.totalSegments}:
+                    </strong>{' '}
+                    {activeSegmentInfo.segment.coachingNote}
+                  </>
+                )}
               </span>
               <Maximize2 size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
             </button>
@@ -1460,12 +1703,15 @@ export function App() {
             </button>
           )}
 
-          {activeSegmentInfo && activeSegmentInfo.nextSegment && rideState !== 'idle' && (
-            <button
-              type="button"
-              id="skip-segment-btn"
-              className="btn btn-sm"
-              onClick={handleSkipSegment}
+          {activeSegmentInfo &&
+            !activeSegmentInfo.distanceMode &&
+            activeSegmentInfo.nextSegment &&
+            rideState !== 'idle' && (
+              <button
+                type="button"
+                id="skip-segment-btn"
+                className="btn btn-sm"
+                onClick={handleSkipSegment}
               title="Skip to next interval block"
             >
               <FastForward size={15} /> Next

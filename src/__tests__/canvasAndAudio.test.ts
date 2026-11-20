@@ -102,9 +102,13 @@ describe('Floating PiP Telemetry HUD Canvas & Wake/Audio Services', () => {
       elapsedSec: 600,
       burnPoints: 9,
       gaugeMode: 'bars',
+      segmentLabel: 'Km 4–12 · Tailwind Flats',
+      segmentRemainingLabel: '34.25 KM LEFT',
     });
     const barCalls = getRecordedCanvasCalls(canvas);
     expect(barCalls.length).toBeGreaterThan(20);
+    const barTexts = barCalls.filter((c) => c.op === 'fillText').map((c) => String(c.args[0]));
+    expect(barTexts.some((t) => t.includes('34.25 KM LEFT'))).toBe(true);
   });
 
   it('acquires and releases Screen Wake Lock and synthesizes Web Audio interval cues', async () => {
