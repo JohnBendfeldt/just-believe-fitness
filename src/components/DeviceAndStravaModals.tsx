@@ -337,6 +337,7 @@ export function HistoryAndStravaModal({
   const [hasServerPersonalKey, setHasServerPersonalKey] = useState(false);
   const [garminPersonalBusy, setGarminPersonalBusy] = useState(false);
   const [showPhotoStudio, setShowPhotoStudio] = useState(true);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [fitPreset, setFitPreset] = useState<FitDevicePresetId>(() => {
     try {
       const saved = window.localStorage.getItem('jbf_fit_device_preset_v1') as FitDevicePresetId | null;
@@ -577,8 +578,8 @@ export function HistoryAndStravaModal({
                 : 'Ride History · Garmin & Strava Sync'}
             </h2>
             <p className="modal-subtitle">
-              Snap a post-ride stat photo, customize your notes, and push to Garmin Connect, Strava,
-              or both at once.
+              Snap a post-ride stat photo, sync directly to Strava, or download .FIT files to upload
+              to Garmin Connect.
             </p>
           </div>
           <button type="button" className="btn btn-sm" id="close-history-modal" onClick={onClose}>
@@ -779,11 +780,25 @@ export function HistoryAndStravaModal({
                   Garmin Connect:{' '}
                   {isGarminConnected ? (
                     <span style={{ color: '#0EA5E9' }}>
-                      Upload Ready ({garminConfig.athleteName || garminConfig.email})
+                      Upload Ready (
+                      {(garminConfig.athleteName &&
+                      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                        garminConfig.athleteName.trim()
+                      )
+                        ? garminConfig.athleteName
+                        : garminConfig.email) || 'Linked'}
+                      )
                     </span>
                   ) : isPersonalApiLinked ? (
                     <span style={{ color: '#12B981' }}>
-                      Profile &amp; History Synced ({garminConfig.athleteName || 'Personal API'})
+                      Profile &amp; History Synced (
+                      {garminConfig.athleteName &&
+                      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                        garminConfig.athleteName.trim()
+                      )
+                        ? garminConfig.athleteName
+                        : 'Personal API'}
+                      )
                     </span>
                   ) : (
                     <span style={{ color: '#38BDF8' }}>Ready via .FIT Upload</span>
@@ -1196,83 +1211,102 @@ export function HistoryAndStravaModal({
               No saved rides yet. Start a workout and tap Save when you&apos;re done!
             </div>
           ) : (
-            rides.map((r) => (
-              <div className="history-item" key={r.id}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>
-                    {r.title}
-                    {r.burnPoints > 0 && (
-                      <span style={{ color: '#f97316', fontSize: '0.8rem' }}>
-                        {' '}
-                        · ★ {r.burnPoints} Burn pts
-                      </span>
-                    )}
+            rides.map((r) => {
+              const isConfirmingDelete = confirmDeleteId === r.id;
+              return (
+                <div className="history-item history-ride-card" key={r.id}>
+                  <div className="history-ride-head">
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>
+                        {r.title}
+                        {r.burnPoints > 0 && (
+                          <span style={{ color: '#f97316', fontSize: '0.8rem' }}>
+                            {' '}
+                            · ★ {r.burnPoints} Burn pts
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        className="tabular"
+                        style={{
+                          fontSize: '0.76rem',
+                          color: 'var(--text-secondary)',
+                          marginTop: '2px',
+                        }}
+                      >
+                        {new Date(r.startedAtIso).toLocaleDateString()} ·{' '}
+                        {formatDuration(r.durationSec)} · Avg {r.avgWatts}W (
+                        {r.avgWkg.toFixed(2)} W/kg) · {r.avgHr > 0 ? `${r.avgHr} bpm · ` : ''}
+                        {Math.round(r.caloriesKcal)} kcal
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className={`btn btn-sm btn-danger history-delete-btn ${
+                        isConfirmingDelete ? 'confirming' : ''
+                      }`}
+                      onClick={() => {
+                        if (isConfirmingDelete) {
+                          setConfirmDeleteId(null);
+                          onDeleteRide(r.id);
+                        } else {
+                          setConfirmDeleteId(r.id);
+                          window.setTimeout(() => {
+                            setConfirmDeleteId((curr) => (curr === r.id ? null : curr));
+                          }, 4000);
+                        }
+                      }}
+                      title={isConfirmingDelete ? 'Tap again to permanently delete' : 'Delete ride'}
+                      aria-label={isConfirmingDelete ? 'Confirm delete ride' : 'Delete ride'}
+                    >
+                      <Trash2 size={14} />
+                      {isConfirmingDelete && <span>Delete?</span>}
+                    </button>
                   </div>
-                  <div
-                    className="tabular"
-                    style={{
-                      fontSize: '0.76rem',
-                      color: 'var(--text-secondary)',
-                      marginTop: '2px',
-                    }}
-                  >
-                    {new Date(r.startedAtIso).toLocaleDateString()} · {formatDuration(r.durationSec)}{' '}
-                    · Avg {r.avgWatts}W ({r.avgWkg.toFixed(2)} W/kg) ·{' '}
-                    {r.avgHr > 0 ? `${r.avgHr} bpm · ` : ''}
-                    {Math.round(r.caloriesKcal)} kcal
+
+                  <div className="history-ride-actions">
+                    {renderSyncButtonsForRide(r, false)}
+
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        onSelectHighlightedRide(r);
+                        setShowPhotoStudio(true);
+                      }}
+                      title="Create stat overlay photo or edit title & notes"
+                    >
+                      <Camera size={14} /> Photo
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => downloadRideFit(r, fitPreset)}
+                      title={`Download .FIT file (${FIT_DEVICE_PRESETS[fitPreset].label})`}
+                    >
+                      <Download size={14} /> .FIT
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => onDownloadTcx(r)}
+                      title="Download .TCX file"
+                    >
+                      <Download size={14} /> .TCX
+                    </button>
                   </div>
+
+                  {uploadingRideId === r.id && uploadStatusText && (
+                    <div className="sync-status-line" role="status">
+                      {uploadStatusText}
+                    </div>
+                  )}
                 </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  {renderSyncButtonsForRide(r, false)}
-
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      onSelectHighlightedRide(r);
-                      setShowPhotoStudio(true);
-                    }}
-                    title="Create stat overlay photo or edit title & notes"
-                  >
-                    <Camera size={14} /> Photo
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => downloadRideFit(r, fitPreset)}
-                    title={`Download .FIT file (${FIT_DEVICE_PRESETS[fitPreset].label})`}
-                  >
-                    <Download size={14} /> .FIT
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => onDownloadTcx(r)}
-                    title="Download .TCX file"
-                  >
-                    <Download size={14} /> .TCX
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-danger"
-                    onClick={() => onDeleteRide(r.id)}
-                    title="Delete ride"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-
-                {uploadingRideId === r.id && uploadStatusText && (
-                  <div className="sync-status-line" role="status">
-                    {uploadStatusText}
-                  </div>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 

@@ -1346,6 +1346,51 @@ button {
   gap: 10px;
 }
 
+.history-ride-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.history-ride-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.history-delete-btn {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 9px;
+}
+
+.history-delete-btn.confirming {
+  background: rgba(239, 68, 68, 0.34);
+  border-color: rgba(239, 68, 68, 0.72);
+  color: #ffffff;
+}
+
+.history-ride-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 520px) {
+  .history-ride-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .history-ride-actions .btn {
+    width: 100%;
+  }
+}
+
 .sync-status-line {
   width: 100%;
   font-size: 0.8rem;

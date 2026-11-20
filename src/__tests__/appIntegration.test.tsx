@@ -289,7 +289,7 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     });
 
     // Post-ride History & Cloud Sync modal opens automatically with Photo Studio visible
-    expect(screen.getByText(/Workout Title \(Strava & Garmin\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Workout Title \(Strava & Photo Card\)/i)).toBeInTheDocument();
 
     // 3. Edit title & post-ride notes in Photo Studio and switch overlay style
     const notesInput = screen.getByPlaceholderText(/Crushed the final All-Out/i);

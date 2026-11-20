@@ -137,7 +137,9 @@ export function RidePhotoStudio({
       {/* Editable Title & Post-Ride Description (Sent to Strava & Garmin + Shown on Card) */}
       <div className="photo-meta-fields">
         <div className="field">
-          <label htmlFor={`ride-title-input-${ride.id}`}>Workout Title (Strava &amp; Garmin)</label>
+          <label htmlFor={`ride-title-input-${ride.id}`}>
+            Workout Title (Strava &amp; Photo Card)
+          </label>
           <input
             id={`ride-title-input-${ride.id}`}
             type="text"
@@ -294,8 +296,8 @@ export function RidePhotoStudio({
             </div>
             <p className="photo-helper-tip">
               Tip: Save or share this 1080×1350 stat photo, push your workout to{' '}
-              <strong>Garmin + Strava</strong>, then tap <strong>View on Strava</strong> →{' '}
-              <em>Add Photo</em> to attach it!
+              <strong>Strava</strong> (or download <strong>.FIT</strong> for Garmin Connect), then
+              tap <strong>Strava</strong> → <em>Add Photo</em> to attach it!
             </p>
           </div>
         </div>

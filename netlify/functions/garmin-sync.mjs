@@ -405,14 +405,20 @@ export async function handler(event) {
 
       const importedProfile = buildImportedProfileFromPersonalApi(mergedSettings, hrZones);
       const recentActivities = mapPersonalApiActivities(rawActivities);
-      const athleteName =
-        social?.fullName ||
-        social?.displayName ||
-        settings?.displayName ||
-        settings?.userName ||
-        rawActivities?.[0]?.ownerFullName ||
-        rawActivities?.[0]?.ownerDisplayName ||
+      const isUuid = (v) =>
+        typeof v === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
+      const pickName = (...candidates) =>
+        candidates.find((c) => typeof c === 'string' && c.trim().length > 0 && !isUuid(c)) ||
         'Garmin Athlete';
+      const athleteName = pickName(
+        social?.fullName,
+        social?.displayName,
+        settings?.displayName,
+        settings?.userName,
+        rawActivities?.[0]?.ownerFullName,
+        rawActivities?.[0]?.ownerDisplayName
+      );
 
       return jsonResponse(200, {
         ok: true,
