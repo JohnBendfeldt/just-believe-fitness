@@ -1,5 +1,6 @@
 import type { BikeFamilyId, BikeUnlockStatus } from '../../types/fitness';
 import { getBluetoothUnsupportedMessage } from '../../utils/browserSupport';
+import { isBleTransportSupported, requestBleDevice } from './bleTransport';
 
 export const ECHELON_ADV_SERVICE = '0bf669f0-45f2-11e7-9598-0800200c9a66';
 export const ECHELON_COMM_SERVICE = '0bf669f1-45f2-11e7-9598-0800200c9a66';
@@ -599,7 +600,7 @@ export class EchelonBikeConnection {
   }
 
   public static isSupported(): boolean {
-    return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+    return isBleTransportSupported();
   }
 
   public getModelProfile(): BikeModelProfile | null {
@@ -635,11 +636,11 @@ export class EchelonBikeConnection {
 
     try {
       const device = options?.acceptAllDevices
-        ? await navigator.bluetooth.requestDevice({
+        ? await requestBleDevice({
             acceptAllDevices: true,
             optionalServices,
           })
-        : await navigator.bluetooth.requestDevice({
+        : await requestBleDevice({
             filters: [
               { services: [ECHELON_ADV_SERVICE] },
               { services: [ECHELON_COMM_SERVICE] },

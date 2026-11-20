@@ -1,4 +1,5 @@
 import { getBluetoothUnsupportedMessage } from '../../utils/browserSupport';
+import { isBleTransportSupported, requestBleDevice } from './bleTransport';
 const HEART_RATE_SERVICE = 0x180d;
 const HEART_RATE_MEASUREMENT = 0x2a37;
 
@@ -75,7 +76,7 @@ export class GarminHeartRateConnection {
   }
 
   public static isSupported(): boolean {
-    return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+    return isBleTransportSupported();
   }
 
   public async requestAndConnect(options?: { acceptAllDevices?: boolean }): Promise<void> {
@@ -95,11 +96,11 @@ export class GarminHeartRateConnection {
 
     try {
       const device = options?.acceptAllDevices
-        ? await navigator.bluetooth.requestDevice({
+        ? await requestBleDevice({
             acceptAllDevices: true,
             optionalServices,
           })
-        : await navigator.bluetooth.requestDevice({
+        : await requestBleDevice({
             filters: [
               { services: [HEART_RATE_SERVICE] },
               ...COMMON_HR_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),

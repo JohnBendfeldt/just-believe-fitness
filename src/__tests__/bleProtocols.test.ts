@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Capacitor } from '@capacitor/core';
+import type { BleClientInterface } from '@capacitor-community/bluetooth-le';
+import {
+  buildNativeBleRequestOptions,
+  createCapacitorBluetoothDeviceAdapter,
+  isBleTransportSupported,
+  normalizeBleUuid,
+} from '../services/ble/bleTransport';
 import {
   CYCLING_POWER_MEASUREMENT,
   CYCLING_POWER_SERVICE,
   CYCLING_SPEED_CADENCE_SERVICE,
   CSC_MEASUREMENT,
   ECHELON_ACTIVATION_FRAME,
+  ECHELON_ADV_SERVICE,
   ECHELON_COMM_SERVICE,
   ECHELON_NOTIFY_1_CHAR,
   ECHELON_UNLOCK_ACK_FRAME,
@@ -31,7 +40,7 @@ import {
 
 type ListenerFn = (ev: Event) => void;
 
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const clean = hex.replace(/\s+/g, '');
   const out = new Uint8Array(clean.length / 2);
   for (let i = 0; i < out.length; i++) {
@@ -897,5 +906,187 @@ describe('Universal BLE Heart Rate Monitor Support (Any Brand)', () => {
     });
     await expect(hrConn.requestAndConnect()).rejects.toThrow(/cancelled/);
     expect(hrStatuses).toEqual(['connecting', 'disconnected']);
+  });
+});
+
+describe('Capacitor Native iOS CoreBluetooth Transport Adapter', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (navigator as unknown as { bluetooth?: unknown }).bluetooth;
+  });
+
+  it('normalizes 16-bit SIG UUIDs, named aliases, and CoreBluetooth uppercase UUIDs into canonical 128-bit form', () => {
+    expect(normalizeBleUuid(0x1826)).toBe('00001826-0000-1000-8000-00805f9b34fb');
+    expect(normalizeBleUuid(0x2ad2)).toBe('00002ad2-0000-1000-8000-00805f9b34fb');
+    expect(normalizeBleUuid(0x180d)).toBe('0000180d-0000-1000-8000-00805f9b34fb');
+    expect(normalizeBleUuid('heart_rate')).toBe('0000180d-0000-1000-8000-00805f9b34fb');
+    expect(normalizeBleUuid('device_information')).toBe('0000180a-0000-1000-8000-00805f9b34fb');
+    expect(normalizeBleUuid('2AD2')).toBe('00002ad2-0000-1000-8000-00805f9b34fb');
+    expect(normalizeBleUuid('0BF669F1-45F2-11E7-9598-0800200C9A66')).toBe(ECHELON_COMM_SERVICE);
+  });
+
+  it('maps Web Bluetooth request options to native iOS CoreBluetooth list-picker filters and Scan All BLE mode', () => {
+    const filtered = buildNativeBleRequestOptions({
+      filters: [
+        { services: [ECHELON_ADV_SERVICE] },
+        { services: [FTMS_SERVICE] },
+        { namePrefix: 'ECH' },
+      ],
+      optionalServices: [ECHELON_COMM_SERVICE, 'battery_service'],
+    });
+    expect(filtered.displayMode).toBe('list');
+    expect(filtered.services).toEqual([
+      ECHELON_ADV_SERVICE,
+      '00001826-0000-1000-8000-00805f9b34fb',
+    ]);
+    expect(filtered.optionalServices).toEqual([
+      ECHELON_COMM_SERVICE,
+      '0000180f-0000-1000-8000-00805f9b34fb',
+    ]);
+
+    const scanAll = buildNativeBleRequestOptions({
+      acceptAllDevices: true,
+      optionalServices: [0x180d],
+    });
+    expect(scanAll.displayMode).toBe('list');
+    expect(scanAll.services).toBeUndefined();
+    expect(scanAll.optionalServices).toEqual(['0000180d-0000-1000-8000-00805f9b34fb']);
+  });
+
+  it('reports BLE as supported on native Capacitor iOS even when navigator.bluetooth is absent', () => {
+    delete (navigator as unknown as { bluetooth?: unknown }).bluetooth;
+    expect(isBleTransportSupported()).toBe(false);
+    expect(EchelonBikeConnection.isSupported()).toBe(false);
+    expect(GarminHeartRateConnection.isSupported()).toBe(false);
+
+    vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true);
+    expect(isBleTransportSupported()).toBe(true);
+    expect(EchelonBikeConnection.isSupported()).toBe(true);
+    expect(GarminHeartRateConnection.isSupported()).toBe(true);
+  });
+
+  it('bridges native CoreBluetooth services, notifications, writes, and disconnects through Web-Bluetooth-compatible device adapter', async () => {
+    let onNativeDisconnect: ((deviceId: string) => void) | undefined;
+    const notifyHandlers = new Map<string, (value: DataView) => void>();
+    const writes: Array<{ mode: 'with' | 'without'; hex: string }> = [];
+
+    const mockBleClient = {
+      connect: vi.fn(async (_deviceId: string, onDisc?: (id: string) => void) => {
+        onNativeDisconnect = onDisc;
+      }),
+      disconnect: vi.fn(async () => {}),
+      getServices: vi.fn(async () => [
+        {
+          // CoreBluetooth frequently surfaces uppercase UUIDs
+          uuid: ECHELON_COMM_SERVICE.toUpperCase(),
+          characteristics: [
+            {
+              uuid: ECHELON_WRITE_CHAR.toUpperCase(),
+              properties: {
+                broadcast: false,
+                read: false,
+                writeWithoutResponse: true,
+                write: true,
+                notify: false,
+                indicate: false,
+                authenticatedSignedWrites: false,
+              },
+              descriptors: [],
+            },
+            {
+              uuid: ECHELON_NOTIFY_1_CHAR.toUpperCase(),
+              properties: {
+                broadcast: false,
+                read: false,
+                writeWithoutResponse: false,
+                write: false,
+                notify: true,
+                indicate: false,
+                authenticatedSignedWrites: false,
+              },
+              descriptors: [],
+            },
+          ],
+        },
+      ]),
+      startNotifications: vi.fn(
+        async (_id: string, _svc: string, charUuid: string, cb: (value: DataView) => void) => {
+          notifyHandlers.set(charUuid, cb);
+        }
+      ),
+      stopNotifications: vi.fn(async () => {}),
+      write: vi.fn(async (_id: string, _svc: string, _ch: string, val: DataView) => {
+        writes.push({
+          mode: 'with',
+          hex: bytesToHex(new Uint8Array(val.buffer, val.byteOffset, val.byteLength)),
+        });
+      }),
+      writeWithoutResponse: vi.fn(async (_id: string, _svc: string, _ch: string, val: DataView) => {
+        writes.push({
+          mode: 'without',
+          hex: bytesToHex(new Uint8Array(val.buffer, val.byteOffset, val.byteLength)),
+        });
+      }),
+    } as unknown as BleClientInterface;
+
+    const adapter = createCapacitorBluetoothDeviceAdapter(mockBleClient, {
+      deviceId: 'IOS-UUID-ECH-4S',
+      name: 'ECH-EX4S-900',
+    });
+
+    const disconnectedSpy = vi.fn();
+    adapter.addEventListener('gattserverdisconnected', disconnectedSpy);
+
+    const server = await adapter.gatt!.connect();
+    expect(adapter.gatt!.connected).toBe(true);
+    expect(mockBleClient.connect).toHaveBeenCalledWith(
+      'IOS-UUID-ECH-4S',
+      expect.any(Function),
+      { skipDescriptorDiscovery: true }
+    );
+
+    // Absent service throws cleanly so Echelon -> FTMS -> CPS -> CSC fallback chain works identically
+    await expect(server.getPrimaryService(FTMS_SERVICE)).rejects.toThrow(/not found/i);
+
+    const svc = await server.getPrimaryService(ECHELON_COMM_SERVICE);
+    const writeCh = await svc.getCharacteristic(ECHELON_WRITE_CHAR);
+    const notifyCh = await svc.getCharacteristic(ECHELON_NOTIFY_1_CHAR);
+
+    const received: string[] = [];
+    notifyCh.addEventListener('characteristicvaluechanged', (ev) => {
+      const target = ev.target as BluetoothRemoteGATTCharacteristic;
+      if (target.value) {
+        received.push(
+          bytesToHex(new Uint8Array(target.value.buffer, target.value.byteOffset, target.value.byteLength))
+        );
+      }
+    });
+    await notifyCh.startNotifications();
+
+    // Deliver a locked-Echelon challenge packet from native CoreBluetooth
+    const challengeBytes = hexToBytes('f0e0354412468122');
+    notifyHandlers.get(ECHELON_NOTIFY_1_CHAR)?.(new DataView(challengeBytes.buffer));
+    expect(received).toEqual(['f0e0354412468122']);
+
+    // Verify both writeValueWithResponse and writeValueWithoutResponse forward exact DataView bytes
+    await writeCh.writeValueWithResponse(hexToBytes('f0e0000063000033'));
+    await writeCh.writeValueWithoutResponse(ECHELON_ACTIVATION_FRAME);
+    expect(writes).toEqual([
+      { mode: 'with', hex: 'f0e0000063000033' },
+      { mode: 'without', hex: bytesToHex(ECHELON_ACTIVATION_FRAME) },
+    ]);
+
+    // Native unexpected disconnect fires gattserverdisconnected and updates gatt.connected
+    onNativeDisconnect?.('IOS-UUID-ECH-4S');
+    expect(adapter.gatt!.connected).toBe(false);
+    expect(disconnectedSpy).toHaveBeenCalledTimes(1);
+
+    // Reconnect then manual disconnect cleans up notifications and disconnects native peripheral
+    await adapter.gatt!.connect();
+    await notifyCh.startNotifications();
+    adapter.gatt!.disconnect();
+    await new Promise((r) => window.setTimeout(r, 10));
+    expect(mockBleClient.stopNotifications).toHaveBeenCalled();
+    expect(mockBleClient.disconnect).toHaveBeenCalledWith('IOS-UUID-ECH-4S');
   });
 });

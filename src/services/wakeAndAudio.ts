@@ -1,3 +1,5 @@
+import { isNativeCapacitorPlatform } from './ble/bleTransport';
+
 interface WakeLockSentinelLike {
   released: boolean;
   release: () => Promise<void>;
@@ -5,6 +7,7 @@ interface WakeLockSentinelLike {
 
 export class ScreenWakeManager {
   private sentinel: WakeLockSentinelLike | null = null;
+  private nativeKeepAwakeHeld = false;
   private shouldHold = false;
 
   constructor() {
@@ -27,6 +30,17 @@ export class ScreenWakeManager {
   }
 
   private async acquire(): Promise<void> {
+    if (isNativeCapacitorPlatform()) {
+      try {
+        const { KeepAwake } = await import('@capacitor-community/keep-awake');
+        await KeepAwake.keepAwake();
+        this.nativeKeepAwakeHeld = true;
+      } catch {
+        // Ignore if native keep-awake is unavailable
+      }
+      return;
+    }
+
     try {
       const nav = navigator as Navigator & {
         wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> };
@@ -40,6 +54,16 @@ export class ScreenWakeManager {
   }
 
   private async release(): Promise<void> {
+    if (this.nativeKeepAwakeHeld) {
+      this.nativeKeepAwakeHeld = false;
+      try {
+        const { KeepAwake } = await import('@capacitor-community/keep-awake');
+        await KeepAwake.allowSleep();
+      } catch {
+        // Ignore release errors
+      }
+    }
+
     try {
       if (this.sentinel && !this.sentinel.released) {
         await this.sentinel.release();
