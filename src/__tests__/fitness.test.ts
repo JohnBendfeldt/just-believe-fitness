@@ -253,7 +253,7 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
   });
 
   it('validates all workout templates, durations, cues, and dynamic segment targets without prohibited terms', () => {
-    expect(WORKOUT_TEMPLATES.length).toBeGreaterThanOrEqual(5);
+    expect(WORKOUT_TEMPLATES.length).toBeGreaterThanOrEqual(8);
     const bannedTerms = ['ot' + 'f', 'orange' + 'theory', 'sp' + 'lat', 'sp' + 'lats'];
     const bannedPattern = new RegExp(`\\b(${bannedTerms.join('|')})\\b`, 'i');
 
@@ -266,7 +266,13 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
       expect(cueDisplayLabel(cue).length).toBeGreaterThan(3);
     }
 
+    const seenTemplateIds = new Set<string>();
+    const seenSegmentIds = new Set<string>();
+
     for (const tpl of WORKOUT_TEMPLATES) {
+      expect(seenTemplateIds.has(tpl.id)).toBe(false);
+      seenTemplateIds.add(tpl.id);
+
       expect(tpl.name).not.toMatch(bannedPattern);
       expect(tpl.subtitle).not.toMatch(bannedPattern);
 
@@ -278,6 +284,9 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
         expect(formatWorkoutOptionLabel(tpl)).toBe(tpl.name);
         expect(formatWorkoutOptionLabel(tpl, 'm')).toBe(tpl.name);
         for (const seg of tpl.segments) {
+          expect(seenSegmentIds.has(seg.id)).toBe(false);
+          seenSegmentIds.add(seg.id);
+
           expect(seg.durationSec).toBeGreaterThan(0);
           expect(seg.coachingNote).not.toMatch(bannedPattern);
           const starterTargets = getSegmentTargetsForAthlete(seg, DEFAULT_ATHLETE_PROFILE);
@@ -290,6 +299,23 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
           expect(strongerTargets.midWatts).toBeGreaterThan(starterTargets.midWatts);
         }
       }
+    }
+
+    // Long endurance rides hit exact 1-hour, 2-hour, and 3-hour totals without redundant duration suffixes
+    const enduranceSpecs = [
+      { id: 'endurance-1hr', name: '1-Hour Endurance', expectedSec: 3600 },
+      { id: 'endurance-2hr', name: '2-Hour Endurance', expectedSec: 7200 },
+      { id: 'endurance-3hr', name: '3-Hour Endurance', expectedSec: 10800 },
+    ] as const;
+
+    for (const spec of enduranceSpecs) {
+      const ride = WORKOUT_TEMPLATES.find((w) => w.id === spec.id);
+      expect(ride).toBeDefined();
+      expect(ride?.name).toBe(spec.name);
+      expect(ride?.category).toBe('endurance');
+      expect(getTotalWorkoutDurationSec(ride!)).toBe(spec.expectedSec);
+      expect(formatWorkoutOptionLabel(ride!)).toBe(spec.name);
+      expect(formatWorkoutOptionLabel(ride!, 'm')).toBe(spec.name);
     }
 
     // Custom workout without duration in its name still appends "(15 min)" / "(15m)"
