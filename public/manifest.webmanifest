@@ -1,12 +1,22 @@
 {
+  "id": "/",
   "name": "Just Believe Fitness",
   "short_name": "Just Believe",
-  "description": "5-zone indoor cycling studio with Burn Points, direct Bluetooth for all Echelon & FTMS stationary bikes plus BLE heart rate, YouTube PiP, and Garmin + Strava sync.",
+  "description": "Free, privacy-first 5-zone indoor cycling studio with Burn Points, direct Bluetooth for all Echelon & FTMS stationary bikes plus BLE heart rate, YouTube PiP, and Garmin + Strava sync.",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
   "background_color": "#0b0e14",
   "theme_color": "#0b0e14",
-  "orientation": "any",
+  "categories": ["fitness", "health", "sports"],
+  "prefer_related_applications": false,
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
   "icons": [
     {
       "src": "/jbf-logo-192.png",
@@ -24,7 +34,22 @@
       "src": "/jbf-logo-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/jbf-logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Just Believe Fitness 5-Zone Indoor Cycling Studio"
     }
   ]
 }
