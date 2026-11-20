@@ -94,11 +94,26 @@ export interface WorkoutTemplate {
   subtitle: string;
   category: 'free' | 'jbf' | 'hiit' | 'climb' | 'endurance' | 'distance';
   isFreeRide?: boolean;
+  /** Marks a dedicated 20-minute FTP benchmark test (95% of 20-min avg watts = FTP). */
+  isFtpTest?: boolean;
   /** Total target distance (meters) for distance-based challenge rides (e.g. 50K, 50 mi, 100K, 100 mi). */
   targetDistanceMeters?: number;
   /** Native display unit for distance-based challenge rides. */
   distanceUnit?: 'km' | 'mi';
   segments: WorkoutSegment[];
+}
+
+export interface FtpTestResult {
+  /** Best contiguous 20-minute average power (or full-test average if finished within 1 min of 20:00). */
+  avg20MinWatts: number;
+  /** Calculated Functional Threshold Power: Math.round(avg20MinWatts * 0.95). */
+  estimatedFtpWatts: number;
+  /** Rider's FTP before this ride. */
+  previousFtpWatts: number;
+  /** True when the rider completed the full 20-minute benchmark window. */
+  completedFull20Min: boolean;
+  /** True when detected during a dedicated FTP Test workout vs an automatic breakthrough PR on another ride. */
+  isDedicatedTest: boolean;
 }
 
 export interface DistanceProgressInfo {
@@ -154,6 +169,7 @@ export interface SavedRide {
   hrZoneSeconds: Record<ZoneId, number>;
   powerZoneSeconds: Record<ZoneId, number>;
   trackPoints: TrackPoint[];
+  ftpTestResult?: FtpTestResult;
   stravaUploadId?: number;
   stravaActivityId?: number;
   stravaUploadedAtIso?: string;

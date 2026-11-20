@@ -202,6 +202,25 @@ export function YouTubeDeck({
           + Save Current Link
         </button>
       </div>
+
+      <p
+        id="youtube-premium-tip"
+        style={{
+          margin: '8px 0 0',
+          padding: '7px 10px',
+          borderRadius: '8px',
+          background: 'rgba(255, 255, 255, 0.035)',
+          border: '1px solid var(--hairline)',
+          fontSize: '0.73rem',
+          lineHeight: 1.4,
+          color: 'var(--text-secondary)',
+        }}
+      >
+        <strong>YouTube Premium ad-free tip:</strong> On <strong>Android/Desktop</strong>, tap{' '}
+        <strong>Float HUD over YouTube App</strong> to watch inside your signed-in YouTube app.
+        On <strong>iPhone</strong>, start your video in the YouTube app, swipe home into YouTube&apos;s
+        ad-free PiP window, then switch back to Bluefy so Bluetooth stays live.
+      </p>
     </section>
   );
 }

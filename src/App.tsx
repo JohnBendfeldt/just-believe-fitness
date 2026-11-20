@@ -35,6 +35,7 @@ import {
   estimateDistanceEtaSec,
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
+  evaluateRideFtpResult,
   formatBikeGearBadge,
   formatDistanceTarget,
   formatDistanceValue,
@@ -1076,6 +1077,12 @@ export function App() {
       ? bikeBleRef.current?.getModelProfile()?.displayName || telemetry.bikeName || 'Indoor Bike'
       : 'Indoor Bike';
 
+    const ftpTestResult = evaluateRideFtpResult(
+      wattsArr,
+      profile.ftpWatts,
+      Boolean(selectedWorkout.isFtpTest)
+    );
+
     const ride: SavedRide = {
       id: `ride-${Date.now()}`,
       title: `${selectedWorkout.name}`,
@@ -1100,6 +1107,7 @@ export function App() {
       hrZoneSeconds: { ...hrZoneSeconds },
       powerZoneSeconds: { ...powerZoneSeconds },
       trackPoints: [...trackPoints],
+      ...(ftpTestResult ? { ftpTestResult } : {}),
     };
 
     await saveRideToDb(ride);
@@ -2131,6 +2139,7 @@ export function App() {
         highlightedRide={highlightedRide}
         onSelectHighlightedRide={setHighlightedRide}
         rides={savedRides}
+        currentFtpWatts={profile.ftpWatts}
         stravaConfig={stravaConfig}
         garminConfig={garminConfig}
         uploadingRideId={uploadingRideId}

@@ -16,6 +16,7 @@ import {
   Trash2,
   UploadCloud,
   X,
+  Zap,
 } from 'lucide-react';
 import type {
   GarminConfig,
@@ -25,7 +26,7 @@ import type {
   StravaConfig,
   ZoneId,
 } from '../types/fitness';
-import { ZONE_PALETTE, formatDuration, metersToMiles } from '../utils/zones';
+import { ZONE_PALETTE, computeWattsPerKg, formatDuration, metersToMiles } from '../utils/zones';
 import { buildStravaAuthorizeUrl } from '../services/strava';
 import {
   fetchGarminServerStatus,
@@ -359,6 +360,7 @@ interface HistoryAndStravaModalProps {
   highlightedRide: SavedRide | null;
   onSelectHighlightedRide: (ride: SavedRide | null) => void;
   rides: SavedRide[];
+  currentFtpWatts?: number;
   stravaConfig: StravaConfig;
   garminConfig: GarminConfig;
   uploadingRideId: string | null;
@@ -380,6 +382,7 @@ export function HistoryAndStravaModal({
   highlightedRide,
   onSelectHighlightedRide,
   rides,
+  currentFtpWatts,
   stravaConfig,
   garminConfig,
   uploadingRideId,
@@ -708,6 +711,104 @@ export function HistoryAndStravaModal({
               </div>
             </div>
 
+            {highlightedRide.ftpTestResult ? (
+              (() => {
+                const res = highlightedRide.ftpTestResult;
+                const delta = res.estimatedFtpWatts - res.previousFtpWatts;
+                const deltaText =
+                  delta > 0 ? `+${delta}W` : delta < 0 ? `${delta}W` : 'Matches current';
+                const newWkg = computeWattsPerKg(
+                  res.estimatedFtpWatts,
+                  highlightedRide.athleteSnapshot.weightLbs
+                ).toFixed(2);
+                const alreadyApplied = currentFtpWatts === res.estimatedFtpWatts;
+                return (
+                  <div
+                    id="ftp-result-banner"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                      flexWrap: 'wrap',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      background: 'rgba(249, 115, 22, 0.14)',
+                      border: '1px solid rgba(249, 115, 22, 0.42)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <strong
+                        style={{
+                          fontSize: '0.84rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          color: '#fb923c',
+                        }}
+                      >
+                        <Zap size={14} />
+                        {res.isDedicatedTest
+                          ? '20-Min FTP Test Result'
+                          : 'New 20-Min FTP Breakthrough!'}
+                      </strong>
+                      <span
+                        className="tabular"
+                        style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}
+                      >
+                        20-min avg <strong>{res.avg20MinWatts}W</strong> × 95% ={' '}
+                        <strong>{res.estimatedFtpWatts}W FTP</strong> ({newWkg} W/kg · {deltaText}{' '}
+                        vs {res.previousFtpWatts}W)
+                      </span>
+                    </div>
+                    {alreadyApplied ? (
+                      <span
+                        id="ftp-applied-badge"
+                        className="btn btn-sm"
+                        style={{
+                          borderColor: 'rgba(34, 197, 94, 0.45)',
+                          color: '#4ade80',
+                          cursor: 'default',
+                        }}
+                      >
+                        <CheckCircle2 size={14} /> FTP Set to {res.estimatedFtpWatts}W
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        id="apply-new-ftp-btn"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          onImportAthleteStats?.({ ftpWatts: res.estimatedFtpWatts });
+                          onNotify(
+                            `FTP updated to ${res.estimatedFtpWatts}W (${newWkg} W/kg)! Power zones and workout targets recalculated.`
+                          );
+                        }}
+                      >
+                        <Zap size={14} /> Update My FTP to {res.estimatedFtpWatts}W
+                      </button>
+                    )}
+                  </div>
+                );
+              })()
+            ) : highlightedRide.workoutName === '20-Min FTP Test' ? (
+              <p
+                id="ftp-incomplete-note"
+                style={{
+                  margin: 0,
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid var(--hairline)',
+                  fontSize: '0.76rem',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Complete at least 19–20 minutes on the <strong>20-Min FTP Test</strong> to
+                auto-calculate an official FTP update (95% of your 20-min average watts).
+              </p>
+            ) : null}
+
             <div className="zone-dist-list">
               {orderedZones.map((zId) => {
                 const secs =
@@ -869,7 +970,7 @@ export function HistoryAndStravaModal({
                       onClick={() => {
                         onSelectHighlightedRide(r);
                         setShowPhotoStudio(true);
-                        modalCardRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                        modalCardRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
                       }}
                       title="Create stat overlay photo or edit title & notes"
                     >

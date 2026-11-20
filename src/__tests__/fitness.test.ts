@@ -3,6 +3,7 @@ import {
   DEFAULT_ATHLETE_PROFILE,
   METERS_PER_MILE,
   ZONE_PALETTE,
+  computeBestWindowAvgWatts,
   computeNormalizedPower,
   computeSegmentedGaugeProgress,
   computeWattsPerKg,
@@ -10,6 +11,7 @@ import {
   estimateDistanceEtaSec,
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
+  evaluateRideFtpResult,
   feetInchesToCm,
   formatBikeGearBadge,
   formatDistanceTarget,
@@ -397,6 +399,57 @@ describe('Universal Stationary Bike Power Curves, Gear Badges & Guided Workouts'
     expect(estimateDistanceEtaSec(10_000, 0, 0)).toBeNull();
     expect(estimateDistanceEtaSec(0, 8, 8)).toBe(0);
     expect(estimateDistanceEtaSec(10_000, 10, 10)).toBe(1000);
+
+    // 20-Min FTP Test template validation & 95% FTP calculation
+    const ftpTest = WORKOUT_TEMPLATES.find((w) => w.id === 'jbf-20-ftp-test');
+    expect(ftpTest).toBeDefined();
+    expect(ftpTest?.name).toBe('20-Min FTP Test');
+    expect(ftpTest?.isFtpTest).toBe(true);
+    expect(ftpTest?.segments.length).toBe(4);
+    expect(getTotalWorkoutDurationSec(ftpTest!)).toBe(1200);
+    expect(formatWorkoutOptionLabel(ftpTest!)).toBe('20-Min FTP Test');
+    expect(formatWorkoutOptionLabel(ftpTest!, 'm')).toBe('20-Min FTP Test');
+
+    expect(computeBestWindowAvgWatts([100, 200, 300], 5)).toBeNull();
+    expect(computeBestWindowAvgWatts([100, 100, 200, 200, 200, 100], 3)).toBe(200);
+
+    // Full 20-min test (220W avg -> 209W FTP)
+    const steady220 = Array.from({ length: 1200 }, () => 220);
+    expect(evaluateRideFtpResult(steady220, 150, true)).toEqual({
+      avg20MinWatts: 220,
+      estimatedFtpWatts: 209,
+      previousFtpWatts: 150,
+      completedFull20Min: true,
+      isDedicatedTest: true,
+    });
+
+    // Dedicated test finished slightly early at 19:30 (1170s) still calculates result
+    const early1930 = Array.from({ length: 1170 }, () => 200);
+    expect(evaluateRideFtpResult(early1930, 180, true)).toEqual({
+      avg20MinWatts: 200,
+      estimatedFtpWatts: 190,
+      previousFtpWatts: 180,
+      completedFull20Min: false,
+      isDedicatedTest: true,
+    });
+
+    // Incomplete dedicated test (< 19:00) returns undefined
+    expect(evaluateRideFtpResult(Array.from({ length: 600 }, () => 250), 150, true)).toBeUndefined();
+
+    // Non-test long ride detects new FTP PR only when 95% of best 20-min beats current FTP
+    const enduranceWithBreakthrough = [
+      ...Array.from({ length: 300 }, () => 130),
+      ...Array.from({ length: 1200 }, () => 200),
+      ...Array.from({ length: 300 }, () => 120),
+    ];
+    expect(evaluateRideFtpResult(enduranceWithBreakthrough, 180, false)).toEqual({
+      avg20MinWatts: 200,
+      estimatedFtpWatts: 190,
+      previousFtpWatts: 180,
+      completedFull20Min: true,
+      isDedicatedTest: false,
+    });
+    expect(evaluateRideFtpResult(enduranceWithBreakthrough, 195, false)).toBeUndefined();
 
     const groups = groupWorkoutTemplates(WORKOUT_TEMPLATES);
     expect(groups.map((g) => g.label)).toEqual([

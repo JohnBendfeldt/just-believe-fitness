@@ -306,6 +306,59 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
     ],
   },
   {
+    id: 'jbf-20-ftp-test',
+    name: '20-Min FTP Test',
+    subtitle: '20-min all-out benchmark (warm up 10m first) · Auto-calculates 95% FTP',
+    category: 'jbf',
+    isFtpTest: true,
+    segments: [
+      {
+        id: 'ftp-q1',
+        label: 'Min 0–5 · Controlled Launch',
+        cue: 'push',
+        durationSec: 300,
+        targetZone: 4,
+        ftpPctRange: [0.96, 1.05],
+        cadenceRange: [84, 94],
+        coachingNote:
+          'Warm up ~10 min before starting! Settle right around your current FTP — don’t burn out early.',
+      },
+      {
+        id: 'ftp-q2',
+        label: 'Min 5–10 · Lock In & Hold',
+        cue: 'push',
+        durationSec: 300,
+        targetZone: 4,
+        ftpPctRange: [0.98, 1.06],
+        cadenceRange: [84, 94],
+        coachingNote:
+          'Hold steady Orange power — smooth breathing, relaxed grip, build rhythm for the second half.',
+      },
+      {
+        id: 'ftp-q3',
+        label: 'Min 10–15 · Dig Deep',
+        cue: 'push',
+        durationSec: 300,
+        targetZone: 4,
+        ftpPctRange: [1.0, 1.08],
+        cadenceRange: [85, 95],
+        coachingNote:
+          'Past halfway! Add 1–2 clicks if you have it — this 5 minutes builds your new FTP.',
+      },
+      {
+        id: 'ftp-q4',
+        label: 'Min 15–20 · Empty the Tank',
+        cue: 'all-out',
+        durationSec: 300,
+        targetZone: 5,
+        ftpPctRange: [1.04, 1.15],
+        cadenceRange: [86, 98],
+        coachingNote:
+          'Final 5 minutes! Leave it all on the bike — 95% of your 20-min avg watts sets your new FTP.',
+      },
+    ],
+  },
+  {
     id: 'youtube-zone2-45',
     name: '45-Min YouTube Zone 2/3 Cruise',
     subtitle: 'Steady aerobic base builder made for watching shows or podcasts',

@@ -3,7 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { resolveLegalRouteFromPathname } from '../utils/legalRoutes';
 import { checkRemoteBuildUpdate } from '../utils/pwaUpdater';
-import { listSavedRides, saveGarminConfig, saveStravaConfig } from '../services/storage';
+import {
+  listSavedRides,
+  saveGarminConfig,
+  saveRideToDb,
+  saveStravaConfig,
+} from '../services/storage';
+import { makeSampleRide } from '../test/fixtures';
 
 describe('End-to-End Studio App Integration & Regression Suite', () => {
   beforeEach(() => {
@@ -482,5 +488,59 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(await checkRemoteBuildUpdate('build-abc')).toBe(false);
     expect(await checkRemoteBuildUpdate('build-abc')).toBe(true);
     expect(window.localStorage.getItem('jb_fitness_athlete_v1')).toContain('KeepMe');
+  });
+
+  it('shows 20-Min FTP Test option, YouTube Premium tip, and 1-click FTP update in post-ride summary', async () => {
+    const ftpRide = makeSampleRide({
+      id: 'ride-ftp-test-1',
+      title: '20-Min FTP Test',
+      workoutName: '20-Min FTP Test',
+      startedAtIso: new Date(Date.now() + 60_000).toISOString(),
+      durationSec: 1200,
+      avgWatts: 220,
+      ftpTestResult: {
+        avg20MinWatts: 220,
+        estimatedFtpWatts: 209,
+        previousFtpWatts: 150,
+        completedFull20Min: true,
+        isDedicatedTest: true,
+      },
+    });
+    await saveRideToDb(ftpRide);
+
+    render(<App />);
+
+    // 20-Min FTP Test appears in main workout dropdown without redundant "(20 min)"
+    const mainSelect = document.getElementById('workout-template-select') as HTMLSelectElement;
+    const mainOptionLabels = Array.from(mainSelect.options).map((o) => o.textContent);
+    expect(mainOptionLabels).toContain('20-Min FTP Test');
+    expect(mainOptionLabels.some((t) => t?.includes('(20 min)'))).toBe(false);
+
+    // Open YouTube Split Theater and verify YouTube Premium ad-free tip (Android/Desktop + iPhone Bluefy)
+    fireEvent.click(document.getElementById('toggle-youtube-btn')!);
+    const ytTip = document.getElementById('youtube-premium-tip');
+    expect(ytTip).toBeInTheDocument();
+    expect(ytTip?.textContent).toContain('YouTube Premium');
+    expect(ytTip?.textContent).toContain('Bluefy');
+
+    // Open History modal, view saved FTP Test ride, and apply 1-click FTP update
+    await waitFor(() => {
+      expect(document.getElementById('open-history-btn')?.textContent).not.toContain('(0)');
+    });
+    fireEvent.click(document.getElementById('open-history-btn')!);
+    const viewButtons = screen.getAllByRole('button', { name: /^Photo$/i });
+    fireEvent.click(viewButtons[0]);
+
+    const ftpBanner = document.getElementById('ftp-result-banner');
+    expect(ftpBanner).toBeInTheDocument();
+    expect(ftpBanner?.textContent).toContain('220W');
+    expect(ftpBanner?.textContent).toContain('209W FTP');
+
+    fireEvent.click(document.getElementById('apply-new-ftp-btn')!);
+
+    await waitFor(() => {
+      expect(document.getElementById('ftp-applied-badge')).toBeInTheDocument();
+      expect(document.getElementById('athlete-stats-chip')?.textContent).toContain('209W FTP');
+    });
   });
 });

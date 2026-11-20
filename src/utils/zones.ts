@@ -572,6 +572,79 @@ export function computeNormalizedPower(wattsSeries: number[]): number {
   return Math.round(Math.pow(fourthPowerSum / count, 0.25));
 }
 
+/**
+ * Computes the highest average power (watts) over any contiguous `windowSec`-second
+ * window in a 1 Hz power series in O(n) time. Returns null if the series is shorter than `windowSec`.
+ */
+export function computeBestWindowAvgWatts(
+  wattsSeries: number[],
+  windowSec: number
+): number | null {
+  if (windowSec <= 0 || wattsSeries.length < windowSec) return null;
+  let sum = 0;
+  for (let i = 0; i < windowSec; i++) {
+    sum += wattsSeries[i];
+  }
+  let maxSum = sum;
+  for (let i = windowSec; i < wattsSeries.length; i++) {
+    sum += wattsSeries[i] - wattsSeries[i - windowSec];
+    if (sum > maxSum) maxSum = sum;
+  }
+  return Math.round(maxSum / windowSec);
+}
+
+/**
+ * Evaluates a completed ride for an FTP Test result (95% of 20-minute average power).
+ * - On dedicated 20-Min FTP Test rides: returns a result whenever the rider completes at least
+ *   19:00 (1140s) with meaningful power (>= 30W), using the exact best 1200s window if >= 20:00.
+ * - On any other ride (e.g. Endurance or Century): returns a breakthrough PR result only when
+ *   the rider's best 20-minute rolling window (1200s) yields an FTP strictly higher than current FTP.
+ */
+export function evaluateRideFtpResult(
+  wattsSeries: number[],
+  previousFtpWatts: number,
+  isDedicatedTest: boolean
+): {
+  avg20MinWatts: number;
+  estimatedFtpWatts: number;
+  previousFtpWatts: number;
+  completedFull20Min: boolean;
+  isDedicatedTest: boolean;
+} | undefined {
+  if (wattsSeries.length === 0) return undefined;
+
+  const best20Min = computeBestWindowAvgWatts(wattsSeries, 1200);
+  if (best20Min !== null) {
+    if (best20Min < 30) return undefined;
+    const estimatedFtpWatts = Math.round(best20Min * 0.95);
+    if (!isDedicatedTest && estimatedFtpWatts <= previousFtpWatts) {
+      return undefined;
+    }
+    return {
+      avg20MinWatts: best20Min,
+      estimatedFtpWatts,
+      previousFtpWatts,
+      completedFull20Min: true,
+      isDedicatedTest,
+    };
+  }
+
+  // Dedicated 20-Min FTP Test: allow finishing up to 60s early (e.g. 19:55) without losing the benchmark
+  if (isDedicatedTest && wattsSeries.length >= 1140) {
+    const avg = Math.round(wattsSeries.reduce((a, b) => a + b, 0) / wattsSeries.length);
+    if (avg < 30) return undefined;
+    return {
+      avg20MinWatts: avg,
+      estimatedFtpWatts: Math.round(avg * 0.95),
+      previousFtpWatts,
+      completedFull20Min: wattsSeries.length >= 1185,
+      isDedicatedTest: true,
+    };
+  }
+
+  return undefined;
+}
+
 export function formatBikeGearBadge(telemetry: LiveTelemetry): string {
   const maxRes = telemetry.bikeMaxResistance ?? 32;
   if (!telemetry.bikeConnected) {
