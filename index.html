@@ -10,20 +10,25 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
+    <link rel="canonical" href="https://jbfit.studio/" />
+    <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#0b0e14" />
     <meta name="color-scheme" content="dark" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta
       name="description"
-      content="Just Believe Fitness — Privacy-first 5-zone indoor cycling studio with Burn Points, direct Bluetooth support for all Echelon & FTMS stationary bikes plus any BLE heart rate monitor, YouTube PiP, and Strava + Garmin sync."
+      content="Just Believe Fitness — Free, privacy-first 5-zone indoor cycling web app with Burn Points, direct Bluetooth for all Echelon & FTMS stationary bikes plus any BLE heart rate monitor, YouTube PiP, and Strava + Garmin FIT/TCX sync."
     />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Just Believe Fitness" />
-    <meta property="og:title" content="Just Believe Fitness · 5-Zone Indoor Cycling Studio" />
+    <meta
+      property="og:title"
+      content="Just Believe Fitness · Free 5-Zone Indoor Cycling Studio for Echelon & FTMS Bikes"
+    />
     <meta
       property="og:description"
-      content="Privacy-first 5-zone indoor cycling studio with Burn Points, direct Bluetooth for Echelon & FTMS stationary bikes plus BLE heart rate, YouTube PiP, and Garmin + Strava sync."
+      content="Free, privacy-first 5-zone indoor cycling studio with Burn Points, direct Bluetooth for Echelon & FTMS stationary bikes plus BLE heart rate, YouTube PiP, and Garmin + Strava sync."
     />
     <meta property="og:url" content="https://jbfit.studio/" />
     <meta property="og:image" content="https://jbfit.studio/og-image.png" />
@@ -32,13 +37,45 @@
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="Just Believe Fitness 5-Zone Indoor Cycling Studio" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Just Believe Fitness · 5-Zone Indoor Cycling Studio" />
+    <meta
+      name="twitter:title"
+      content="Just Believe Fitness · Free 5-Zone Indoor Cycling Studio"
+    />
     <meta
       name="twitter:description"
-      content="Privacy-first 5-zone indoor cycling studio with direct Bluetooth bike & HR telemetry, YouTube PiP, and Garmin + Strava sync."
+      content="Free, privacy-first 5-zone indoor cycling studio with direct Bluetooth bike & HR telemetry, YouTube PiP, and Garmin + Strava sync."
     />
     <meta name="twitter:image" content="https://jbfit.studio/og-image.png" />
-    <title>Just Believe Fitness · Indoor Cycling Studio</title>
+    <title>Just Believe Fitness · Free Indoor Cycling Studio for Echelon &amp; FTMS Bikes</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Just Believe Fitness",
+        "alternateName": "jbfit.studio",
+        "url": "https://jbfit.studio/",
+        "applicationCategory": "HealthApplication",
+        "operatingSystem": "Web, Android, Chrome, Edge",
+        "isAccessibleForFree": true,
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "image": "https://jbfit.studio/og-image.png",
+        "screenshot": "https://jbfit.studio/og-image.png",
+        "description": "Free, privacy-first 5-zone indoor cycling studio with Burn Points, direct Web Bluetooth pairing for Echelon bikes (Connect Sport, EX-15, EX-3, EX-5, EX-8s) and standard FTMS smart bikes (Schwinn IC4, Bowflex C6, Keiser M3i, Wahoo KICKR, Stages, BikeErg), any Bluetooth heart rate monitor, YouTube Picture-in-Picture, and direct Strava & Garmin FIT/TCX sync.",
+        "featureList": [
+          "Direct Web Bluetooth pairing for Echelon, FTMS, Cycling Power, and Cadence bikes with zero subscription",
+          "Universal Bluetooth Heart Rate monitor support (Garmin, Polar, Wahoo TICKR, WHOOP, Coospo)",
+          "5-zone Power and Heart Rate gauges with Burn Points",
+          "Guided interval workouts with optional ambient coach cues",
+          "YouTube split-screen and floating Picture-in-Picture telemetry HUD",
+          "Direct Strava upload, Garmin Connect sync, and binary .FIT / .TCX export",
+          "100% local-first browser storage with no accounts, no tracking, and no paywalls"
+        ]
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -48,6 +85,24 @@
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <main style="max-width: 720px; margin: 40px auto; padding: 24px; font-family: system-ui, sans-serif; color: #f8fafc;">
+        <h1>Just Believe Fitness — Free 5-Zone Indoor Cycling Studio</h1>
+        <p>
+          Privacy-first indoor cycling web app (no accounts, no subscriptions, no tracking) with
+          direct Web Bluetooth support for Echelon bikes (Connect Sport, EX-15, Prime, EX-3, EX-4s,
+          EX-5, EX-5s, EX-7s, EX-8s, GT+), FTMS stationary bikes and trainers (Schwinn IC4, Bowflex
+          C6, Yesoul, Merach, Domyos, Keiser M3i, Stages, Wattbike, Concept2 BikeErg, Wahoo KICKR,
+          Tacx, Zwift Ride), power pedals, cadence sensors, and any Bluetooth heart rate monitor.
+        </p>
+        <p>
+          Track 5-zone Power and Heart Rate telemetry, earn Burn Points, ride along with YouTube
+          Picture-in-Picture, create post-ride stat photo cards, and export or sync directly to
+          Strava and Garmin Connect (.FIT and .TCX). Enable JavaScript in Chrome or Edge to launch
+          the studio.
+        </p>
+      </main>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
