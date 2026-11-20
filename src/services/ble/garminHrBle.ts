@@ -1,3 +1,4 @@
+import { getBluetoothUnsupportedMessage } from '../../utils/browserSupport';
 const HEART_RATE_SERVICE = 0x180d;
 const HEART_RATE_MEASUREMENT = 0x2a37;
 
@@ -79,9 +80,7 @@ export class GarminHeartRateConnection {
 
   public async requestAndConnect(options?: { acceptAllDevices?: boolean }): Promise<void> {
     if (!GarminHeartRateConnection.isSupported()) {
-      throw new Error(
-        'Web Bluetooth is not available in this browser. Open Just Believe Fitness in Chrome on your Android phone/tablet or desktop.'
-      );
+      throw new Error(getBluetoothUnsupportedMessage());
     }
 
     const attemptId = ++this.connectAttemptId;

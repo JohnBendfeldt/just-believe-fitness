@@ -81,6 +81,7 @@ import {
 } from './services/garminConnect';
 import { renderTelemetryHudCanvas } from './services/pipHud';
 import { ScreenWakeManager, WorkoutAudioCue } from './services/wakeAndAudio';
+import { getBluetoothUnsupportedMessage } from './utils/browserSupport';
 import { enterBrowserFullscreen, exitBrowserFullscreen } from './utils/fullscreen';
 import { ZoneMetricCard } from './components/ZoneMetricCard';
 import { ZoneSpeedometerCard } from './components/ZoneSpeedometerCard';
@@ -182,6 +183,13 @@ export function App() {
   const [isHudPipActive, setIsHudPipActive] = useState<boolean>(false);
 
   // Modals, History, Cloud Sync, Legal/Privacy Route, Audio, Toast
+  const [bleBannerDismissed, setBleBannerDismissed] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('jbf-ble-banner-dismissed') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [isFocusModalOpen, setIsFocusModalOpen] = useState<boolean>(false);
   const [isAthleteModalOpen, setIsAthleteModalOpen] = useState<boolean>(false);
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState<boolean>(false);
@@ -1136,6 +1144,42 @@ export function App() {
     <div
       className={`app-shell mode-${gaugeMode}${ytLayoutMode === 'split' ? ' yt-split' : ''}`}
     >
+      {!EchelonBikeConnection.isSupported() && !bleBannerDismissed && (
+        <div
+          role="alert"
+          style={{
+            background: 'rgba(249, 115, 22, 0.16)',
+            border: '1px solid rgba(249, 115, 22, 0.42)',
+            borderRadius: '10px',
+            padding: '10px 12px',
+            margin: '8px',
+            fontSize: '0.85rem',
+            display: 'flex',
+            gap: '10px',
+            alignItems: 'flex-start',
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <strong>Bluetooth isn&apos;t available in this browser.</strong>{' '}
+            {getBluetoothUnsupportedMessage()} You can still try everything with Simulate Ride.
+          </div>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => {
+              setBleBannerDismissed(true);
+              try {
+                sessionStorage.setItem('jbf-ble-banner-dismissed', '1');
+              } catch {
+                /* ignore */
+              }
+            }}
+            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {/* Top Studio Header + Athlete Stats Orientation Chip */}
       <header className="topbar">
         <div className="brand-lockup">

@@ -1,4 +1,5 @@
 import type { BikeFamilyId } from '../../types/fitness';
+import { getBluetoothUnsupportedMessage } from '../../utils/browserSupport';
 
 export const ECHELON_ADV_SERVICE = '0bf669f0-45f2-11e7-9598-0800200c9a66';
 export const ECHELON_COMM_SERVICE = '0bf669f1-45f2-11e7-9598-0800200c9a66';
@@ -503,9 +504,7 @@ export class EchelonBikeConnection {
 
   public async requestAndConnect(options?: { acceptAllDevices?: boolean }): Promise<void> {
     if (!EchelonBikeConnection.isSupported()) {
-      throw new Error(
-        'Web Bluetooth is not available in this browser. Open Just Believe Fitness in Chrome on your Android phone/tablet or desktop.'
-      );
+      throw new Error(getBluetoothUnsupportedMessage());
     }
 
     const attemptId = ++this.connectAttemptId;

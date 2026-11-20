@@ -40,6 +40,7 @@ import {
   downloadRideFit,
 } from '../services/fitExporter';
 import { RidePhotoStudio } from './RidePhotoStudio';
+import { getBluetoothUnsupportedMessage } from '../utils/browserSupport';
 
 interface DeviceModalProps {
   isOpen: boolean;
@@ -93,8 +94,8 @@ export function DeviceConnectionModal({
               fontSize: '0.82rem',
             }}
           >
-            Web Bluetooth requires Chrome on your Android phone/tablet (or Chrome/Edge on desktop).
-            You can still test everything right now using <strong>Simulate Ride</strong> below!
+            {getBluetoothUnsupportedMessage()}
+            {' '}You can still test everything right now using <strong>Simulate Ride</strong> below!
           </div>
         )}
 
