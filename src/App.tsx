@@ -116,6 +116,22 @@ import { checkRemoteBuildUpdate } from './utils/pwaUpdater';
 const EMPTY_ZONE_SECONDS: Record<ZoneId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 const GAUGE_MODE_STORAGE_KEY = 'jbf_gauge_mode_v1';
 const AUDIO_CUES_STORAGE_KEY = 'jbf_audio_cues_v1';
+const GITHUB_REPO_URL = 'https://github.com/JohnBendfeldt/just-believe-fitness';
+
+function GitHubMarkIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M12 0.5C5.37 0.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.2 11.39.6.11.82-.26.82-.58 0-.29-.01-1.05-.02-2.06-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22 0 1.61-.01 2.9-.01 3.29 0 .32.22.7.83.58A12.01 12.01 0 0 0 24 12.5C24 5.87 18.63 0.5 12 0.5Z" />
+    </svg>
+  );
+}
 
 export type GaugeDisplayMode = 'rings' | 'bars';
 
@@ -1382,6 +1398,18 @@ export function App() {
           </div>
         </div>
 
+        <a
+          id="topbar-github-link"
+          href={GITHUB_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-sm topbar-github-btn"
+          aria-label="Open source on GitHub — view, edit, or improve the code"
+          title="Open source on GitHub — view, edit, or improve the code"
+        >
+          <GitHubMarkIcon size={16} />
+        </a>
+
         {/* Athlete Quick-Input Orientation Button */}
         <button
           type="button"
@@ -1991,13 +2019,27 @@ export function App() {
         hasHrStream={hasHrStream}
       />
 
-      {/* Privacy-First Local-Only Studio Footer & Legal Links */}
+      {/* Privacy-First Local-Only Studio Footer, Open-Source & Legal Links */}
       <footer className="studio-footer" id="studio-footer">
         <div className="studio-footer-pledge">
-          <strong>100% Local-First · No Accounts · No Paywalls — Just Be Fit.</strong>
-          <span>Your workouts &amp; stats stay in your browser unless you choose to sync.</span>
+          <strong>100% Local-First · Open Source · No Accounts · No Paywalls — Just Be Fit.</strong>
+          <span>
+            Your workouts &amp; stats stay in your browser unless you choose to sync. Open source on
+            GitHub — take the code, edit it yourself, or improve it.
+          </span>
         </div>
-        <nav className="studio-footer-links" aria-label="Privacy and legal">
+        <nav className="studio-footer-links" aria-label="Open source, privacy, and legal">
+          <a
+            id="footer-github-link"
+            href={GITHUB_REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="studio-footer-link studio-footer-github-link"
+            title="View, fork, or improve the source code on GitHub"
+          >
+            <GitHubMarkIcon size={13} />
+            GitHub Source
+          </a>
           <button
             type="button"
             id="open-privacy-btn"

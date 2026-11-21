@@ -240,6 +240,25 @@ button {
   gap: 8px;
 }
 
+.topbar-github-btn {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  flex-shrink: 0;
+  order: 3;
+}
+
+@media (min-width: 600px) {
+  .topbar .athlete-chip {
+    margin: 0 auto;
+  }
+
+  .topbar-actions {
+    order: 2;
+  }
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -2060,9 +2079,20 @@ button {
     gap: 8px;
   }
 
+  .brand-lockup {
+    flex: 1 1 auto;
+    min-width: 0;
+    order: 0;
+  }
+
+  .topbar-github-btn {
+    order: 1;
+  }
+
   .athlete-chip {
     width: 100%;
     justify-content: space-between;
+    order: 2;
   }
 
   .topbar-actions {
@@ -2070,6 +2100,7 @@ button {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+    order: 3;
   }
 
   #open-sensors-btn {
@@ -2391,6 +2422,7 @@ button {
     width: auto;
     min-height: 30px;
     padding: 4px 8px;
+    margin: 0;
   }
 
   .athlete-chip-stats {
@@ -2401,12 +2433,20 @@ button {
     width: auto;
     display: flex;
     gap: 5px;
+    order: 2;
   }
 
   .topbar-actions .btn-sm {
     min-height: 30px;
     padding: 0 8px;
     font-size: 0.71rem;
+  }
+
+  .topbar-github-btn {
+    width: 30px;
+    min-width: 30px;
+    min-height: 30px;
+    order: 3;
   }
 
   #open-sensors-btn {
@@ -2621,6 +2661,12 @@ button {
 .studio-footer-link:hover {
   color: var(--accent-orange);
   text-decoration-color: var(--accent-orange);
+}
+
+.studio-footer-github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .legal-modal-card {

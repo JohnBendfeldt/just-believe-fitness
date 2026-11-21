@@ -233,8 +233,22 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(window.location.pathname).toBe('/');
     expect(document.getElementById('legal-privacy-modal')).not.toBeInTheDocument();
 
-    // Footer buttons also open Privacy and Terms directly
+    // Topbar GitHub icon and footer GitHub source link point to the open-source repo
+    const topbarGithub = document.getElementById('topbar-github-link') as HTMLAnchorElement | null;
+    expect(topbarGithub).toBeInTheDocument();
+    expect(topbarGithub?.href).toBe('https://github.com/JohnBendfeldt/just-believe-fitness');
+    expect(topbarGithub?.target).toBe('_blank');
+    expect(topbarGithub?.rel).toContain('noopener');
+
+    const footerGithub = document.getElementById('footer-github-link') as HTMLAnchorElement | null;
+    expect(footerGithub).toBeInTheDocument();
+    expect(footerGithub?.href).toBe('https://github.com/JohnBendfeldt/just-believe-fitness');
+    expect(footerGithub?.target).toBe('_blank');
+    expect(footerGithub?.rel).toContain('noopener');
+
+    // Footer buttons also open Privacy and Terms directly and clarify open-source editability
     expect(document.getElementById('studio-footer')?.textContent).toContain('100% Local-First');
+    expect(document.getElementById('studio-footer')?.textContent).toContain('edit it yourself');
     fireEvent.click(document.getElementById('open-privacy-btn')!);
     expect(window.location.pathname).toBe('/privacy');
     expect(document.getElementById('legal-privacy-modal')).toBeInTheDocument();
