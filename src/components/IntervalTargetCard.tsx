@@ -6,37 +6,55 @@ import {
   formatDistanceValue,
   formatDuration,
 } from '../utils/zones';
+import { TileArrangeArrows, TileArrangeGrip } from './TileReorderControls';
+import { getTileArrangeSectionProps, type TileArrangeBinding } from '../utils/tileArrange';
 
 interface IntervalTargetCardProps {
+  id?: string;
   className?: string;
   info: ActiveSegmentSummary | null;
+  arrange?: TileArrangeBinding;
 }
 
 /** Cockpit-sized card showing the current interval or distance stage targets, countdown, and what's next. */
-export function IntervalTargetCard({ className = '', info }: IntervalTargetCardProps) {
+export function IntervalTargetCard({
+  id = 'interval-target-card',
+  className = '',
+  info,
+  arrange,
+}: IntervalTargetCardProps) {
   const dist = info?.distanceMode;
   const targetColor = info ? ZONE_PALETTE[info.segment.targetZone].color : '#fb923c';
 
   return (
     <section
       className={`metric-card interval-target-card tabular ${className}`.trim()}
-      id="interval-target-card"
+      id={id}
+      data-tile-id="interval"
       aria-label={dist ? 'Current distance challenge targets' : 'Current interval targets'}
+      {...getTileArrangeSectionProps(arrange)}
     >
       <header
         className="metric-zone-header dial-zone-header"
         style={{ background: '#232B38', color: '#CBD5E1' }}
       >
-        <span className="dial-header-title">{dist ? 'Distance Goal' : 'Interval'}</span>
-        <span className="dial-header-zone" style={{ color: '#fb923c' }}>
-          {info
-            ? dist
-              ? dist.isGoalComplete
-                ? 'COMPLETE'
-                : `Stage ${info.index + 1}/${info.totalSegments} · ${Math.round(dist.overallProgressPct)}%`
-              : `Block ${info.index + 1}/${info.totalSegments}`
-            : 'Free Ride'}
+        <span className="dial-header-title">
+          {arrange && <TileArrangeGrip />}
+          {dist ? 'Distance Goal' : 'Interval'}
         </span>
+        {arrange ? (
+          <TileArrangeArrows arrange={arrange} />
+        ) : (
+          <span className="dial-header-zone" style={{ color: '#fb923c' }}>
+            {info
+              ? dist
+                ? dist.isGoalComplete
+                  ? 'COMPLETE'
+                  : `Stage ${info.index + 1}/${info.totalSegments} · ${Math.round(dist.overallProgressPct)}%`
+                : `Block ${info.index + 1}/${info.totalSegments}`
+              : 'Free Ride'}
+          </span>
+        )}
       </header>
 
       {info ? (
@@ -111,11 +129,13 @@ export function IntervalTargetCard({ className = '', info }: IntervalTargetCardP
           </div>
         </div>
       ) : (
-        <div className="cockpit-card-body interval-body">
+        <div className="cockpit-card-body interval-body interval-body-empty">
           <div className="interval-name">
             <strong>Free Ride</strong>
           </div>
-          <div className="quad-sub">Pick a workout or distance challenge to see targets here.</div>
+          <div className="interval-empty-note">
+            Pick a workout or distance challenge to see targets here.
+          </div>
         </div>
       )}
     </section>

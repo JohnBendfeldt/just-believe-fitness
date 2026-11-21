@@ -1,5 +1,7 @@
 import type { ZoneId } from '../types/fitness';
 import { ZONE_PALETTE, formatDuration } from '../utils/zones';
+import { TileArrangeArrows, TileArrangeGrip } from './TileReorderControls';
+import { getTileArrangeSectionProps, type TileArrangeBinding } from '../utils/tileArrange';
 
 const ORDERED_ZONES: ZoneId[] = [5, 4, 3, 2, 1];
 
@@ -44,27 +46,44 @@ export function ZoneDistributionList({ zoneSeconds }: ZoneDistributionListProps)
 }
 
 interface ZoneTimeCardProps {
+  id?: string;
   className?: string;
   hasHrStream: boolean;
   zoneSeconds: Record<ZoneId, number>;
+  arrange?: TileArrangeBinding;
 }
 
 /** Cockpit-sized "Time in Zones" card that sits in the gauge grid. */
-export function ZoneTimeCard({ className = '', hasHrStream, zoneSeconds }: ZoneTimeCardProps) {
+export function ZoneTimeCard({
+  id = 'zone-time-card',
+  className = '',
+  hasHrStream,
+  zoneSeconds,
+  arrange,
+}: ZoneTimeCardProps) {
   return (
     <section
       className={`metric-card zone-time-card ${className}`.trim()}
-      id="zone-time-card"
+      id={id}
+      data-tile-id="zones"
       aria-label="Time in zones"
+      {...getTileArrangeSectionProps(arrange)}
     >
       <header
         className="metric-zone-header dial-zone-header"
         style={{ background: '#232B38', color: '#CBD5E1' }}
       >
-        <span className="dial-header-title">Time in {hasHrStream ? 'HR' : 'Power'} Zones</span>
-        <span className="dial-header-zone" style={{ color: '#fb923c' }}>
-          Z4 + Z5 = BURN
+        <span className="dial-header-title">
+          {arrange && <TileArrangeGrip />}
+          Time in {hasHrStream ? 'HR' : 'Power'} Zones
         </span>
+        {arrange ? (
+          <TileArrangeArrows arrange={arrange} />
+        ) : (
+          <span className="dial-header-zone" style={{ color: '#fb923c' }}>
+            Z4 + Z5 = BURN
+          </span>
+        )}
       </header>
       <div className="cockpit-card-body">
         <ZoneDistributionList zoneSeconds={zoneSeconds} />

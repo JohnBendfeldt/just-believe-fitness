@@ -72,7 +72,7 @@ First: **sorry for the extra hoops on iOS.** Apple forces all iPhone/iPad browse
   - **Studio Workouts:** **23-Min Signature Burn**, **20-Min Burn Express**, **30-Min Power Pyramid**, and **20-Min FTP Test** (auto-calculates 95% FTP with a 1-click profile update — and automatically flags new 20-min FTP breakthroughs on any ride).
   - **Endurance Rides:** **45-Min YouTube Zone 2/3 Cruise**, **1-Hour**, **2-Hour**, and **3-Hour Endurance** (with standing saddle breaks and fueling cues).
   - **Distance Challenges:** **50K Challenge**, **50-Mile Half Century**, **Metric Century (100K)**, and **Full Century (100 Mi)**.
-- **Three Cockpit Modes:** Switch between **Speedometer Rings**, **Horizontal Zone Bars**, and **Full-Screen Focus Mode** (native fullscreen, guided interval coaching, dedicated Play/Pause transport, and 4-grid telemetry).
+- **Three Cockpit Modes + Customizable Tiles & Icons:** Switch between **Speedometer Rings**, **Horizontal Zone Bars**, and **Full-Screen Focus Mode** (native fullscreen, guided interval coaching, dedicated Play/Pause transport, and customizable telemetry grid). Tap the **Layout** icon (`Customize Screen Layout`) to choose which metrics appear as your main tiles (for example, swap out Heart Rate for **Speed**, **Distance**, **Calories**, or **Avg Power**), pick a preset (**No Heart Rate**, **Clean 4-Tile**, **Heart Rate First**), or rearrange tiles and toolbar icons via modal controls or inline drag-and-drop — synced automatically across Main Studio, Focus Mode, and the Floating PiP HUD.
 - **Opt-In Ambient Audio Coaching:** Synthesized voice cues and interval chimes played via the Web Audio API (`ambient` audio session) so they mix cleanly over Spotify, Apple Music, or podcasts without pausing your music. Off by default.
 - **Post-Ride Photo Stat Studio:** Composite `1080×1350` camera/gallery/studio stat cards locally on an HTML5 `<canvas>` (photos never leave your device) and customize ride titles & notes.
 - **100% Local-First Privacy (`/privacy` & `/terms`):** No user database, no analytics, no accounts. Profiles, settings, and ride history stay strictly in your browser's `localStorage` and `IndexedDB` unless you explicitly export or sync a ride.
@@ -86,7 +86,7 @@ This project is open source — **take the code, edit it for your own setup, or 
 ```bash
 npm install
 npm run dev          # Vite dev server + local /api/garmin-sync and /api/strava-token proxy
-npm run verify       # Full Vitest suite + oxlint + TypeScript (tsc -b) + Vite production build
+npm run verify       # Vitest suite + oxlint + tsc -b + Vite build + Chromium visual layout geometry audit
 ```
 
 Additional scripts & guides:

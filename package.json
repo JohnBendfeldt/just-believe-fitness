@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
-    "verify": "npm test && npm run lint && npm run build",
+    "test:visual": "node scripts/visual-layout-test.mjs",
+    "verify": "npm test && npm run lint && npm run build && npm run test:visual",
     "preview": "vite preview",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
@@ -38,6 +39,7 @@
     "fake-indexeddb": "^6.2.8",
     "jsdom": "^31.0.1",
     "oxlint": "^1.90.0",
+    "playwright-core": "^1.65.1",
     "typescript": "~7.0.2",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"

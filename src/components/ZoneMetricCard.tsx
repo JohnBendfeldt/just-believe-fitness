@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react';
 import type { ZoneDefinition } from '../types/fitness';
 import { computeSegmentedGaugeProgress } from '../utils/zones';
+import { TileArrangeArrows, TileArrangeGrip } from './TileReorderControls';
+import { getTileArrangeSectionProps, type TileArrangeBinding } from '../utils/tileArrange';
 
 interface ZoneMetricCardProps {
   id: string;
+  tileId?: string;
+  className?: string;
   title: string;
   valueDisplay: string;
   unit: string;
@@ -14,10 +18,13 @@ interface ZoneMetricCardProps {
   activeZone: ZoneDefinition;
   thresholdUnitSuffix?: string;
   extraControl?: ReactNode;
+  arrange?: TileArrangeBinding;
 }
 
 export function ZoneMetricCard({
   id,
+  tileId,
+  className = '',
   title,
   valueDisplay,
   unit,
@@ -28,11 +35,18 @@ export function ZoneMetricCard({
   activeZone,
   thresholdUnitSuffix = '',
   extraControl,
+  arrange,
 }: ZoneMetricCardProps) {
   const needlePct = computeSegmentedGaugeProgress(numericValue, zones);
 
   return (
-    <section className="metric-card" id={id} aria-label={`${title} telemetry`}>
+    <section
+      className={`metric-card ${className}`.trim()}
+      id={id}
+      data-tile-id={tileId}
+      aria-label={`${title} telemetry`}
+      {...getTileArrangeSectionProps(arrange)}
+    >
       <header
         className="metric-zone-header"
         style={{
@@ -40,8 +54,15 @@ export function ZoneMetricCard({
           color: numericValue > 0 ? activeZone.textOnFill : '#CBD5E1',
         }}
       >
-        <span>{title}</span>
-        <span>{numericValue > 0 ? `Z${activeZone.zone} · ${activeZone.stageLabel}` : 'READY'}</span>
+        <span className="dial-header-title">
+          {arrange && <TileArrangeGrip />}
+          {title}
+        </span>
+        {arrange ? (
+          <TileArrangeArrows arrange={arrange} />
+        ) : (
+          <span>{numericValue > 0 ? `Z${activeZone.zone} · ${activeZone.stageLabel}` : 'READY'}</span>
+        )}
       </header>
 
       <div className="metric-body">

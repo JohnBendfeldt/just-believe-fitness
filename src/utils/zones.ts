@@ -404,6 +404,254 @@ export function getCadenceZones(): ZoneDefinition[] {
 }
 
 /**
+ * 5-Color Indoor Cycling Speed Zones (MPH):
+ * Z1 Grey:   < 12 mph   (Easy Roll)
+ * Z2 Blue:   12-15 mph  (Endurance Cruise)
+ * Z3 Green:  16-19 mph  (Tempo Pace)
+ * Z4 Orange: 20-23 mph  (Fast Push)
+ * Z5 Red:    24+ mph    (Breakaway Sprint)
+ */
+export function getSpeedZones(): ZoneDefinition[] {
+  return [
+    {
+      zone: 1,
+      ...ZONE_PALETTE[1],
+      name: 'Easy Roll',
+      stageLabel: 'EASY ROLL',
+      minPct: 0,
+      maxPct: 40,
+      minValue: 0,
+      maxValue: 11.9,
+    },
+    {
+      zone: 2,
+      ...ZONE_PALETTE[2],
+      name: 'Cruise Pace',
+      stageLabel: 'CRUISE',
+      minPct: 41,
+      maxPct: 55,
+      minValue: 12,
+      maxValue: 15.9,
+    },
+    {
+      zone: 3,
+      ...ZONE_PALETTE[3],
+      name: 'Tempo Speed',
+      stageLabel: 'TEMPO',
+      minPct: 56,
+      maxPct: 70,
+      minValue: 16,
+      maxValue: 19.9,
+    },
+    {
+      zone: 4,
+      ...ZONE_PALETTE[4],
+      name: 'Fast Push',
+      stageLabel: 'FAST PUSH',
+      minPct: 71,
+      maxPct: 85,
+      minValue: 20,
+      maxValue: 23.9,
+    },
+    {
+      zone: 5,
+      ...ZONE_PALETTE[5],
+      name: 'Sprint Speed',
+      stageLabel: 'SPRINT',
+      minPct: 86,
+      maxPct: 100,
+      minValue: 24,
+      maxValue: 32,
+    },
+  ];
+}
+
+/**
+ * 5-Stage Distance Progress Zones.
+ * Scales dynamically to a distance challenge target (e.g. 50 km or 100 mi),
+ * or uses clean indoor ride milestones (0 / 3 / 6 / 10 / 15+ mi) for open/timed rides.
+ */
+export function getDistanceZones(targetValue?: number): ZoneDefinition[] {
+  if (typeof targetValue === 'number' && targetValue > 0) {
+    const step = targetValue / 5;
+    const roundStep = (n: number) =>
+      targetValue >= 15 ? Math.round(n) : Math.round(n * 10) / 10;
+    const z2 = roundStep(step);
+    const z3 = roundStep(step * 2);
+    const z4 = roundStep(step * 3);
+    const z5 = roundStep(step * 4);
+    return [
+      {
+        zone: 1,
+        ...ZONE_PALETTE[1],
+        name: 'Stage 1 · Launch',
+        stageLabel: 'STAGE 1',
+        minPct: 0,
+        maxPct: 20,
+        minValue: 0,
+        maxValue: z2,
+      },
+      {
+        zone: 2,
+        ...ZONE_PALETTE[2],
+        name: 'Stage 2 · Settling In',
+        stageLabel: 'STAGE 2',
+        minPct: 20,
+        maxPct: 40,
+        minValue: z2,
+        maxValue: z3,
+      },
+      {
+        zone: 3,
+        ...ZONE_PALETTE[3],
+        name: 'Stage 3 · Mid-Route',
+        stageLabel: 'STAGE 3',
+        minPct: 40,
+        maxPct: 60,
+        minValue: z3,
+        maxValue: z4,
+      },
+      {
+        zone: 4,
+        ...ZONE_PALETTE[4],
+        name: 'Stage 4 · Home Stretch',
+        stageLabel: 'STAGE 4',
+        minPct: 60,
+        maxPct: 80,
+        minValue: z4,
+        maxValue: z5,
+      },
+      {
+        zone: 5,
+        ...ZONE_PALETTE[5],
+        name: 'Stage 5 · Final Kick',
+        stageLabel: 'FINAL KICK',
+        minPct: 80,
+        maxPct: 100,
+        minValue: z5,
+        maxValue: roundStep(targetValue),
+      },
+    ];
+  }
+
+  return [
+    {
+      zone: 1,
+      ...ZONE_PALETTE[1],
+      name: 'Warm-Up Miles',
+      stageLabel: 'OPENING',
+      minPct: 0,
+      maxPct: 20,
+      minValue: 0,
+      maxValue: 2.9,
+    },
+    {
+      zone: 2,
+      ...ZONE_PALETTE[2],
+      name: 'Rolling Cruise',
+      stageLabel: 'CRUISE',
+      minPct: 20,
+      maxPct: 40,
+      minValue: 3,
+      maxValue: 5.9,
+    },
+    {
+      zone: 3,
+      ...ZONE_PALETTE[3],
+      name: 'Endurance Block',
+      stageLabel: 'ENDURANCE',
+      minPct: 40,
+      maxPct: 65,
+      minValue: 6,
+      maxValue: 9.9,
+    },
+    {
+      zone: 4,
+      ...ZONE_PALETTE[4],
+      name: 'Long Haul',
+      stageLabel: 'LONG HAUL',
+      minPct: 65,
+      maxPct: 85,
+      minValue: 10,
+      maxValue: 14.9,
+    },
+    {
+      zone: 5,
+      ...ZONE_PALETTE[5],
+      name: 'Epic Distance',
+      stageLabel: 'EPIC RIDE',
+      minPct: 85,
+      maxPct: 100,
+      minValue: 15,
+      maxValue: 25,
+    },
+  ];
+}
+
+/**
+ * 5-Tier Active Calorie Milestones (kcal):
+ * Z1 Grey:   0-119   (Warm-Up Burn)
+ * Z2 Blue:   120-249 (Steady Burn)
+ * Z3 Green:  250-399 (Solid Session)
+ * Z4 Orange: 400-599 (High Burn)
+ * Z5 Red:    600+    (Torch Session)
+ */
+export function getCalorieZones(): ZoneDefinition[] {
+  return [
+    {
+      zone: 1,
+      ...ZONE_PALETTE[1],
+      name: 'Warm-Up Burn',
+      stageLabel: 'WARM BURN',
+      minPct: 0,
+      maxPct: 20,
+      minValue: 0,
+      maxValue: 119,
+    },
+    {
+      zone: 2,
+      ...ZONE_PALETTE[2],
+      name: 'Steady Burn',
+      stageLabel: 'STEADY',
+      minPct: 20,
+      maxPct: 40,
+      minValue: 120,
+      maxValue: 249,
+    },
+    {
+      zone: 3,
+      ...ZONE_PALETTE[3],
+      name: 'Solid Session',
+      stageLabel: 'SOLID BURN',
+      minPct: 40,
+      maxPct: 65,
+      minValue: 250,
+      maxValue: 399,
+    },
+    {
+      zone: 4,
+      ...ZONE_PALETTE[4],
+      name: 'High Output',
+      stageLabel: 'HIGH BURN',
+      minPct: 65,
+      maxPct: 85,
+      minValue: 400,
+      maxValue: 599,
+    },
+    {
+      zone: 5,
+      ...ZONE_PALETTE[5],
+      name: 'Torch Session',
+      stageLabel: 'TORCH',
+      minPct: 85,
+      maxPct: 100,
+      minValue: 600,
+      maxValue: 900,
+    },
+  ];
+}
+
+/**
  * 5-Color Echelon EX-3 Resistance Zones (Levels 1-32):
  * Z1 Grey:   1-8   (Light Spin)
  * Z2 Blue:   9-15  (Flat Road)

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   FastForward,
   Flame,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   Pause,
@@ -19,22 +20,25 @@ import type {
   LiveTelemetry,
   WorkoutTemplate,
   ZoneDefinition,
+  ZoneId,
 } from '../types/fitness';
 import {
   ZONE_PALETTE,
-  computeWattsPerKg,
   cueDisplayLabel,
-  formatBikeGearBadge,
   formatDistanceTarget,
   formatDistanceValue,
   formatDuration,
 } from '../utils/zones';
 import { isBrowserFullscreen, toggleBrowserFullscreen } from '../utils/fullscreen';
 import { formatWorkoutOptionLabel, groupWorkoutTemplates } from '../data/workouts';
-import { ZoneSpeedometerCard } from './ZoneSpeedometerCard';
-import { RideStatsQuadCard } from './RideStatsQuadCard';
+import type { CockpitTileId, QuadStatId } from '../utils/layoutPrefs';
+import { CockpitTile } from './CockpitTile';
 
 export type { ActiveSegmentSummary };
+
+const DEFAULT_FOCUS_TILE_ORDER: CockpitTileId[] = ['power', 'cadence', 'hr', 'stats'];
+const DEFAULT_QUAD_STAT_ORDER: QuadStatId[] = ['speed', 'distance', 'calories', 'avgPower'];
+const EMPTY_ZONE_SECS: Record<ZoneId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 
 interface FocusRideModalProps {
   isOpen: boolean;
@@ -70,6 +74,12 @@ interface FocusRideModalProps {
   onSkipSegment: () => void;
   onFinishAndSave: () => void;
   onResetWorkout: () => void;
+  hasHrStream?: boolean;
+  hrZoneSeconds?: Record<ZoneId, number>;
+  powerZoneSeconds?: Record<ZoneId, number>;
+  tileOrder?: CockpitTileId[];
+  quadStatOrder?: QuadStatId[];
+  onOpenLayoutCustomizer?: () => void;
 }
 
 export function FocusRideModal({
@@ -106,6 +116,12 @@ export function FocusRideModal({
   onSkipSegment,
   onFinishAndSave,
   onResetWorkout,
+  hasHrStream = false,
+  hrZoneSeconds = EMPTY_ZONE_SECS,
+  powerZoneSeconds = EMPTY_ZONE_SECS,
+  tileOrder = DEFAULT_FOCUS_TILE_ORDER,
+  quadStatOrder = DEFAULT_QUAD_STAT_ORDER,
+  onOpenLayoutCustomizer,
 }: FocusRideModalProps) {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isBrowserFullscreen());
 
@@ -115,7 +131,11 @@ export function FocusRideModal({
     syncFullscreen();
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isBrowserFullscreen()) {
+      if (
+        e.key === 'Escape' &&
+        !isBrowserFullscreen() &&
+        !document.getElementById('customize-layout-modal')
+      ) {
         onClose();
       }
     };
@@ -134,13 +154,6 @@ export function FocusRideModal({
 
   const isAnySensorLive =
     telemetry.powerWatts > 0 || telemetry.heartRateBpm > 0 || rideState === 'running';
-  const liveWkg = computeWattsPerKg(telemetry.powerWatts, profile.weightLbs);
-  const ftpPct =
-    profile.ftpWatts > 0 ? Math.round((telemetry.powerWatts / profile.ftpWatts) * 100) : 0;
-  const hrPct =
-    profile.maxHrBpm > 0 && telemetry.heartRateBpm > 0
-      ? Math.round((telemetry.heartRateBpm / profile.maxHrBpm) * 100)
-      : 0;
 
   const targetPalette = activeSegmentInfo
     ? ZONE_PALETTE[activeSegmentInfo.segment.targetZone]
@@ -246,6 +259,19 @@ export function FocusRideModal({
               {audioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
               <span className="focus-hide-xs">{audioEnabled ? 'Coach On' : 'Audio Off'}</span>
             </button>
+            {onOpenLayoutCustomizer && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                id="focus-customize-layout-btn"
+                onClick={onOpenLayoutCustomizer}
+                title="Customize tile order"
+                aria-label="Customize tile order"
+              >
+                <LayoutGrid size={14} />
+                <span className="focus-hide-xs">Layout</span>
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-sm"
@@ -466,70 +492,37 @@ export function FocusRideModal({
           )}
         </div>
 
-        {/* Dedicated 4-Grid Telemetry Cockpit (Power, Cadence + Gear, Heart Rate, Ride Stats) */}
-        <div className="focus-four-grid">
-          <ZoneSpeedometerCard
-            id="focus-power-card"
-            title="Power"
-            valueDisplay={`${Math.round(telemetry.powerWatts)}`}
-            unit="Watts"
-            primaryBadge={`${ftpPct}% FTP · ${liveWkg.toFixed(2)} W/kg`}
-            secondarySub={
-              activeSegmentInfo
-                ? `Goal ${activeSegmentInfo.targets.minWatts}–${activeSegmentInfo.targets.maxWatts}W`
-                : `FTP ${profile.ftpWatts}W (${profile.weightLbs}#)`
-            }
-            zones={powerZones}
-            numericValue={telemetry.powerWatts}
-            activeZone={activePowerZone}
-            thresholdUnitSuffix="W"
-          />
-
-          <ZoneSpeedometerCard
-            id="focus-cadence-card"
-            title="Cadence"
-            valueDisplay={`${Math.round(telemetry.cadenceRpm)}`}
-            unit="RPM"
-            primaryBadge={formatBikeGearBadge(telemetry)}
-            secondarySub={
-              activeSegmentInfo
-                ? `Goal ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]}`
-                : 'Spin Rhythm'
-            }
-            zones={cadenceZones}
-            numericValue={telemetry.cadenceRpm}
-            activeZone={activeCadenceZone}
-            extraControl={resistanceControl}
-          />
-
-          <ZoneSpeedometerCard
-            id="focus-hr-card"
-            title="Heart Rate"
-            valueDisplay={
-              telemetry.heartRateBpm > 0 ? `${Math.round(telemetry.heartRateBpm)}` : '--'
-            }
-            unit="BPM"
-            primaryBadge={
-              telemetry.heartRateBpm > 0
-                ? `${hrPct}% MAX HR`
-                : telemetry.hrName || 'BLE HR Ready'
-            }
-            secondarySub={`Max ${profile.maxHrBpm} · Burn ≥ ${hrZones[3].minValue}`}
-            zones={hrZones}
-            numericValue={telemetry.heartRateBpm}
-            activeZone={activeHrZone}
-          />
-
-          <RideStatsQuadCard
-            id="focus-ride-stats-card"
-            speedMph={telemetry.speedMph}
-            distanceMeters={distanceMeters}
-            caloriesKcal={caloriesKcal}
-            avgRideWatts={avgRideWatts}
-            npRideWatts={npRideWatts}
-            burnPoints={burnPoints}
-            burnZoneTotalSec={burnZoneTotalSec}
-          />
+        {/* Dedicated Telemetry Cockpit (Customizable tiles & order) */}
+        <div className="focus-four-grid" data-tile-count={tileOrder.length}>
+          {tileOrder.map((tileId) => (
+            <CockpitTile
+              key={tileId}
+              tileId={tileId}
+              gaugeStyle="rings"
+              context="focus"
+              telemetry={telemetry}
+              profile={profile}
+              elapsedSec={elapsedSec}
+              distanceMeters={distanceMeters}
+              caloriesKcal={caloriesKcal}
+              avgRideWatts={avgRideWatts}
+              npRideWatts={npRideWatts}
+              burnPoints={burnPoints}
+              burnZoneTotalSec={burnZoneTotalSec}
+              hasHrStream={hasHrStream}
+              hrZoneSeconds={hrZoneSeconds}
+              powerZoneSeconds={powerZoneSeconds}
+              powerZones={powerZones}
+              cadenceZones={cadenceZones}
+              hrZones={hrZones}
+              activePowerZone={activePowerZone}
+              activeCadenceZone={activeCadenceZone}
+              activeHrZone={activeHrZone}
+              activeSegmentInfo={activeSegmentInfo}
+              resistanceControl={resistanceControl}
+              quadStatOrder={quadStatOrder}
+            />
+          ))}
         </div>
       </div>
     </div>

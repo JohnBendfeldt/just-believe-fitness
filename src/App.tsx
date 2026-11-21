@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bluetooth,
+  ChevronLeft,
+  ChevronRight,
   FastForward,
   Flame,
   Gauge,
+  GripVertical,
   History,
+  LayoutGrid,
   Maximize2,
   Pause,
   PictureInPicture2,
@@ -12,6 +16,7 @@ import {
   RotateCcw,
   Rows3,
   Sliders,
+  SlidersHorizontal,
   Square,
   Tv,
   Volume2,
@@ -36,7 +41,6 @@ import {
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
   evaluateRideFtpResult,
-  formatBikeGearBadge,
   formatDistanceTarget,
   formatDistanceValue,
   formatDuration,
@@ -49,6 +53,25 @@ import {
   resolveHeadlineEffortZone,
   resolveZone,
 } from './utils/zones';
+import {
+  COCKPIT_TILE_META,
+  SECONDARY_STAT_META,
+  TOPBAR_ACTION_META,
+  TRANSPORT_CONTROL_META,
+  createDefaultLayoutPrefs,
+  getFocusTileOrder,
+  getPrimaryGaugeOrder,
+  getQuadStatOrder,
+  isDefaultLayoutPrefs,
+  moveOrderItem,
+  moveOrderItemWithinSubset,
+  reorderOrderItem,
+  type CockpitTileId,
+  type LayoutPreferences,
+  type SecondaryStatId,
+  type TopbarActionId,
+  type TransportControlId,
+} from './utils/layoutPrefs';
 import {
   calculateEchelonWatts,
   suggestBikeResistance,
@@ -69,10 +92,12 @@ import {
   listSavedRides,
   loadAthleteProfile,
   loadGarminConfig,
+  loadLayoutPrefs,
   loadStravaConfig,
   loadYouTubePresets,
   saveAthleteProfile,
   saveGarminConfig,
+  saveLayoutPrefs,
   saveRideToDb,
   saveStravaConfig,
   saveYouTubeState,
@@ -92,15 +117,13 @@ import { renderTelemetryHudCanvas } from './services/pipHud';
 import { ScreenWakeManager, WorkoutAudioCue } from './services/wakeAndAudio';
 import { getBluetoothUnsupportedMessage, isIosDevice } from './utils/browserSupport';
 import { enterBrowserFullscreen, exitBrowserFullscreen } from './utils/fullscreen';
-import { ZoneMetricCard } from './components/ZoneMetricCard';
-import { ZoneSpeedometerCard } from './components/ZoneSpeedometerCard';
-import { RideStatsQuadCard } from './components/RideStatsQuadCard';
+import { CockpitTile } from './components/CockpitTile';
 import { FocusRideModal } from './components/FocusRideModal';
 import { LiveZoneGraph } from './components/LiveZoneGraph';
-import { IntervalTargetCard } from './components/IntervalTargetCard';
-import { ZoneTimeCard } from './components/ZoneDistributionList';
 import { YouTubeDeck, type YouTubeLayoutMode } from './components/YouTubeDeck';
 import { AthleteProfileModal } from './components/AthleteProfileModal';
+import { CustomizeLayoutModal } from './components/CustomizeLayoutModal';
+import type { TileArrangeBinding } from './utils/tileArrange';
 import {
   DeviceConnectionModal,
   HistoryAndStravaModal,
@@ -208,6 +231,63 @@ export function App() {
   const [ytPresets, setYtPresets] = useState(initialYt.presets);
   const [isHudPipActive, setIsHudPipActive] = useState<boolean>(false);
 
+  // Layout Personalization (Tiles, Ride Stats, Topbar Icons & Workout Controls)
+  const [layoutPrefs, setLayoutPrefs] = useState<LayoutPreferences>(() => loadLayoutPrefs());
+  const [isLayoutModalOpen, setIsLayoutModalOpen] = useState<boolean>(false);
+  const [isArrangingLayout, setIsArrangingLayout] = useState<boolean>(false);
+  const [draggedTileId, setDraggedTileId] = useState<CockpitTileId | null>(null);
+  const [dragOverTileId, setDragOverTileId] = useState<CockpitTileId | null>(null);
+  const [draggedControl, setDraggedControl] = useState<{
+    group: 'topbar' | 'transport' | 'stat';
+    id: string;
+  } | null>(null);
+  const [dragOverControl, setDragOverControl] = useState<{
+    group: 'topbar' | 'transport' | 'stat';
+    id: string;
+  } | null>(null);
+  const [viewportDims, setViewportDims] = useState<{ width: number; height: number }>(() =>
+    typeof window !== 'undefined'
+      ? { width: window.innerWidth, height: window.innerHeight }
+      : { width: 1280, height: 800 }
+  );
+
+  const handleUpdateLayoutPrefs = useCallback((next: LayoutPreferences) => {
+    setLayoutPrefs(next);
+    saveLayoutPrefs(next);
+  }, []);
+
+  const primaryGaugeOrder = useMemo(
+    () => getPrimaryGaugeOrder(layoutPrefs.tileOrder),
+    [layoutPrefs.tileOrder]
+  );
+  const focusTileOrder = useMemo(
+    () => getFocusTileOrder(layoutPrefs.tileOrder),
+    [layoutPrefs.tileOrder]
+  );
+  const quadStatOrder = useMemo(
+    () => getQuadStatOrder(layoutPrefs.secondaryStatOrder),
+    [layoutPrefs.secondaryStatOrder]
+  );
+
+  useEffect(() => {
+    if (!isArrangingLayout) return;
+    const syncViewport = () => {
+      setViewportDims({ width: window.innerWidth, height: window.innerHeight });
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLayoutModalOpen) {
+        setIsArrangingLayout(false);
+      }
+    };
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isArrangingLayout, isLayoutModalOpen]);
+
   // Modals, History, Cloud Sync, Legal/Privacy Route, Audio, Toast
   const [bleBannerDismissed, setBleBannerDismissed] = useState<boolean>(() => {
     try {
@@ -253,7 +333,9 @@ export function App() {
       uploadingRideId === null &&
       !isHistoryModalOpen &&
       !isAthleteModalOpen &&
-      !isDeviceModalOpen;
+      !isDeviceModalOpen &&
+      !isLayoutModalOpen &&
+      !isArrangingLayout;
   }, [
     rideState,
     elapsedSec,
@@ -261,6 +343,8 @@ export function App() {
     isHistoryModalOpen,
     isAthleteModalOpen,
     isDeviceModalOpen,
+    isLayoutModalOpen,
+    isArrangingLayout,
   ]);
 
   useEffect(() => {
@@ -862,6 +946,18 @@ export function App() {
         ).toUpperCase()} LEFT`
     : undefined;
 
+  const avgRideWatts = useMemo(() => {
+    if (trackPoints.length === 0) return 0;
+    return Math.round(
+      trackPoints.reduce((acc, p) => acc + p.powerWatts, 0) / trackPoints.length
+    );
+  }, [trackPoints]);
+
+  const npRideWatts = useMemo(
+    () => computeNormalizedPower(trackPoints.map((p) => p.powerWatts)),
+    [trackPoints]
+  );
+
   // Keep Picture-in-Picture Canvas continuously updated
   useEffect(() => {
     const canvas = hudCanvasRef.current;
@@ -871,14 +967,32 @@ export function App() {
       profile,
       elapsedSec,
       burnPoints,
+      distanceMeters,
+      caloriesKcal,
+      avgRideWatts,
+      npRideWatts,
       gaugeMode,
+      primaryMetricOrder: primaryGaugeOrder,
       segmentLabel: activeSegmentInfo?.segment.label,
       segmentRemainingSec: activeSegmentInfo?.distanceMode
         ? undefined
         : activeSegmentInfo?.remainingSec,
       segmentRemainingLabel: pipRemainingLabel,
     });
-  }, [telemetry, profile, elapsedSec, burnPoints, gaugeMode, activeSegmentInfo, pipRemainingLabel]);
+  }, [
+    telemetry,
+    profile,
+    elapsedSec,
+    burnPoints,
+    distanceMeters,
+    caloriesKcal,
+    avgRideWatts,
+    npRideWatts,
+    gaugeMode,
+    primaryGaugeOrder,
+    activeSegmentInfo,
+    pipRemainingLabel,
+  ]);
 
   // Launch Picture-in-Picture Floating HUD (works over YouTube App on Android/Desktop)
   const handleLaunchHudPip = useCallback(async () => {
@@ -912,7 +1026,12 @@ export function App() {
         profile: profileRef.current,
         elapsedSec,
         burnPoints,
+        distanceMeters,
+        caloriesKcal,
+        avgRideWatts,
+        npRideWatts,
         gaugeMode,
+        primaryMetricOrder: primaryGaugeOrder,
         segmentLabel: activeSegmentInfo?.segment.label,
         segmentRemainingSec: activeSegmentInfo?.distanceMode
           ? undefined
@@ -962,7 +1081,19 @@ export function App() {
           : 'Could not open system PiP window — try the built-in YouTube Split/Corner player!';
       showToast(msg);
     }
-  }, [elapsedSec, burnPoints, gaugeMode, activeSegmentInfo, pipRemainingLabel, showToast]);
+  }, [
+    elapsedSec,
+    burnPoints,
+    distanceMeters,
+    caloriesKcal,
+    avgRideWatts,
+    npRideWatts,
+    gaugeMode,
+    primaryGaugeOrder,
+    activeSegmentInfo,
+    pipRemainingLabel,
+    showToast,
+  ]);
 
   useEffect(() => {
     const video = hudVideoRef.current as
@@ -1289,26 +1420,6 @@ export function App() {
     profile
   );
 
-  const liveWkg = computeWattsPerKg(telemetry.powerWatts, profile.weightLbs);
-  const ftpPct =
-    profile.ftpWatts > 0 ? Math.round((telemetry.powerWatts / profile.ftpWatts) * 100) : 0;
-  const hrPct =
-    profile.maxHrBpm > 0 && telemetry.heartRateBpm > 0
-      ? Math.round((telemetry.heartRateBpm / profile.maxHrBpm) * 100)
-      : 0;
-
-  const avgRideWatts = useMemo(() => {
-    if (trackPoints.length === 0) return 0;
-    return Math.round(
-      trackPoints.reduce((acc, p) => acc + p.powerWatts, 0) / trackPoints.length
-    );
-  }, [trackPoints]);
-
-  const npRideWatts = useMemo(
-    () => computeNormalizedPower(trackPoints.map((p) => p.powerWatts)),
-    [trackPoints]
-  );
-
   const isAnySensorLive =
     telemetry.powerWatts > 0 || telemetry.heartRateBpm > 0 || rideState === 'running';
 
@@ -1340,11 +1451,134 @@ export function App() {
     </div>
   ) : null;
 
-  const ActiveGaugeComponent = gaugeMode === 'rings' ? ZoneSpeedometerCard : ZoneMetricCard;
+  const isShortLandscape =
+    viewportDims.height <= 540 && viewportDims.width > viewportDims.height;
+  const isPhonePortrait = viewportDims.width < 600;
+  const isStackedSplitTablet =
+    ytLayoutMode === 'split' && viewportDims.width >= 600 && viewportDims.width <= 1080;
+
+  const renderedCockpitTiles: CockpitTileId[] =
+    gaugeMode === 'bars'
+      ? primaryGaugeOrder
+      : ytLayoutMode === 'split'
+        ? focusTileOrder
+        : layoutPrefs.tileOrder;
+
+  const visibleCockpitTiles: CockpitTileId[] =
+    gaugeMode === 'bars'
+      ? primaryGaugeOrder
+      : isShortLandscape || isStackedSplitTablet
+        ? layoutPrefs.tileOrder.slice(0, 3)
+        : isPhonePortrait || ytLayoutMode === 'split'
+          ? focusTileOrder
+          : layoutPrefs.tileOrder;
+
+  const hasCockpitStats =
+    gaugeMode === 'rings' && renderedCockpitTiles.includes('stats');
+  const hasPortraitCockpitStats =
+    gaugeMode === 'rings' && renderedCockpitTiles.slice(0, 4).includes('stats');
+  const hasCockpitZones =
+    gaugeMode === 'rings' && ytLayoutMode !== 'split' && renderedCockpitTiles.includes('zones');
+
+  const makeTileArrange = (tileId: CockpitTileId): TileArrangeBinding | undefined => {
+    if (!isArrangingLayout) return undefined;
+    const visIdx = visibleCockpitTiles.indexOf(tileId);
+    return {
+      tileId,
+      label: COCKPIT_TILE_META[tileId].label,
+      canMoveEarlier: visIdx > 0,
+      canMoveLater: visIdx >= 0 && visIdx < visibleCockpitTiles.length - 1,
+      isDragging: draggedTileId === tileId,
+      isDragOver: dragOverTileId === tileId && draggedTileId !== null && draggedTileId !== tileId,
+      onMoveEarlier: () =>
+        handleUpdateLayoutPrefs({
+          ...layoutPrefs,
+          tileOrder: moveOrderItemWithinSubset(
+            layoutPrefs.tileOrder,
+            visibleCockpitTiles,
+            tileId,
+            -1
+          ),
+        }),
+      onMoveLater: () =>
+        handleUpdateLayoutPrefs({
+          ...layoutPrefs,
+          tileOrder: moveOrderItemWithinSubset(
+            layoutPrefs.tileOrder,
+            visibleCockpitTiles,
+            tileId,
+            1
+          ),
+        }),
+      onDragStart: (e) => {
+        setDraggedTileId(tileId);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', `tile:${tileId}`);
+      },
+      onDragOver: (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragOverTileId !== tileId) setDragOverTileId(tileId);
+      },
+      onDragLeave: () => {
+        if (dragOverTileId === tileId) setDragOverTileId(null);
+      },
+      onDrop: (e) => {
+        e.preventDefault();
+        const raw = e.dataTransfer.getData('text/plain');
+        const sourceId = (
+          draggedTileId ?? (raw.startsWith('tile:') ? raw.slice(5) : '')
+        ) as CockpitTileId;
+        if (sourceId && layoutPrefs.tileOrder.includes(sourceId) && sourceId !== tileId) {
+          handleUpdateLayoutPrefs({
+            ...layoutPrefs,
+            tileOrder: reorderOrderItem(layoutPrefs.tileOrder, sourceId, tileId),
+          });
+        }
+        setDraggedTileId(null);
+        setDragOverTileId(null);
+      },
+      onDragEnd: () => {
+        setDraggedTileId(null);
+        setDragOverTileId(null);
+      },
+    };
+  };
+
+  const secondaryStatContent: Record<
+    SecondaryStatId,
+    { label: string; value: string; sub: string }
+  > = {
+    speed: {
+      label: 'Virtual Speed',
+      value: `${telemetry.speedMph.toFixed(1)} mph`,
+      sub: `Aero ${formatHeightImperial(profile.heightFeet, profile.heightInches)} · ${profile.weightLbs}#`,
+    },
+    distance: {
+      label: 'Distance',
+      value: `${metersToMiles(distanceMeters).toFixed(2)} mi`,
+      sub: `${(distanceMeters / 1000).toFixed(2)} km`,
+    },
+    calories: {
+      label: 'Active Calories',
+      value: `${Math.round(caloriesKcal)} kcal`,
+      sub: 'Power & HR calibrated',
+    },
+    avgPower: {
+      label: 'Avg / NP Power',
+      value: `${avgRideWatts}W / ${npRideWatts}W`,
+      sub: `${computeWattsPerKg(avgRideWatts, profile.weightLbs).toFixed(2)} Avg W/kg`,
+    },
+    burnTime: {
+      label: 'Burn Zone Time',
+      value: formatDuration(burnZoneTotalSec),
+      sub: `${burnPoints} Burn pts earned`,
+    },
+  };
 
   return (
     <div
-      className={`app-shell mode-${gaugeMode}${ytLayoutMode === 'split' ? ' yt-split' : ''}`}
+      className={`app-shell mode-${gaugeMode}${ytLayoutMode === 'split' ? ' yt-split' : ''}${isArrangingLayout ? ' arranging-layout' : ''}${hasCockpitStats ? ' has-cockpit-stats' : ''}${hasPortraitCockpitStats ? ' has-portrait-stats' : ''}${hasCockpitZones ? ' has-cockpit-zones' : ''}`}
     >
       {!EchelonBikeConnection.isSupported() && !bleBannerDismissed && (
         <div
@@ -1392,23 +1626,35 @@ export function App() {
             width={38}
             height={38}
           />
-          <div>
+          <div className="brand-copy">
             <h1 className="brand-title">Just Believe Fitness</h1>
             <div className="brand-sub">Indoor Cycling Studio · Any Bike &amp; BLE HR</div>
           </div>
         </div>
 
-        <a
-          id="topbar-github-link"
-          href={GITHUB_REPO_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn-sm topbar-github-btn"
-          aria-label="Open source on GitHub — view, edit, or improve the code"
-          title="Open source on GitHub — view, edit, or improve the code"
-        >
-          <GitHubMarkIcon size={16} />
-        </a>
+        <div className="topbar-utility-btns">
+          <button
+            type="button"
+            id="customize-layout-btn"
+            className={`btn btn-sm topbar-icon-btn${isArrangingLayout || isLayoutModalOpen ? ' btn-primary' : ''}`}
+            onClick={() => setIsLayoutModalOpen(true)}
+            aria-label="Customize tiles and icons layout"
+            title="Customize tiles and icons layout"
+          >
+            <LayoutGrid size={16} />
+          </button>
+          <a
+            id="topbar-github-link"
+            href={GITHUB_REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-sm topbar-github-btn"
+            aria-label="Open source on GitHub — view, edit, or improve the code"
+            title="Open source on GitHub — view, edit, or improve the code"
+          >
+            <GitHubMarkIcon size={16} />
+          </a>
+        </div>
 
         {/* Athlete Quick-Input Orientation Button */}
         <button
@@ -1440,76 +1686,250 @@ export function App() {
               Update Ready · Reload
             </button>
           )}
-          <button
-            type="button"
-            id="open-sensors-btn"
-            className="btn btn-sm"
-            onClick={() => setIsDeviceModalOpen(true)}
-          >
-            <span
-              className={`status-dot ${
-                telemetry.bikeConnected && telemetry.hrConnected
-                  ? 'connected'
-                  : telemetry.bikeConnected || telemetry.hrConnected
-                    ? 'connecting'
-                    : ''
-              }`}
-            />
-            <Bluetooth size={15} />
-            {telemetry.bikeConnected
-              ? telemetry.hrConnected
-                ? `${telemetry.bikeShortLabel || 'Bike'} + HR`
-                : `${telemetry.bikeShortLabel || 'Bike'} Connected`
-              : telemetry.hrConnected
-                ? telemetry.hrName || 'HR Connected'
-                : 'Pair Sensors'}
-          </button>
-
-          <button
-            type="button"
-            id="toggle-youtube-btn"
-            className={`btn btn-sm ${ytLayoutMode !== 'closed' ? 'btn-primary' : ''}`}
-            onClick={() =>
-              setYtLayoutMode((curr) => (curr === 'closed' ? 'split' : 'closed'))
+          {layoutPrefs.topbarActionOrder.map((actionId, idx) => {
+            let btn: ReactNode;
+            if (actionId === 'sensors') {
+              btn = (
+                <button
+                  key="sensors"
+                  type="button"
+                  id="open-sensors-btn"
+                  data-action-id="sensors"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    if (!isArrangingLayout) setIsDeviceModalOpen(true);
+                  }}
+                >
+                  <span
+                    className={`status-dot ${
+                      telemetry.bikeConnected && telemetry.hrConnected
+                        ? 'connected'
+                        : telemetry.bikeConnected || telemetry.hrConnected
+                          ? 'connecting'
+                          : ''
+                    }`}
+                  />
+                  <Bluetooth size={15} />
+                  {telemetry.bikeConnected
+                    ? telemetry.hrConnected
+                      ? `${telemetry.bikeShortLabel || 'Bike'} + HR`
+                      : `${telemetry.bikeShortLabel || 'Bike'} Connected`
+                    : telemetry.hrConnected
+                      ? telemetry.hrName || 'HR Connected'
+                      : 'Pair Sensors'}
+                </button>
+              );
+            } else if (actionId === 'youtube') {
+              btn = (
+                <button
+                  key="youtube"
+                  type="button"
+                  id="toggle-youtube-btn"
+                  data-action-id="youtube"
+                  className={`btn btn-sm ${ytLayoutMode !== 'closed' ? 'btn-primary' : ''}`}
+                  onClick={() => {
+                    if (!isArrangingLayout) {
+                      setYtLayoutMode((curr) => (curr === 'closed' ? 'split' : 'closed'));
+                    }
+                  }}
+                >
+                  <Tv size={15} /> YouTube
+                </button>
+              );
+            } else if (actionId === 'pip') {
+              btn = (
+                <button
+                  key="pip"
+                  type="button"
+                  id="topbar-hud-pip-btn"
+                  data-action-id="pip"
+                  className={`btn btn-sm ${isHudPipActive ? 'btn-primary' : ''}`}
+                  onClick={() => {
+                    if (!isArrangingLayout) void handleLaunchHudPip();
+                  }}
+                  title="Pop out floating Power/Cadence/HR gauges over YouTube"
+                >
+                  <PictureInPicture2 size={15} /> HUD PiP
+                </button>
+              );
+            } else if (actionId === 'simulate') {
+              btn = (
+                <button
+                  key="simulate"
+                  type="button"
+                  id="toggle-sim-quick-btn"
+                  data-action-id="simulate"
+                  className={`btn btn-sm ${telemetry.isSimulating ? 'btn-primary' : ''}`}
+                  onClick={() => {
+                    if (!isArrangingLayout) {
+                      setTelemetry((prev) => ({ ...prev, isSimulating: !prev.isSimulating }));
+                    }
+                  }}
+                >
+                  {telemetry.isSimulating ? 'Sim Live' : 'Simulate'}
+                </button>
+              );
+            } else {
+              btn = (
+                <button
+                  key="history"
+                  type="button"
+                  id="open-history-btn"
+                  data-action-id="history"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    if (!isArrangingLayout) {
+                      setHighlightedRide(null);
+                      setIsHistoryModalOpen(true);
+                    }
+                  }}
+                >
+                  <History size={15} /> Rides &amp; Sync ({savedRides.length})
+                </button>
+              );
             }
-          >
-            <Tv size={15} /> YouTube
-          </button>
 
-          <button
-            type="button"
-            id="topbar-hud-pip-btn"
-            className={`btn btn-sm ${isHudPipActive ? 'btn-primary' : ''}`}
-            onClick={() => void handleLaunchHudPip()}
-            title="Pop out floating Power/Cadence/HR gauges over YouTube"
-          >
-            <PictureInPicture2 size={15} /> HUD PiP
-          </button>
-
-          <button
-            type="button"
-            id="toggle-sim-quick-btn"
-            className={`btn btn-sm ${telemetry.isSimulating ? 'btn-primary' : ''}`}
-            onClick={() =>
-              setTelemetry((prev) => ({ ...prev, isSimulating: !prev.isSimulating }))
+            if (!isArrangingLayout) {
+              return btn;
             }
-          >
-            {telemetry.isSimulating ? 'Sim Live' : 'Simulate'}
-          </button>
-
-          <button
-            type="button"
-            id="open-history-btn"
-            className="btn btn-sm"
-            onClick={() => {
-              setHighlightedRide(null);
-              setIsHistoryModalOpen(true);
-            }}
-          >
-            <History size={15} /> Rides &amp; Sync ({savedRides.length})
-          </button>
+            const isDragging =
+              draggedControl?.group === 'topbar' && draggedControl.id === actionId;
+            const isDragOver =
+              dragOverControl?.group === 'topbar' &&
+              dragOverControl.id === actionId &&
+              draggedControl?.id !== actionId;
+            return (
+              <div
+                key={actionId}
+                className={`arrange-control-chip${isDragging ? ' is-dragging' : ''}${isDragOver ? ' is-drag-over' : ''}`}
+                data-arrange-topbar-id={actionId}
+                draggable
+                onDragStart={(e) => {
+                  setDraggedControl({ group: 'topbar', id: actionId });
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', `topbar:${actionId}`);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dragOverControl?.group !== 'topbar' || dragOverControl.id !== actionId) {
+                    setDragOverControl({ group: 'topbar', id: actionId });
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverControl?.group === 'topbar' && dragOverControl.id === actionId) {
+                    setDragOverControl(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const raw = e.dataTransfer.getData('text/plain');
+                  const sourceId = (
+                    draggedControl?.group === 'topbar'
+                      ? draggedControl.id
+                      : raw.startsWith('topbar:')
+                        ? raw.slice(7)
+                        : ''
+                  ) as TopbarActionId;
+                  if (
+                    sourceId &&
+                    layoutPrefs.topbarActionOrder.includes(sourceId) &&
+                    sourceId !== actionId
+                  ) {
+                    handleUpdateLayoutPrefs({
+                      ...layoutPrefs,
+                      topbarActionOrder: reorderOrderItem(
+                        layoutPrefs.topbarActionOrder,
+                        sourceId,
+                        actionId
+                      ),
+                    });
+                  }
+                  setDraggedControl(null);
+                  setDragOverControl(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedControl(null);
+                  setDragOverControl(null);
+                }}
+              >
+                <button
+                  type="button"
+                  className="arrange-chip-nudge"
+                  disabled={idx === 0}
+                  onClick={() =>
+                    handleUpdateLayoutPrefs({
+                      ...layoutPrefs,
+                      topbarActionOrder: moveOrderItem(layoutPrefs.topbarActionOrder, actionId, -1),
+                    })
+                  }
+                  aria-label={`Move ${TOPBAR_ACTION_META[actionId].label} earlier`}
+                >
+                  <ChevronLeft size={13} />
+                </button>
+                <span className="arrange-chip-inner">{btn}</span>
+                <button
+                  type="button"
+                  className="arrange-chip-nudge"
+                  disabled={idx === layoutPrefs.topbarActionOrder.length - 1}
+                  onClick={() =>
+                    handleUpdateLayoutPrefs({
+                      ...layoutPrefs,
+                      topbarActionOrder: moveOrderItem(layoutPrefs.topbarActionOrder, actionId, 1),
+                    })
+                  }
+                  aria-label={`Move ${TOPBAR_ACTION_META[actionId].label} later`}
+                >
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </header>
+
+      {/* Inline Arrange Mode Banner */}
+      {isArrangingLayout && (
+        <section
+          className="arrange-mode-banner"
+          id="arrange-mode-banner"
+          role="region"
+          aria-label="Arrange layout controls"
+        >
+          <div className="arrange-banner-copy">
+            <GripVertical size={15} color="var(--accent-orange)" aria-hidden="true" />
+            <strong>ARRANGE MODE:</strong>
+            <span>Drag tiles or icons, or tap arrows to customize your screen order.</span>
+          </div>
+          <div className="arrange-banner-actions">
+            <button
+              type="button"
+              id="open-layout-panel-from-arrange-btn"
+              className="btn btn-sm"
+              onClick={() => setIsLayoutModalOpen(true)}
+            >
+              <SlidersHorizontal size={14} /> Layout Panel
+            </button>
+            <button
+              type="button"
+              id="reset-layout-arrange-btn"
+              className="btn btn-sm"
+              disabled={isDefaultLayoutPrefs(layoutPrefs)}
+              onClick={() => handleUpdateLayoutPrefs(createDefaultLayoutPrefs())}
+            >
+              <RotateCcw size={14} /> Reset
+            </button>
+            <button
+              type="button"
+              id="finish-arrange-layout-btn"
+              className="btn btn-sm btn-primary"
+              onClick={() => setIsArrangingLayout(false)}
+            >
+              Done
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* JBF Solid 5-Zone Intensity Effort Ribbon */}
       <section
@@ -1687,110 +2107,256 @@ export function App() {
         </div>
 
         <div className="transport-controls">
-          {/* Speedometer Ring Grid vs Horizontal Bars Switcher */}
-          <div className="gauge-toggle-group" role="group" aria-label="Gauge display style">
-            <button
-              type="button"
-              id="gauge-mode-rings-btn"
-              className={`gauge-toggle-btn ${gaugeMode === 'rings' ? 'active' : ''}`}
-              onClick={() => handleSelectGaugeMode('rings')}
-              title="Compact 2/3-column Speedometer Ring Grid"
-            >
-              <Gauge size={14} /> Rings
-            </button>
-            <button
-              type="button"
-              id="gauge-mode-bars-btn"
-              className={`gauge-toggle-btn ${gaugeMode === 'bars' ? 'active' : ''}`}
-              onClick={() => handleSelectGaugeMode('bars')}
-              title="Horizontal Segmented Zone Bars"
-            >
-              <Rows3 size={14} /> Bars
-            </button>
-          </div>
+          {layoutPrefs.transportControlOrder.map((controlId, idx) => {
+            let node: ReactNode;
+            if (controlId === 'gaugeMode') {
+              node = (
+                <div
+                  key="gaugeMode"
+                  className="gauge-toggle-group"
+                  data-control-id="gaugeMode"
+                  role="group"
+                  aria-label="Gauge display style"
+                >
+                  <button
+                    type="button"
+                    id="gauge-mode-rings-btn"
+                    className={`gauge-toggle-btn ${gaugeMode === 'rings' ? 'active' : ''}`}
+                    onClick={() => {
+                      if (!isArrangingLayout) handleSelectGaugeMode('rings');
+                    }}
+                    title="Compact 2/3-column Speedometer Ring Grid"
+                  >
+                    <Gauge size={14} /> Rings
+                  </button>
+                  <button
+                    type="button"
+                    id="gauge-mode-bars-btn"
+                    className={`gauge-toggle-btn ${gaugeMode === 'bars' ? 'active' : ''}`}
+                    onClick={() => {
+                      if (!isArrangingLayout) handleSelectGaugeMode('bars');
+                    }}
+                    title="Horizontal Segmented Zone Bars"
+                  >
+                    <Rows3 size={14} /> Bars
+                  </button>
+                </div>
+              );
+            } else if (controlId === 'focus') {
+              node = (
+                <button
+                  key="focus"
+                  type="button"
+                  id="open-focus-mode-btn"
+                  data-control-id="focus"
+                  className="btn btn-sm focus-launch-btn"
+                  onClick={() => {
+                    if (!isArrangingLayout) handleOpenFocusMode();
+                  }}
+                  title="Enter Full-Screen Focused 4-Grid Cockpit with Workout Instructions & Play/Pause"
+                >
+                  <Maximize2 size={14} /> Focus
+                </button>
+              );
+            } else if (controlId === 'rideAction') {
+              node = (
+                <div key="rideAction" className="transport-ride-group" data-control-id="rideAction">
+                  {rideState !== 'running' ? (
+                    <button
+                      type="button"
+                      id="start-ride-btn"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        if (!isArrangingLayout) handleStartOrResume();
+                      }}
+                    >
+                      <Play size={16} /> {rideState === 'paused' ? 'Resume' : 'Start'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      id="pause-ride-btn"
+                      className="btn"
+                      onClick={() => {
+                        if (!isArrangingLayout) setRideState('paused');
+                      }}
+                    >
+                      <Pause size={16} /> Pause
+                    </button>
+                  )}
 
-          <button
-            type="button"
-            id="open-focus-mode-btn"
-            className="btn btn-sm focus-launch-btn"
-            onClick={handleOpenFocusMode}
-            title="Enter Full-Screen Focused 4-Grid Cockpit with Workout Instructions & Play/Pause"
-          >
-            <Maximize2 size={14} /> Focus
-          </button>
+                  {activeSegmentInfo &&
+                    !activeSegmentInfo.distanceMode &&
+                    activeSegmentInfo.nextSegment &&
+                    rideState !== 'idle' && (
+                      <button
+                        type="button"
+                        id="skip-segment-btn"
+                        className="btn btn-sm"
+                        onClick={() => {
+                          if (!isArrangingLayout) handleSkipSegment();
+                        }}
+                        title="Skip to next interval block"
+                      >
+                        <FastForward size={15} /> Next
+                      </button>
+                    )}
 
-          {rideState !== 'running' ? (
-            <button
-              type="button"
-              id="start-ride-btn"
-              className="btn btn-primary"
-              onClick={handleStartOrResume}
-            >
-              <Play size={16} /> {rideState === 'paused' ? 'Resume' : 'Start'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              id="pause-ride-btn"
-              className="btn"
-              onClick={() => setRideState('paused')}
-            >
-              <Pause size={16} /> Pause
-            </button>
-          )}
-
-          {activeSegmentInfo &&
-            !activeSegmentInfo.distanceMode &&
-            activeSegmentInfo.nextSegment &&
-            rideState !== 'idle' && (
-              <button
-                type="button"
-                id="skip-segment-btn"
-                className="btn btn-sm"
-                onClick={handleSkipSegment}
-              title="Skip to next interval block"
-            >
-              <FastForward size={15} /> Next
-            </button>
-          )}
-
-          {(rideState !== 'idle' || elapsedSec > 0) && (
-            <>
-              <button
-                type="button"
-                id="finish-save-ride-btn"
-                className="btn btn-strava"
-                onClick={() => requestStopWorkoutConfirmation('save')}
-              >
-                <Square size={15} /> Stop &amp; Save
-              </button>
-              <button
-                type="button"
-                id="reset-ride-btn"
-                className="btn btn-sm"
-                onClick={() => requestStopWorkoutConfirmation('discard')}
-                title="Discard & reset timer"
-              >
-                <RotateCcw size={15} />
-              </button>
-            </>
-          )}
-
-          <button
-            type="button"
-            id="toggle-audio-cues-btn"
-            className={`btn btn-sm ${audioEnabled ? 'btn-primary' : ''}`}
-            onClick={handleToggleAudio}
-            aria-pressed={audioEnabled}
-            title={
-              audioEnabled
-                ? 'Coach audio ON (mixes over music) — tap to mute'
-                : 'Coach audio OFF (keeps music uninterrupted) — tap to opt in'
+                  {(rideState !== 'idle' || elapsedSec > 0) && (
+                    <>
+                      <button
+                        type="button"
+                        id="finish-save-ride-btn"
+                        className="btn btn-strava"
+                        onClick={() => {
+                          if (!isArrangingLayout) requestStopWorkoutConfirmation('save');
+                        }}
+                      >
+                        <Square size={15} /> Stop &amp; Save
+                      </button>
+                      <button
+                        type="button"
+                        id="reset-ride-btn"
+                        className="btn btn-sm"
+                        onClick={() => {
+                          if (!isArrangingLayout) requestStopWorkoutConfirmation('discard');
+                        }}
+                        title="Discard & reset timer"
+                      >
+                        <RotateCcw size={15} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            } else {
+              node = (
+                <button
+                  key="audio"
+                  type="button"
+                  id="toggle-audio-cues-btn"
+                  data-control-id="audio"
+                  className={`btn btn-sm ${audioEnabled ? 'btn-primary' : ''}`}
+                  onClick={() => {
+                    if (!isArrangingLayout) handleToggleAudio();
+                  }}
+                  aria-pressed={audioEnabled}
+                  title={
+                    audioEnabled
+                      ? 'Coach audio ON (mixes over music) — tap to mute'
+                      : 'Coach audio OFF (keeps music uninterrupted) — tap to opt in'
+                  }
+                >
+                  {audioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                  <span>{audioEnabled ? 'Coach On' : 'Audio Off'}</span>
+                </button>
+              );
             }
-          >
-            {audioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-            <span>{audioEnabled ? 'Coach On' : 'Audio Off'}</span>
-          </button>
+
+            if (!isArrangingLayout) {
+              return node;
+            }
+            const isDragging =
+              draggedControl?.group === 'transport' && draggedControl.id === controlId;
+            const isDragOver =
+              dragOverControl?.group === 'transport' &&
+              dragOverControl.id === controlId &&
+              draggedControl?.id !== controlId;
+            return (
+              <div
+                key={controlId}
+                className={`arrange-control-chip${isDragging ? ' is-dragging' : ''}${isDragOver ? ' is-drag-over' : ''}`}
+                data-arrange-control-id={controlId}
+                draggable
+                onDragStart={(e) => {
+                  setDraggedControl({ group: 'transport', id: controlId });
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', `transport:${controlId}`);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dragOverControl?.group !== 'transport' || dragOverControl.id !== controlId) {
+                    setDragOverControl({ group: 'transport', id: controlId });
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverControl?.group === 'transport' && dragOverControl.id === controlId) {
+                    setDragOverControl(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const raw = e.dataTransfer.getData('text/plain');
+                  const sourceId = (
+                    draggedControl?.group === 'transport'
+                      ? draggedControl.id
+                      : raw.startsWith('transport:')
+                        ? raw.slice(10)
+                        : ''
+                  ) as TransportControlId;
+                  if (
+                    sourceId &&
+                    layoutPrefs.transportControlOrder.includes(sourceId) &&
+                    sourceId !== controlId
+                  ) {
+                    handleUpdateLayoutPrefs({
+                      ...layoutPrefs,
+                      transportControlOrder: reorderOrderItem(
+                        layoutPrefs.transportControlOrder,
+                        sourceId,
+                        controlId
+                      ),
+                    });
+                  }
+                  setDraggedControl(null);
+                  setDragOverControl(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedControl(null);
+                  setDragOverControl(null);
+                }}
+              >
+                <button
+                  type="button"
+                  className="arrange-chip-nudge"
+                  disabled={idx === 0}
+                  onClick={() =>
+                    handleUpdateLayoutPrefs({
+                      ...layoutPrefs,
+                      transportControlOrder: moveOrderItem(
+                        layoutPrefs.transportControlOrder,
+                        controlId,
+                        -1
+                      ),
+                    })
+                  }
+                  aria-label={`Move ${TRANSPORT_CONTROL_META[controlId].label} earlier`}
+                >
+                  <ChevronLeft size={13} />
+                </button>
+                <span className="arrange-chip-inner">{node}</span>
+                <button
+                  type="button"
+                  className="arrange-chip-nudge"
+                  disabled={idx === layoutPrefs.transportControlOrder.length - 1}
+                  onClick={() =>
+                    handleUpdateLayoutPrefs({
+                      ...layoutPrefs,
+                      transportControlOrder: moveOrderItem(
+                        layoutPrefs.transportControlOrder,
+                        controlId,
+                        1
+                      ),
+                    })
+                  }
+                  aria-label={`Move ${TRANSPORT_CONTROL_META[controlId].label} later`}
+                >
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -1886,122 +2452,187 @@ export function App() {
           />
         )}
 
-        {/* Primary Color-Coded Displays: Power, Cadence + Bike Gear, Heart Rate (+ 4th All-Stats Tile in 2-col Portrait/Split) */}
-        <div className={`metrics-grid ${gaugeMode === 'rings' ? 'rings-mode' : 'bars-mode'}`}>
-          <ActiveGaugeComponent
-            id="power-metric-card"
-            title="Power"
-            valueDisplay={`${Math.round(telemetry.powerWatts)}`}
-            unit="Watts"
-            primaryBadge={`${ftpPct}% FTP · ${liveWkg.toFixed(2)} W/kg`}
-            secondarySub={`FTP ${profile.ftpWatts}W (${profile.weightLbs}#)`}
-            zones={powerZones}
-            numericValue={telemetry.powerWatts}
-            activeZone={activePowerZone}
-            thresholdUnitSuffix="W"
-          />
-
-          <ActiveGaugeComponent
-            id="cadence-metric-card"
-            title="Cadence"
-            valueDisplay={`${Math.round(telemetry.cadenceRpm)}`}
-            unit="RPM"
-            primaryBadge={formatBikeGearBadge(telemetry)}
-            secondarySub={
-              activeSegmentInfo
-                ? `Target ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]}`
-                : 'Spin Rhythm'
-            }
-            zones={cadenceZones}
-            numericValue={telemetry.cadenceRpm}
-            activeZone={activeCadenceZone}
-            extraControl={resistanceControl}
-          />
-
-          <ActiveGaugeComponent
-            id="hr-metric-card"
-            title="Heart Rate"
-            valueDisplay={
-              telemetry.heartRateBpm > 0 ? `${Math.round(telemetry.heartRateBpm)}` : '--'
-            }
-            unit="BPM"
-            primaryBadge={
-              telemetry.heartRateBpm > 0
-                ? `${hrPct}% MAX HR`
-                : telemetry.hrName || 'BLE HR Ready'
-            }
-            secondarySub={`Max ${profile.maxHrBpm} · Burn ≥ ${hrZones[3].minValue}`}
-            zones={hrZones}
-            numericValue={telemetry.heartRateBpm}
-            activeZone={activeHrZone}
-          />
-
-          {/* In 2-column layouts (Phone Portrait & Split YouTube), Cell #4 packs Speed, Distance, Calories, Avg W, & Burn Time right beside Heart Rate so ALL stats sit in one 2x2 view */}
-          {gaugeMode === 'rings' && (
-            <RideStatsQuadCard
-              className="compact-telemetry-quad"
-              speedMph={telemetry.speedMph}
-              distanceMeters={distanceMeters}
-              caloriesKcal={caloriesKcal}
-              avgRideWatts={avgRideWatts}
-              npRideWatts={npRideWatts}
-              burnPoints={burnPoints}
-              burnZoneTotalSec={burnZoneTotalSec}
-            />
-          )}
-
-          {/* Cells #5 & #6 fill the second row beside Ride Stats (hidden in Split YouTube / compact layouts via CSS) */}
-          {gaugeMode === 'rings' && ytLayoutMode !== 'split' && (
-            <>
-              <IntervalTargetCard className="cockpit-extra-card" info={activeSegmentInfo} />
-              <ZoneTimeCard
-                className="cockpit-extra-card"
+        {/* Primary Color-Coded Displays in User's Chosen Tiles & Order */}
+        <div
+          className={`metrics-grid ${gaugeMode === 'rings' ? 'rings-mode' : 'bars-mode'}`}
+          data-tile-count={renderedCockpitTiles.length}
+        >
+          {renderedCockpitTiles.map((tileId, idx) => {
+            const slotClassName =
+              gaugeMode === 'rings'
+                ? idx >= 4
+                  ? 'cockpit-extra-card'
+                  : idx === 3
+                    ? 'cockpit-slot-4'
+                    : ''
+                : '';
+            return (
+              <CockpitTile
+                key={tileId}
+                tileId={tileId}
+                gaugeStyle={gaugeMode}
+                context="main"
+                slotClassName={slotClassName}
+                telemetry={telemetry}
+                profile={profile}
+                elapsedSec={elapsedSec}
+                distanceMeters={distanceMeters}
+                caloriesKcal={caloriesKcal}
+                avgRideWatts={avgRideWatts}
+                npRideWatts={npRideWatts}
+                burnPoints={burnPoints}
+                burnZoneTotalSec={burnZoneTotalSec}
                 hasHrStream={hasHrStream}
-                zoneSeconds={hasHrStream ? hrZoneSeconds : powerZoneSeconds}
+                hrZoneSeconds={hrZoneSeconds}
+                powerZoneSeconds={powerZoneSeconds}
+                powerZones={powerZones}
+                cadenceZones={cadenceZones}
+                hrZones={hrZones}
+                activePowerZone={activePowerZone}
+                activeCadenceZone={activeCadenceZone}
+                activeHrZone={activeHrZone}
+                activeSegmentInfo={activeSegmentInfo}
+                resistanceControl={resistanceControl}
+                quadStatOrder={quadStatOrder}
+                arrange={makeTileArrange(tileId)}
               />
-            </>
-          )}
+            );
+          })}
         </div>
       </main>
 
       {/* Full Secondary Ride Telemetry Strip (Shown in 3-Column Landscape/Tablet/Desktop & Bars Mode) */}
       <section className={`secondary-strip tabular ${gaugeMode === 'rings' ? 'rings-secondary' : ''}`}>
-        <div className="stat-tile">
-          <span className="stat-tile-label">Virtual Speed</span>
-          <span className="stat-tile-val">{telemetry.speedMph.toFixed(1)} mph</span>
-          <span className="stat-tile-sub">
-            Aero {formatHeightImperial(profile.heightFeet, profile.heightInches)} ·{' '}
-            {profile.weightLbs}#
-          </span>
-        </div>
-
-        <div className="stat-tile">
-          <span className="stat-tile-label">Distance</span>
-          <span className="stat-tile-val">{metersToMiles(distanceMeters).toFixed(2)} mi</span>
-          <span className="stat-tile-sub">{(distanceMeters / 1000).toFixed(2)} km</span>
-        </div>
-
-        <div className="stat-tile">
-          <span className="stat-tile-label">Active Calories</span>
-          <span className="stat-tile-val">{Math.round(caloriesKcal)} kcal</span>
-          <span className="stat-tile-sub">Power &amp; HR calibrated</span>
-        </div>
-
-        <div className="stat-tile">
-          <span className="stat-tile-label">Avg / NP Power</span>
-          <span className="stat-tile-val">
-            {avgRideWatts}W / {npRideWatts}W
-          </span>
-          <span className="stat-tile-sub">
-            {computeWattsPerKg(avgRideWatts, profile.weightLbs).toFixed(2)} Avg W/kg
-          </span>
-        </div>
-
-        <div className="stat-tile">
-          <span className="stat-tile-label">Burn Zone Time</span>
-          <span className="stat-tile-val">{formatDuration(burnZoneTotalSec)}</span>
-          <span className="stat-tile-sub">{burnPoints} Burn pts earned</span>
-        </div>
+        {layoutPrefs.secondaryStatOrder.map((statId, idx) => {
+          const item = secondaryStatContent[statId];
+          const isDragging = draggedControl?.group === 'stat' && draggedControl.id === statId;
+          const isDragOver =
+            dragOverControl?.group === 'stat' &&
+            dragOverControl.id === statId &&
+            draggedControl?.id !== statId;
+          return (
+            <div
+              key={statId}
+              className={`stat-tile${isArrangingLayout ? ' stat-tile-arranging' : ''}${isDragging ? ' is-dragging' : ''}${isDragOver ? ' is-drag-over' : ''}`}
+              data-stat-id={statId}
+              draggable={isArrangingLayout || undefined}
+              onDragStart={
+                isArrangingLayout
+                  ? (e) => {
+                      setDraggedControl({ group: 'stat', id: statId });
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', `stat:${statId}`);
+                    }
+                  : undefined
+              }
+              onDragOver={
+                isArrangingLayout
+                  ? (e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (dragOverControl?.group !== 'stat' || dragOverControl.id !== statId) {
+                        setDragOverControl({ group: 'stat', id: statId });
+                      }
+                    }
+                  : undefined
+              }
+              onDragLeave={
+                isArrangingLayout
+                  ? () => {
+                      if (dragOverControl?.group === 'stat' && dragOverControl.id === statId) {
+                        setDragOverControl(null);
+                      }
+                    }
+                  : undefined
+              }
+              onDrop={
+                isArrangingLayout
+                  ? (e) => {
+                      e.preventDefault();
+                      const raw = e.dataTransfer.getData('text/plain');
+                      const sourceId = (
+                        draggedControl?.group === 'stat'
+                          ? draggedControl.id
+                          : raw.startsWith('stat:')
+                            ? raw.slice(5)
+                            : ''
+                      ) as SecondaryStatId;
+                      if (
+                        sourceId &&
+                        layoutPrefs.secondaryStatOrder.includes(sourceId) &&
+                        sourceId !== statId
+                      ) {
+                        handleUpdateLayoutPrefs({
+                          ...layoutPrefs,
+                          secondaryStatOrder: reorderOrderItem(
+                            layoutPrefs.secondaryStatOrder,
+                            sourceId,
+                            statId
+                          ),
+                        });
+                      }
+                      setDraggedControl(null);
+                      setDragOverControl(null);
+                    }
+                  : undefined
+              }
+              onDragEnd={
+                isArrangingLayout
+                  ? () => {
+                      setDraggedControl(null);
+                      setDragOverControl(null);
+                    }
+                  : undefined
+              }
+            >
+              <div className="stat-tile-head">
+                <span className="stat-tile-label">{item.label}</span>
+                {isArrangingLayout && (
+                  <span className="stat-tile-arrows">
+                    <button
+                      type="button"
+                      className="tile-nudge-btn"
+                      disabled={idx === 0}
+                      onClick={() =>
+                        handleUpdateLayoutPrefs({
+                          ...layoutPrefs,
+                          secondaryStatOrder: moveOrderItem(
+                            layoutPrefs.secondaryStatOrder,
+                            statId,
+                            -1
+                          ),
+                        })
+                      }
+                      aria-label={`Move ${SECONDARY_STAT_META[statId].label} earlier`}
+                    >
+                      <ChevronLeft size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="tile-nudge-btn"
+                      disabled={idx === layoutPrefs.secondaryStatOrder.length - 1}
+                      onClick={() =>
+                        handleUpdateLayoutPrefs({
+                          ...layoutPrefs,
+                          secondaryStatOrder: moveOrderItem(
+                            layoutPrefs.secondaryStatOrder,
+                            statId,
+                            1
+                          ),
+                        })
+                      }
+                      aria-label={`Move ${SECONDARY_STAT_META[statId].label} later`}
+                    >
+                      <ChevronRight size={13} />
+                    </button>
+                  </span>
+                )}
+              </div>
+              <span className="stat-tile-val">{item.value}</span>
+              <span className="stat-tile-sub">{item.sub}</span>
+            </div>
+          );
+        })}
       </section>
 
       {/* Live Garmin-Style Color-Coded Timeline Graph + 5-Zone Distribution */}
@@ -2137,6 +2768,27 @@ export function App() {
         onSkipSegment={handleSkipSegment}
         onFinishAndSave={() => requestStopWorkoutConfirmation('save')}
         onResetWorkout={() => requestStopWorkoutConfirmation('discard')}
+        hasHrStream={hasHrStream}
+        hrZoneSeconds={hrZoneSeconds}
+        powerZoneSeconds={powerZoneSeconds}
+        tileOrder={focusTileOrder}
+        quadStatOrder={quadStatOrder}
+        onOpenLayoutCustomizer={() => setIsLayoutModalOpen(true)}
+      />
+
+      <CustomizeLayoutModal
+        isOpen={isLayoutModalOpen}
+        prefs={layoutPrefs}
+        onChangePrefs={handleUpdateLayoutPrefs}
+        onStartInlineArrange={
+          isFocusModalOpen
+            ? undefined
+            : () => {
+                setIsLayoutModalOpen(false);
+                setIsArrangingLayout(true);
+              }
+        }
+        onClose={() => setIsLayoutModalOpen(false)}
       />
 
       <AthleteProfileModal

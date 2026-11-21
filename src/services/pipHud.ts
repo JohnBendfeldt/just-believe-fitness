@@ -1,12 +1,17 @@
 import type { AthleteProfile, LiveTelemetry, ZoneDefinition } from '../types/fitness';
+import type { GaugeTileId } from '../utils/layoutPrefs';
 import {
   computeSegmentedGaugeProgress,
   computeWattsPerKg,
   formatBikeGearBadge,
   formatDuration,
   getCadenceZones,
+  getCalorieZones,
+  getDistanceZones,
   getHrZones,
   getPowerZones,
+  getSpeedZones,
+  metersToMiles,
   resolveHeadlineEffortZone,
   resolveZone,
 } from '../utils/zones';
@@ -16,7 +21,12 @@ export interface HudRenderSnapshot {
   profile: AthleteProfile;
   elapsedSec: number;
   burnPoints: number;
+  distanceMeters?: number;
+  caloriesKcal?: number;
+  avgRideWatts?: number;
+  npRideWatts?: number;
   gaugeMode?: 'rings' | 'bars';
+  primaryMetricOrder?: GaugeTileId[];
   segmentLabel?: string;
   segmentRemainingSec?: number;
   segmentRemainingLabel?: string;
@@ -153,7 +163,12 @@ export function renderTelemetryHudCanvas(
     profile,
     elapsedSec,
     burnPoints,
+    distanceMeters = telemetry.distanceMeters,
+    caloriesKcal = 0,
+    avgRideWatts = 0,
+    npRideWatts = 0,
     gaugeMode = 'rings',
+    primaryMetricOrder = ['power', 'cadence', 'hr'],
     segmentLabel,
     segmentRemainingSec,
     segmentRemainingLabel,
@@ -162,10 +177,18 @@ export function renderTelemetryHudCanvas(
   const hrZones = getHrZones(profile.maxHrBpm);
   const powerZones = getPowerZones(profile.ftpWatts);
   const cadenceZones = getCadenceZones();
+  const speedZones = getSpeedZones();
+  const distanceZones = getDistanceZones();
+  const calorieZones = getCalorieZones();
 
   const activeHr = resolveZone(telemetry.heartRateBpm, hrZones);
   const activePower = resolveZone(telemetry.powerWatts, powerZones);
   const activeCadence = resolveZone(telemetry.cadenceRpm, cadenceZones);
+  const activeSpeed = resolveZone(telemetry.speedMph, speedZones);
+  const distanceMiles = metersToMiles(distanceMeters);
+  const activeDistance = resolveZone(distanceMiles, distanceZones);
+  const activeCalories = resolveZone(caloriesKcal, calorieZones);
+  const activeAvgPower = resolveZone(avgRideWatts, powerZones);
   const { zoneDef: headline } = resolveHeadlineEffortZone(
     telemetry.heartRateBpm,
     telemetry.powerWatts,
@@ -215,8 +238,20 @@ export function renderTelemetryHudCanvas(
       ? Math.round((telemetry.heartRateBpm / profile.maxHrBpm) * 100)
       : 0;
 
-  const cards = [
+  const cardById: Record<
+    GaugeTileId,
     {
+      label: string;
+      value: string;
+      unit: string;
+      sub: string;
+      zones: ZoneDefinition[];
+      active: ZoneDefinition;
+      isLive: boolean;
+      progress: number;
+    }
+  > = {
+    power: {
       label: 'POWER',
       value: `${Math.round(telemetry.powerWatts)}`,
       unit: 'WATTS',
@@ -226,7 +261,7 @@ export function renderTelemetryHudCanvas(
       isLive: telemetry.powerWatts > 0,
       progress: computeSegmentedGaugeProgress(telemetry.powerWatts, powerZones),
     },
-    {
+    cadence: {
       label: 'CADENCE',
       value: `${Math.round(telemetry.cadenceRpm)}`,
       unit: 'RPM',
@@ -236,7 +271,7 @@ export function renderTelemetryHudCanvas(
       isLive: telemetry.cadenceRpm > 0,
       progress: computeSegmentedGaugeProgress(telemetry.cadenceRpm, cadenceZones),
     },
-    {
+    hr: {
       label: 'HEART RATE',
       value: telemetry.heartRateBpm > 0 ? `${Math.round(telemetry.heartRateBpm)}` : '--',
       unit: 'BPM',
@@ -251,7 +286,62 @@ export function renderTelemetryHudCanvas(
       isLive: telemetry.heartRateBpm > 0,
       progress: computeSegmentedGaugeProgress(telemetry.heartRateBpm, hrZones),
     },
-  ];
+    speed: {
+      label: 'SPEED',
+      value: telemetry.speedMph.toFixed(1),
+      unit: 'MPH',
+      sub: `${(telemetry.speedMph * 1.60934).toFixed(1)} km/h`,
+      zones: speedZones,
+      active: activeSpeed,
+      isLive: telemetry.speedMph > 0,
+      progress: computeSegmentedGaugeProgress(telemetry.speedMph, speedZones),
+    },
+    distance: {
+      label: 'DISTANCE',
+      value: distanceMiles.toFixed(2),
+      unit: 'MI',
+      sub: `${(distanceMeters / 1000).toFixed(2)} km`,
+      zones: distanceZones,
+      active: activeDistance,
+      isLive: distanceMeters > 0,
+      progress: computeSegmentedGaugeProgress(distanceMiles, distanceZones),
+    },
+    calories: {
+      label: 'CALORIES',
+      value: `${Math.round(caloriesKcal)}`,
+      unit: 'KCAL',
+      sub:
+        elapsedSec >= 10
+          ? `${Math.round((caloriesKcal / elapsedSec) * 3600)} kcal/hr`
+          : 'ACTIVE BURN',
+      zones: calorieZones,
+      active: activeCalories,
+      isLive: caloriesKcal > 0,
+      progress: computeSegmentedGaugeProgress(caloriesKcal, calorieZones),
+    },
+    avgPower: {
+      label: 'AVG POWER',
+      value: `${avgRideWatts}`,
+      unit: 'AVG W',
+      sub: `NP ${npRideWatts}W · ${computeWattsPerKg(avgRideWatts, profile.weightLbs).toFixed(2)} W/kg`,
+      zones: powerZones,
+      active: activeAvgPower,
+      isLive: avgRideWatts > 0,
+      progress: computeSegmentedGaugeProgress(avgRideWatts, powerZones),
+    },
+  };
+
+  const resolvedOrder: GaugeTileId[] = [];
+  for (const id of primaryMetricOrder) {
+    if (id in cardById && !resolvedOrder.includes(id) && resolvedOrder.length < 3) {
+      resolvedOrder.push(id);
+    }
+  }
+  for (const fallback of ['power', 'cadence', 'hr'] as const) {
+    if (resolvedOrder.length >= 3) break;
+    if (!resolvedOrder.includes(fallback)) resolvedOrder.push(fallback);
+  }
+  const cards = resolvedOrder.map((id) => cardById[id]);
 
   cards.forEach((c, idx) => {
     const cx = pad + idx * (cardW + gap);

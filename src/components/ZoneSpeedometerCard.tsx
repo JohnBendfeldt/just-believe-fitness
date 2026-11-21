@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react';
 import type { ZoneDefinition } from '../types/fitness';
 import { computeSegmentedGaugeProgress } from '../utils/zones';
+import { TileArrangeArrows, TileArrangeGrip } from './TileReorderControls';
+import { getTileArrangeSectionProps, type TileArrangeBinding } from '../utils/tileArrange';
 
 interface ZoneSpeedometerCardProps {
   id: string;
+  tileId?: string;
+  className?: string;
   title: string;
   valueDisplay: string;
   unit: string;
@@ -14,6 +18,7 @@ interface ZoneSpeedometerCardProps {
   activeZone: ZoneDefinition;
   thresholdUnitSuffix?: string;
   extraControl?: ReactNode;
+  arrange?: TileArrangeBinding;
 }
 
 const CX = 110;
@@ -41,6 +46,8 @@ function describeArc(cx: number, cy: number, r: number, startDeg: number, endDeg
 
 export function ZoneSpeedometerCard({
   id,
+  tileId,
+  className = '',
   title,
   valueDisplay,
   unit,
@@ -51,6 +58,7 @@ export function ZoneSpeedometerCard({
   activeZone,
   thresholdUnitSuffix = '',
   extraControl,
+  arrange,
 }: ZoneSpeedometerCardProps) {
   const isLive = numericValue > 0;
   const progressPct = computeSegmentedGaugeProgress(numericValue, zones);
@@ -60,7 +68,13 @@ export function ZoneSpeedometerCard({
   const needleDot = polarToCartesian(CX, CY, RADIUS, needleAngleDeg);
 
   return (
-    <section className="metric-card dial-card" id={id} aria-label={`${title} speedometer`}>
+    <section
+      className={`metric-card dial-card ${className}`.trim()}
+      id={id}
+      data-tile-id={tileId}
+      aria-label={`${title} speedometer`}
+      {...getTileArrangeSectionProps(arrange)}
+    >
       <header
         className="metric-zone-header dial-zone-header"
         style={{
@@ -68,10 +82,17 @@ export function ZoneSpeedometerCard({
           color: isLive ? activeZone.textOnFill : '#CBD5E1',
         }}
       >
-        <span className="dial-header-title">{title}</span>
-        <span className="dial-header-zone">
-          {isLive ? `Z${activeZone.zone} · ${activeZone.key.toUpperCase()}` : 'READY'}
+        <span className="dial-header-title">
+          {arrange && <TileArrangeGrip />}
+          {title}
         </span>
+        {arrange ? (
+          <TileArrangeArrows arrange={arrange} />
+        ) : (
+          <span className="dial-header-zone">
+            {isLive ? `Z${activeZone.zone} · ${activeZone.key.toUpperCase()}` : 'READY'}
+          </span>
+        )}
       </header>
 
       <div className="dial-body">
@@ -164,7 +185,10 @@ export function ZoneSpeedometerCard({
           </svg>
 
           <div className="dial-center-overlay">
-            <span className="dial-value tabular" id={`${id}-value`}>
+            <span
+              className={`dial-value tabular${valueDisplay.length >= 4 ? ' dial-value-compact' : ''}`}
+              id={`${id}-value`}
+            >
               {valueDisplay}
             </span>
             <span className="dial-unit">{unit}</span>

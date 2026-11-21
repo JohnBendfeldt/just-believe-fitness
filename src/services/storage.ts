@@ -1,10 +1,16 @@
 import type { AthleteProfile, GarminConfig, SavedRide, StravaConfig } from '../types/fitness';
+import {
+  createDefaultLayoutPrefs,
+  sanitizeLayoutPrefs,
+  type LayoutPreferences,
+} from '../utils/layoutPrefs';
 import { DEFAULT_ATHLETE_PROFILE } from '../utils/zones';
 
 const ATHLETE_STORAGE_KEY = 'jb_fitness_athlete_v1';
 const STRAVA_STORAGE_KEY = 'jb_fitness_strava_v1';
 const GARMIN_STORAGE_KEY = 'jbf_garmin_connect_v1';
 const YOUTUBE_STORAGE_KEY = 'jb_fitness_youtube_v1';
+export const LAYOUT_PREFS_STORAGE_KEY = 'jbf_layout_prefs_v1';
 
 const DB_NAME = 'just_believe_fitness_db';
 const DB_VERSION = 1;
@@ -123,6 +129,24 @@ export function loadYouTubePresets(): { lastUrl: string; presets: YouTubePreset[
 
 export function saveYouTubeState(lastUrl: string, presets: YouTubePreset[]): void {
   localStorage.setItem(YOUTUBE_STORAGE_KEY, JSON.stringify({ lastUrl, presets }));
+}
+
+export function loadLayoutPrefs(): LayoutPreferences {
+  try {
+    const raw = localStorage.getItem(LAYOUT_PREFS_STORAGE_KEY);
+    if (!raw) return createDefaultLayoutPrefs();
+    return sanitizeLayoutPrefs(JSON.parse(raw));
+  } catch {
+    return createDefaultLayoutPrefs();
+  }
+}
+
+export function saveLayoutPrefs(prefs: LayoutPreferences): void {
+  try {
+    localStorage.setItem(LAYOUT_PREFS_STORAGE_KEY, JSON.stringify(sanitizeLayoutPrefs(prefs)));
+  } catch {
+    // Ignore storage quota errors
+  }
 }
 
 function openDatabase(): Promise<IDBDatabase> {
