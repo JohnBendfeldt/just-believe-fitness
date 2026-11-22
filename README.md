@@ -4,7 +4,7 @@
 
 A **100% local-first, privacy-first** 5-zone indoor cycling studio that connects **directly** over Bluetooth to **any Echelon stationary bike**, **standard FTMS smart bikes & trainers**, **Bluetooth power pedals**, or **BLE cadence sensors**, plus **any Bluetooth heart rate monitor** — with **zero accounts, zero paywalls, and zero middleman bridge apps**.
 
-> **A quick wink before you click:** Yes, the internet is drowning in vibe-coded apps right now that either ask for your credit card on screen two or turn out to be a glossy landing page with a "Join the Waitlist" button. **This isn't that.** Open [jbfit.studio](https://jbfit.studio), pair your devices, drop in your stats, and ride. (And yes, AI helped build it — browse the commit history and you'll see we definitely didn't one-shot this.)
+> **A quick wink before you click:** Yes, the internet is drowning in vibe-coded apps right now that either ask for your credit card on screen two or turn out to be a glossy landing page with a "Join the Waitlist" button. **This isn't that.** Open [jbfit.studio](https://jbfit.studio), pair your devices, drop in your stats, and ride. (And yes, it was built using **Gemini** and **Antigravity** — browse the commit history and you'll see we definitely didn't one-shot this.)
 
 You don't have to download anything to ride. If you *do* want a full-screen app icon on your phone, tablet, or desktop, you can install it straight from Chrome/Edge (**Install app** / **Add to Home Screen**) — unlike multi-gigabyte 3D cycling apps, **it's tiny** (a lightweight React/Vite PWA with a zero-trap network-only service worker, and optional voice coaching clips fetched only if you turn them on).
 
