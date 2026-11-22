@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:visual": "node scripts/visual-layout-test.mjs",
     "verify": "npm test && npm run lint && npm run build && npm run test:visual",
+    "verify:deploy": "npm test && npm run lint && npm run build",
     "preview": "vite preview",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
