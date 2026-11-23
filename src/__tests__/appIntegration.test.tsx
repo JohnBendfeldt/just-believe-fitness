@@ -474,6 +474,7 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
 
     await waitFor(() => {
       const chip = document.getElementById('athlete-stats-chip');
+      expect(chip?.textContent).toContain("5'10\"");
       expect(chip?.textContent).toContain('174#');
       expect(chip?.textContent).toContain('235W FTP');
       expect(chip?.textContent).toContain('189 HR');

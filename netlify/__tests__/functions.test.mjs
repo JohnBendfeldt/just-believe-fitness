@@ -1,3 +1,4 @@
+import { deflateRawSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockState = {
@@ -283,28 +284,28 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
+      if (url.includes('/weight-service/weight/range/') || url.includes('/fitnessage-service/')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.includes('/activitylist-service/activities/search/activities')) {
         return new Response(
           JSON.stringify([
             {
               activityId: 55443322,
               activityName: 'Indoor Interval Spin',
-              activityTypeDTO: { typeKey: 'indoor_cycling' },
+              activityType: { typeKey: 'indoor_cycling' },
               startTimeLocal: '2026-11-15 18:10:00',
               duration: 1800,
               distance: 16093.4,
               calories: 410,
-              averagePower: 205,
-              normalizedPower: 218,
+              avgPower: 205,
+              normPower: 218,
               averageHR: 152,
               maxHR: 179,
             },
           ]),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
-      }
-      if (url.includes('/user-settings') || url.includes('/socialProfile') || url.includes('latestFunctionalThresholdPower')) {
-        return new Response('{}', { status: 404 });
       }
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
@@ -332,10 +333,378 @@ describe('Stateless Serverless Functions (strava-token & garmin-sync)', () => {
     expect(data.recentActivities[0]).toMatchObject({
       activityId: 55443322,
       name: 'Indoor Interval Spin',
+      typeKey: 'indoor_cycling',
       avgWatts: 205,
+      normalizedWatts: 218,
       avgHr: 152,
       caloriesKcal: 410,
     });
     expect(fetchSpy).toHaveBeenCalledTimes(7);
+  });
+
+  it('garmin-sync: imports weight, BMI-derived height, HR zones, and cycling FTP from real Personal API schemas when settings omits userData', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/personalapitoken-service/')) {
+        return new Response('raw-garmin-jwt-token', { status: 200 });
+      }
+      if (url.includes('/userprofile-service/userprofile/settings')) {
+        // Real Garmin Personal API UserSettingsDTO only returns display prefs (no weight/height/FTP)
+        return new Response(
+          JSON.stringify({
+            displayName: '11111111-2222-3333-4444-555555555555',
+            measurementSystem: 'statute_us',
+            preferredLocale: 'en',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/biometric-service/heartRateZones/v2')) {
+        return new Response(
+          JSON.stringify([
+            { sport: 'DEFAULT', maxHeartRateUsed: 185, restingHeartRateUsed: 52 },
+            { sport: 'CYCLING', maxHeartRateUsed: 188, restingHeartRateUsed: 49 },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/weight-service/weight/range/')) {
+        // Weigh-in older than 30 days arrives in previousDateWeight
+        return new Response(
+          JSON.stringify({
+            dailyWeightSummaries: [],
+            previousDateWeight: {
+              calendarDate: '2026-08-12',
+              weight: 79379, // 79.379 kg = 175 lbs
+              bmi: 24.4, // sqrt(79.379 / 24.4) = 1.8037 m = 5'11"
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/fitnessage-service/fitnessage/v2/')) {
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes('/activitylist-service/activities/search/activities?start=0&limit=10&activityType=cycling')) {
+        return new Response(
+          JSON.stringify([
+            {
+              activityId: 770011,
+              activityName: 'Threshold Ride',
+              activityType: { typeKey: 'indoor_cycling' },
+              ownerFullName: 'John Cyclist',
+              startTimeLocal: '2026-11-10 07:00:00',
+              duration: 2700,
+              distance: 25000,
+              calories: 560,
+              avgPower: 215,
+              normPower: 224,
+              averageHR: 158,
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/activitylist-service/activities/search/activities?start=0&limit=10')) {
+        // Recent list is a run with high running power — must NOT overwrite cycling FTP
+        return new Response(
+          JSON.stringify([
+            {
+              activityId: 880022,
+              activityName: 'Morning Run',
+              activityType: { typeKey: 'running' },
+              ownerFullName: 'John Cyclist',
+              startTimeLocal: '2026-11-22 08:00:00',
+              duration: 1800,
+              distance: 5000,
+              calories: 390,
+              avgPower: 345,
+              normPower: 350,
+              intensityFactor: 0.92,
+              averageHR: 154,
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/activity-service/activity/770011')) {
+        return new Response(
+          JSON.stringify({
+            activityId: 770011,
+            summaryDTO: {
+              normalizedPower: 224,
+              functionalThresholdPower: 262,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    const resp = await garminHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({
+        action: 'personal_api_sync',
+        apiKey: 'GCDC_real_personal_api_key',
+      }),
+    });
+
+    expect(resp.statusCode).toBe(200);
+    const data = JSON.parse(resp.body);
+    expect(data.athleteName).toBe('John Cyclist');
+    expect(data.importedProfile).toEqual({
+      weightLbs: 175,
+      heightFeet: 5,
+      heightInches: 11,
+      maxHrBpm: 188,
+      restingHrBpm: 49,
+      ftpWatts: 262,
+    });
+  });
+
+  it('garmin-sync: derives height via fitnessage BMI and cycling FTP via NP/IF when direct fields are absent', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/personalapitoken-service/')) {
+        return new Response('jwt-2', { status: 200 });
+      }
+      if (url.includes('/userprofile-service/userprofile/settings')) {
+        return new Response(JSON.stringify({ displayName: 'Alex Rider' }), { status: 200 });
+      }
+      if (url.includes('/biometric-service/heartRateZones/v2')) {
+        return new Response(JSON.stringify([{ sport: 'DEFAULT', maxHeartRateUsed: 192 }]), {
+          status: 200,
+        });
+      }
+      if (url.includes('/weight-service/weight/range/')) {
+        return new Response(
+          JSON.stringify({
+            dailyWeightSummaries: [
+              {
+                summaryDate: '2026-11-20',
+                latestWeight: { weight: 83915 }, // 185 lbs, no bmi field
+              },
+            ],
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes('/fitnessage-service/fitnessage/v2/')) {
+        return new Response(
+          JSON.stringify({
+            components: {
+              bmi: { value: 25.1 }, // sqrt(83.915 / 25.1) = 1.828 m = 6'0"
+              rhr: { value: 48 },
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes('/activitylist-service/activities/search/activities')) {
+        return new Response(
+          JSON.stringify([
+            {
+              activityId: 901122,
+              activityName: 'Zwift Ride',
+              activityType: { typeKey: 'virtual_ride' },
+              duration: 3600,
+              normPower: 210,
+              intensityFactor: 84, // percentage form (84% = 0.84 -> FTP = 250W)
+            },
+          ]),
+          { status: 200 }
+        );
+      }
+      if (url.includes('/activity-service/activity/901122')) {
+        return new Response(
+          JSON.stringify({
+            activityId: 901122,
+            summaryDTO: { normalizedPower: 210, intensityFactor: 0.84 },
+          }),
+          { status: 200 }
+        );
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    const resp = await garminHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({ action: 'personal_api_sync', apiKey: 'GCDC_derived_key' }),
+    });
+
+    expect(resp.statusCode).toBe(200);
+    const data = JSON.parse(resp.body);
+    expect(data.importedProfile).toEqual({
+      weightLbs: 185,
+      heightFeet: 6,
+      heightInches: 0,
+      maxHrBpm: 192,
+      restingHrBpm: 48,
+      ftpWatts: 250,
+    });
+  });
+
+  it('garmin-sync: falls back to downloading Garmin activity .FIT ZIP for height, weight, and FTP when weight-service and activity JSON lack them', async () => {
+    // Build a minimal valid FIT binary with user_data (msg 79 + dev field) and zones_target (msg 7)
+    const buildTestFit = ({ heightCm, weightTenthsKg, ftpWatts, maxHr }) => {
+      const records = [];
+      // Definition msg 79 (user_data) on local 0 WITH developer data flag (0x60)
+      records.push(
+        0x60, 0x00, 0x00, 79, 0x00, // local 0, hasDevData, LE, global 79
+        2, // 2 standard fields
+        2, 1, 0x02, // field 2: height (uint8 cm)
+        3, 2, 0x84, // field 3: weight (uint16 0.1 kg)
+        1, // 1 developer field (2 trailing bytes to verify dev-field skipping)
+        0, 2, 0
+      );
+      // Data msg for local 0
+      records.push(
+        0x00,
+        heightCm & 0xff,
+        weightTenthsKg & 0xff,
+        (weightTenthsKg >> 8) & 0xff,
+        0xaa,
+        0xbb // dev field payload
+      );
+      // Definition msg 7 (zones_target) on local 1
+      records.push(
+        0x41, 0x00, 0x00, 7, 0x00, // local 1, LE, global 7
+        2,
+        1, 1, 0x02, // field 1: max_heart_rate (uint8)
+        3, 2, 0x84 // field 3: functional_threshold_power (uint16)
+      );
+      // Data msg for local 1
+      records.push(0x01, maxHr & 0xff, ftpWatts & 0xff, (ftpWatts >> 8) & 0xff);
+
+      const dataBuf = Buffer.from(records);
+      const header = Buffer.alloc(14);
+      header.writeUInt8(14, 0);
+      header.writeUInt8(0x20, 1);
+      header.writeUInt16LE(21141, 2);
+      header.writeUInt32LE(dataBuf.length, 4);
+      header.write('.FIT', 8, 'ascii');
+      header.writeUInt16LE(0, 12);
+      const crc = Buffer.alloc(2);
+      return Buffer.concat([header, dataBuf, crc]);
+    };
+
+    // Pack FIT bytes into a deflated ZIP with data-descriptor flag (bit 3, local sizes = 0)
+    const buildZipWithFit = (filename, fitBytes) => {
+      const nameBuf = Buffer.from(filename, 'utf8');
+      const compressed = deflateRawSync(fitBytes);
+      const lh = Buffer.alloc(30 + nameBuf.length);
+      lh.writeUInt32LE(0x04034b50, 0);
+      lh.writeUInt16LE(20, 4);
+      lh.writeUInt16LE(0x0008, 6); // bit 3 data descriptor
+      lh.writeUInt16LE(8, 8); // deflate
+      lh.writeUInt32LE(0, 18); // local compressed size = 0
+      lh.writeUInt32LE(0, 22); // local uncompressed size = 0
+      lh.writeUInt16LE(nameBuf.length, 26);
+      nameBuf.copy(lh, 30);
+
+      const cdOffset = lh.length + compressed.length;
+      const cd = Buffer.alloc(46 + nameBuf.length);
+      cd.writeUInt32LE(0x02014b50, 0);
+      cd.writeUInt16LE(20, 4);
+      cd.writeUInt16LE(20, 6);
+      cd.writeUInt16LE(0x0008, 8);
+      cd.writeUInt16LE(8, 10);
+      cd.writeUInt32LE(compressed.length, 20);
+      cd.writeUInt32LE(fitBytes.length, 24);
+      cd.writeUInt16LE(nameBuf.length, 28);
+      cd.writeUInt32LE(0, 42); // local header offset
+      nameBuf.copy(cd, 46);
+
+      const eocd = Buffer.alloc(22);
+      eocd.writeUInt32LE(0x06054b50, 0);
+      eocd.writeUInt16LE(1, 8);
+      eocd.writeUInt16LE(1, 10);
+      eocd.writeUInt32LE(cd.length, 12);
+      eocd.writeUInt32LE(cdOffset, 16);
+
+      return Buffer.concat([lh, compressed, cd, eocd]);
+    };
+
+    const runZip = buildZipWithFit(
+      '6001_ACTIVITY.fit',
+      buildTestFit({ heightCm: 178, weightTenthsKg: 771, ftpWatts: 380, maxHr: 190 }) // running power 380 must be ignored
+    );
+    const bikeZip = buildZipWithFit(
+      '6002_ACTIVITY.fit',
+      buildTestFit({ heightCm: 0xff, weightTenthsKg: 0xffff, ftpWatts: 245, maxHr: 187 })
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/personalapitoken-service/')) {
+        return new Response('jwt-fit-fallback', { status: 200 });
+      }
+      if (url.includes('/userprofile-service/userprofile/settings')) {
+        return new Response(JSON.stringify({ displayName: 'Jordan' }), { status: 200 });
+      }
+      if (url.includes('/biometric-service/heartRateZones/v2')) {
+        return new Response(
+          JSON.stringify([{ sport: 'CYCLING', maxHeartRateUsed: 187, restingHeartRateUsed: 53 }]),
+          { status: 200 }
+        );
+      }
+      if (url.includes('/weight-service/weight/range/') || url.includes('/fitnessage-service/')) {
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes('activityType=cycling')) {
+        return new Response(
+          JSON.stringify([
+            {
+              activityId: 6002,
+              activityName: 'Indoor Spin',
+              activityType: { typeKey: 'indoor_cycling' },
+              avgPower: 195,
+            },
+          ]),
+          { status: 200 }
+        );
+      }
+      if (url.includes('/activitylist-service/activities/search/activities')) {
+        return new Response(
+          JSON.stringify([
+            {
+              activityId: 6001,
+              activityName: 'Watch Run',
+              activityType: { typeKey: 'running' },
+            },
+          ]),
+          { status: 200 }
+        );
+      }
+      if (url.includes('/activity-service/activity/6002')) {
+        return new Response(JSON.stringify({ activityId: 6002, summaryDTO: { averagePower: 195 } }), {
+          status: 200,
+        });
+      }
+      if (url.includes('/download-service/files/activity/6001')) {
+        return new Response(runZip, { status: 200 });
+      }
+      if (url.includes('/download-service/files/activity/6002')) {
+        return new Response(bikeZip, { status: 200 });
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    const resp = await garminHandler({
+      httpMethod: 'POST',
+      body: JSON.stringify({ action: 'personal_api_sync', apiKey: 'GCDC_fit_fallback_key' }),
+    });
+
+    expect(resp.statusCode).toBe(200);
+    const data = JSON.parse(resp.body);
+    expect(data.importedProfile).toEqual({
+      weightLbs: 170, // 77.1 kg -> 170 lbs from Garmin watch run user_data
+      heightFeet: 5,
+      heightInches: 10, // 178 cm -> 70 in = 5'10" from Garmin watch run user_data
+      maxHrBpm: 187,
+      restingHrBpm: 53,
+      ftpWatts: 245, // 245W from cycling FIT zones_target (NOT 380W from run!)
+    });
   });
 });

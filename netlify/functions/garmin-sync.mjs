@@ -1,3 +1,4 @@
+import { inflateRawSync } from 'node:zlib';
 import {
   Garmin,
   GarminAuthError,
@@ -6,6 +7,8 @@ import {
 } from 'garminconnect-js';
 
 const PERSONAL_API_BASE = 'https://personal.connectapi.garmin.com';
+const MAX_FIT_ARCHIVE_BYTES = 5 * 1024 * 1024;
+const MAX_FIT_UNCOMPRESSED_BYTES = 15 * 1024 * 1024;
 
 function jsonResponse(statusCode, payload) {
   return {
@@ -91,45 +94,557 @@ function extractPersonalApiBearerToken(rawText) {
   return trimmed.replace(/^["']|["']$/g, '').trim();
 }
 
+function formatUtcDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
 async function fetchPersonalApiJson(path, bearerToken) {
-  const resp = await fetch(`${PERSONAL_API_BASE}${path}`, {
+  let resp = await fetch(`${PERSONAL_API_BASE}${path}`, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${bearerToken}`,
       Accept: 'application/json',
     },
   });
-  if (!resp.ok) return null;
-  return resp.json();
+  if (resp.status === 406) {
+    resp = await fetch(`${PERSONAL_API_BASE}${path}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+        Accept: '*/*',
+      },
+    });
+  }
+  if (!resp.ok || resp.status === 204) return null;
+  const text = await resp.text();
+  if (!text || !text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
-function buildImportedProfileFromPersonalApi(settings, hrZonesRaw) {
+async function fetchPersonalApiBinary(path, bearerToken) {
+  const resp = await fetch(`${PERSONAL_API_BASE}${path}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${bearerToken}`,
+      Accept: 'application/octet-stream, application/zip, */*',
+    },
+  });
+  if (!resp.ok || resp.status === 204) return null;
+  const contentLength = Number(resp.headers?.get?.('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_FIT_ARCHIVE_BYTES) {
+    return null;
+  }
+  const ab = await resp.arrayBuffer();
+  if (!ab || ab.byteLength === 0 || ab.byteLength > MAX_FIT_ARCHIVE_BYTES) {
+    return null;
+  }
+  return Buffer.from(ab);
+}
+
+function toWeightKg(rawWeight) {
+  const n = Number(rawWeight);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const kg = n > 1000 ? n / 1000 : n >= 25 && n <= 300 ? n : null;
+  if (kg === null || kg < 30 || kg > 250) return null;
+  return kg;
+}
+
+function weightKgToValidLbs(weightKg) {
+  if (!Number.isFinite(weightKg)) return null;
+  const lbs = Math.round(weightKg * 2.20462262);
+  return lbs >= 70 && lbs <= 450 ? lbs : null;
+}
+
+function toValidBmi(rawBmi) {
+  const n = Number(rawBmi);
+  return Number.isFinite(n) && n >= 12 && n <= 65 ? n : null;
+}
+
+function heightCmToFeetInches(heightCm) {
+  if (!Number.isFinite(heightCm) || heightCm < 100 || heightCm > 240) return null;
+  const totalInches = Math.round(heightCm / 2.54);
+  return {
+    heightFeet: Math.floor(totalInches / 12),
+    heightInches: totalInches % 12,
+  };
+}
+
+function heightCmFromWeightAndBmi(weightKg, bmi) {
+  if (!weightKg || !bmi) return null;
+  const heightCm = Math.sqrt(weightKg / bmi) * 100;
+  return Number.isFinite(heightCm) && heightCm >= 100 && heightCm <= 240 ? heightCm : null;
+}
+
+function toValidFtp(rawFtp) {
+  const n = Number(rawFtp);
+  return Number.isFinite(n) && n >= 50 && n <= 600 ? Math.round(n) : null;
+}
+
+function parseGarminTimestampMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 1e12 ? value : value * 1000;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value.trim());
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function extractWeightAndBmiFromWeightRange(weightRange) {
+  if (!weightRange || typeof weightRange !== 'object') {
+    return { weightKg: null, bmiPair: null };
+  }
+
+  const orderedEntries = [];
+  if (Array.isArray(weightRange.dailyWeightSummaries)) {
+    for (const summary of weightRange.dailyWeightSummaries) {
+      if (!summary || typeof summary !== 'object') continue;
+      const summaryTs = parseGarminTimestampMs(summary.summaryDate);
+      const candidates = [];
+      if (summary.latestWeight && typeof summary.latestWeight === 'object') {
+        candidates.push(summary.latestWeight);
+      }
+      if (Array.isArray(summary.allWeightMetrics)) {
+        for (const metric of summary.allWeightMetrics) {
+          if (metric && typeof metric === 'object') candidates.push(metric);
+        }
+      }
+      for (const entry of candidates) {
+        const weightKg = toWeightKg(entry.weight);
+        if (!weightKg) continue;
+        const ts =
+          parseGarminTimestampMs(entry.timestampGMT) ||
+          parseGarminTimestampMs(entry.date) ||
+          parseGarminTimestampMs(entry.calendarDate) ||
+          summaryTs;
+        orderedEntries.push({
+          ts,
+          weightKg,
+          bmi: toValidBmi(entry.bmi),
+        });
+      }
+    }
+    orderedEntries.sort((a, b) => b.ts - a.ts);
+  }
+
+  for (const fallback of [weightRange.previousDateWeight, weightRange.totalAverage]) {
+    if (!fallback || typeof fallback !== 'object') continue;
+    const weightKg = toWeightKg(fallback.weight);
+    if (!weightKg) continue;
+    orderedEntries.push({
+      ts:
+        parseGarminTimestampMs(fallback.timestampGMT) ||
+        parseGarminTimestampMs(fallback.date) ||
+        parseGarminTimestampMs(fallback.calendarDate) ||
+        0,
+      weightKg,
+      bmi: toValidBmi(fallback.bmi),
+    });
+  }
+
+  if (orderedEntries.length === 0) {
+    return { weightKg: null, bmiPair: null };
+  }
+
+  const latestWeightKg = orderedEntries[0].weightKg;
+  const matchedPair = orderedEntries.find((e) => e.bmi !== null) || null;
+  return {
+    weightKg: latestWeightKg,
+    bmiPair: matchedPair ? { weightKg: matchedPair.weightKg, bmi: matchedPair.bmi } : null,
+  };
+}
+
+function isCyclingActivity(act) {
+  if (!act || typeof act !== 'object') return false;
+  const typeKey = String(
+    act.activityType?.typeKey || act.activityTypeDTO?.typeKey || ''
+  ).toLowerCase();
+  if (!typeKey) return false;
+  return (
+    typeKey.includes('cycling') ||
+    typeKey.includes('biking') ||
+    typeKey.includes('bike') ||
+    typeKey === 'virtual_ride' ||
+    typeKey === 'spin'
+  );
+}
+
+function hasPowerMetrics(act) {
+  if (!act || typeof act !== 'object') return false;
+  return Boolean(
+    Number(act.avgPower) > 0 ||
+      Number(act.averagePower) > 0 ||
+      Number(act.normPower) > 0 ||
+      Number(act.normalizedPower) > 0 ||
+      Number(act.maxPower) > 0 ||
+      Number(act.maxFtp) > 0 ||
+      Number(act.intensityFactor) > 0 ||
+      Number(act.trainingStressScore) > 0
+  );
+}
+
+function extractDirectFtpFromActivity(activity) {
+  if (!activity || typeof activity !== 'object') return null;
+  const summary = activity.summaryDTO && typeof activity.summaryDTO === 'object'
+    ? activity.summaryDTO
+    : null;
+  const directCandidates = [
+    summary?.functionalThresholdPower,
+    summary?.directFunctionalThresholdPower,
+    activity.functionalThresholdPower,
+    activity.directFunctionalThresholdPower,
+    activity.maxFtp,
+    activity.thresholdPower,
+  ];
+  for (const val of directCandidates) {
+    const ftp = toValidFtp(val);
+    if (ftp) return ftp;
+  }
+  if (Array.isArray(activity.splitSummaries)) {
+    for (const split of activity.splitSummaries) {
+      if (!split || typeof split !== 'object') continue;
+      const splitFtp =
+        toValidFtp(split.functionalThresholdPower) ||
+        toValidFtp(split.directFunctionalThresholdPower);
+      if (splitFtp) return splitFtp;
+    }
+  }
+  return null;
+}
+
+function extractDerivedFtpFromActivity(activity) {
+  if (!activity || typeof activity !== 'object') return null;
+  const summary = activity.summaryDTO && typeof activity.summaryDTO === 'object'
+    ? activity.summaryDTO
+    : null;
+  const np = Number(summary?.normalizedPower ?? activity.normalizedPower ?? activity.normPower);
+  if (!Number.isFinite(np) || np < 50 || np > 600) return null;
+
+  const rawIf = Number(summary?.intensityFactor ?? activity.intensityFactor);
+  if (Number.isFinite(rawIf) && rawIf > 0) {
+    const ifRatio = rawIf > 2.5 ? rawIf / 100 : rawIf;
+    if (ifRatio >= 0.25 && ifRatio <= 1.8) {
+      const derived = toValidFtp(np / ifRatio);
+      if (derived) return derived;
+    }
+  }
+
+  const tss = Number(summary?.trainingStressScore ?? activity.trainingStressScore);
+  const durationSec = Number(summary?.duration ?? activity.duration);
+  if (
+    Number.isFinite(tss) &&
+    tss >= 5 &&
+    Number.isFinite(durationSec) &&
+    durationSec >= 300
+  ) {
+    const derived = toValidFtp(np * Math.sqrt(durationSec / (36 * tss)));
+    if (derived) return derived;
+  }
+
+  return null;
+}
+
+/** Extract a .FIT binary payload from either a raw .FIT buffer or a Garmin activity ZIP archive. */
+export function extractFitBytesFromArchive(rawBytes) {
+  if (!rawBytes || rawBytes.length < 14) return null;
+  const buf = Buffer.isBuffer(rawBytes) ? rawBytes : Buffer.from(rawBytes);
+
+  if (buf.subarray(8, 12).toString('ascii') === '.FIT') {
+    return buf;
+  }
+
+  // Locate ZIP End of Central Directory (0x06054b50) scanning backwards from the end.
+  // Reading sizes from Central Directory handles Java ZipOutputStream data descriptors (bit 3).
+  const minEocdOffset = Math.max(0, buf.length - 65557);
+  let eocdOffset = -1;
+  for (let i = buf.length - 22; i >= minEocdOffset; i -= 1) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset < 0) return null;
+
+  const cdEntryCount = buf.readUInt16LE(eocdOffset + 10);
+  const cdOffset = buf.readUInt32LE(eocdOffset + 16);
+  if (cdOffset >= buf.length) return null;
+
+  let pos = cdOffset;
+  let chosenEntry = null;
+  for (let idx = 0; idx < cdEntryCount && pos + 46 <= buf.length; idx += 1) {
+    if (buf.readUInt32LE(pos) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(pos + 10);
+    const compressedSize = buf.readUInt32LE(pos + 20);
+    const uncompressedSize = buf.readUInt32LE(pos + 24);
+    const nameLen = buf.readUInt16LE(pos + 28);
+    const extraLen = buf.readUInt16LE(pos + 30);
+    const commentLen = buf.readUInt16LE(pos + 32);
+    const localHeaderOffset = buf.readUInt32LE(pos + 42);
+    const name = buf.subarray(pos + 46, pos + 46 + nameLen).toString('utf8');
+    pos += 46 + nameLen + extraLen + commentLen;
+
+    if (name.endsWith('/')) continue;
+    const entry = { method, compressedSize, uncompressedSize, localHeaderOffset, name };
+    if (name.toLowerCase().endsWith('.fit')) {
+      chosenEntry = entry;
+      break;
+    }
+    if (!chosenEntry) chosenEntry = entry;
+  }
+
+  if (!chosenEntry) return null;
+  if (chosenEntry.uncompressedSize > MAX_FIT_UNCOMPRESSED_BYTES) return null;
+
+  const lh = chosenEntry.localHeaderOffset;
+  if (lh + 30 > buf.length || buf.readUInt32LE(lh) !== 0x04034b50) return null;
+  const lhNameLen = buf.readUInt16LE(lh + 26);
+  const lhExtraLen = buf.readUInt16LE(lh + 28);
+  const dataStart = lh + 30 + lhNameLen + lhExtraLen;
+  const dataEnd = dataStart + chosenEntry.compressedSize;
+  if (dataEnd > buf.length) return null;
+
+  const compressed = buf.subarray(dataStart, dataEnd);
+  if (chosenEntry.method === 0) return compressed;
+  if (chosenEntry.method === 8) {
+    try {
+      const inflated = inflateRawSync(compressed, { maxOutputLength: MAX_FIT_UNCOMPRESSED_BYTES });
+      return inflated.length >= 14 && inflated.subarray(8, 12).toString('ascii') === '.FIT'
+        ? inflated
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Lightweight zero-dependency Garmin .FIT binary scanner for athlete biometrics.
+ * Extracts height/weight/HR/FTP from user_profile (msg 3), zones_target (msg 7),
+ * session (msg 18), and Garmin watch user_data (msg 79).
+ */
+export function parseFitBiometrics(rawBytes, options = {}) {
+  const allowFtp = Boolean(options.allowFtp);
+  const fitBuf = extractFitBytesFromArchive(rawBytes);
+  const result = {};
+  if (!fitBuf || fitBuf.length < 14) return result;
+
+  const readUint = (pos, size, littleEndian) => {
+    if (size === 1) return fitBuf.readUInt8(pos);
+    if (size === 2) return littleEndian ? fitBuf.readUInt16LE(pos) : fitBuf.readUInt16BE(pos);
+    if (size === 4) return littleEndian ? fitBuf.readUInt32LE(pos) : fitBuf.readUInt32BE(pos);
+    return null;
+  };
+
+  let offset = 0;
+  while (offset + 14 <= fitBuf.length) {
+    const headerSize = fitBuf.readUInt8(offset);
+    if (headerSize < 12 || offset + headerSize > fitBuf.length) break;
+    if (fitBuf.subarray(offset + 8, offset + 12).toString('ascii') !== '.FIT') break;
+    const dataSize = fitBuf.readUInt32LE(offset + 4);
+    const dataStart = offset + headerSize;
+    const dataEnd = Math.min(fitBuf.length, dataStart + dataSize);
+    if (dataSize === 0 || dataStart >= dataEnd) break;
+
+    const localDefs = new Map();
+    let pos = dataStart;
+
+    while (pos < dataEnd) {
+      const recordHeader = fitBuf.readUInt8(pos);
+      pos += 1;
+
+      if ((recordHeader & 0x80) !== 0) {
+        // Compressed timestamp header message
+        const localNum = (recordHeader >> 5) & 0x03;
+        const def = localDefs.get(localNum);
+        if (!def || pos + def.recordSize > dataEnd) break;
+        pos += def.recordSize;
+        continue;
+      }
+
+      if ((recordHeader & 0x40) !== 0) {
+        // Definition message
+        if (pos + 5 > dataEnd) break;
+        const localNum = recordHeader & 0x0f;
+        const hasDevData = (recordHeader & 0x20) !== 0;
+        const arch = fitBuf.readUInt8(pos + 1);
+        const littleEndian = arch === 0;
+        const globalMsgNum = littleEndian
+          ? fitBuf.readUInt16LE(pos + 2)
+          : fitBuf.readUInt16BE(pos + 2);
+        const numFields = fitBuf.readUInt8(pos + 4);
+        pos += 5;
+        if (pos + numFields * 3 > dataEnd) break;
+
+        const fields = [];
+        let fieldOffset = 0;
+        for (let f = 0; f < numFields; f += 1) {
+          const fieldNum = fitBuf.readUInt8(pos);
+          const size = fitBuf.readUInt8(pos + 1);
+          const baseType = fitBuf.readUInt8(pos + 2);
+          fields.push({ fieldNum, size, baseType, offset: fieldOffset });
+          fieldOffset += size;
+          pos += 3;
+        }
+
+        let devBytes = 0;
+        if (hasDevData) {
+          if (pos >= dataEnd) break;
+          const numDevFields = fitBuf.readUInt8(pos);
+          pos += 1;
+          if (pos + numDevFields * 3 > dataEnd) break;
+          for (let d = 0; d < numDevFields; d += 1) {
+            devBytes += fitBuf.readUInt8(pos + 1);
+            pos += 3;
+          }
+        }
+
+        localDefs.set(localNum, {
+          globalMsgNum,
+          littleEndian,
+          fields,
+          recordSize: fieldOffset + devBytes,
+        });
+        continue;
+      }
+
+      // Normal data message
+      const localNum = recordHeader & 0x0f;
+      const def = localDefs.get(localNum);
+      if (!def || pos + def.recordSize > dataEnd) break;
+
+      const msgNum = def.globalMsgNum;
+      if (msgNum === 3 || msgNum === 7 || msgNum === 18 || msgNum === 79) {
+        let sessionNp = null;
+        let sessionIf = null;
+        for (const field of def.fields) {
+          if (field.size !== 1 && field.size !== 2) continue;
+          const rawVal = readUint(pos + field.offset, field.size, def.littleEndian);
+          if (rawVal === null) continue;
+          if ((field.size === 1 && rawVal === 0xff) || (field.size === 2 && rawVal === 0xffff)) {
+            continue;
+          }
+
+          if (msgNum === 3) {
+            // user_profile: field 3 height (cm), field 4 weight (0.1 kg), field 8 RHR, field 10/11 Max HR
+            if (field.fieldNum === 3 && rawVal >= 100 && rawVal <= 240 && !result.heightCm) {
+              result.heightCm = rawVal;
+            } else if (field.fieldNum === 4 && rawVal >= 250 && rawVal <= 3000 && !result.weightKg) {
+              result.weightKg = rawVal / 10;
+            } else if (field.fieldNum === 8 && rawVal >= 25 && rawVal <= 130 && !result.restingHrBpm) {
+              result.restingHrBpm = rawVal;
+            } else if (
+              (field.fieldNum === 10 || field.fieldNum === 11) &&
+              rawVal >= 120 &&
+              rawVal <= 230 &&
+              !result.maxHrBpm
+            ) {
+              result.maxHrBpm = rawVal;
+            }
+          } else if (msgNum === 79) {
+            // Garmin watch user_data: field 2 height (cm), field 3 weight (0.1 kg), field 6 max_hr
+            if (field.fieldNum === 2 && rawVal >= 100 && rawVal <= 240 && !result.heightCm) {
+              result.heightCm = rawVal;
+            } else if (field.fieldNum === 3 && rawVal >= 250 && rawVal <= 3000 && !result.weightKg) {
+              result.weightKg = rawVal / 10;
+            } else if (field.fieldNum === 6 && rawVal >= 120 && rawVal <= 230 && !result.maxHrBpm) {
+              result.maxHrBpm = rawVal;
+            }
+          } else if (msgNum === 7) {
+            // zones_target: field 1 max_heart_rate, field 3 functional_threshold_power
+            if (field.fieldNum === 1 && rawVal >= 120 && rawVal <= 230 && !result.maxHrBpm) {
+              result.maxHrBpm = rawVal;
+            } else if (
+              allowFtp &&
+              field.fieldNum === 3 &&
+              rawVal >= 50 &&
+              rawVal <= 600 &&
+              !result.ftpWatts
+            ) {
+              result.ftpWatts = rawVal;
+            }
+          } else if (msgNum === 18 && allowFtp) {
+            // session: field 45 threshold_power, field 34 normalized_power, field 36 intensity_factor (/1000)
+            if (field.fieldNum === 45 && rawVal >= 50 && rawVal <= 600 && !result.ftpWatts) {
+              result.ftpWatts = rawVal;
+            } else if (field.fieldNum === 34 && rawVal >= 50 && rawVal <= 600) {
+              sessionNp = rawVal;
+            } else if (field.fieldNum === 36 && rawVal >= 250 && rawVal <= 1800) {
+              sessionIf = rawVal / 1000;
+            }
+          }
+        }
+        if (allowFtp && !result.ftpWatts && sessionNp && sessionIf) {
+          const derived = toValidFtp(sessionNp / sessionIf);
+          if (derived) result.ftpWatts = derived;
+        }
+      }
+
+      pos += def.recordSize;
+    }
+
+    // Advance past trailing 2-byte FIT CRC to support chained FIT files
+    offset = dataStart + dataSize + 2;
+  }
+
+  return result;
+}
+
+function buildImportedProfileFromPersonalApi(
+  settings,
+  hrZonesRaw,
+  { weightRange = null, fitnessAge = null, cyclingActivities = [], activityDetails = [], fitBiometrics = null } = {}
+) {
   const imported = {};
   const userData =
     settings && typeof settings === 'object' && settings.userData && typeof settings.userData === 'object'
       ? settings.userData
       : settings || {};
 
-  const rawWeight = Number(userData.weight);
-  if (Number.isFinite(rawWeight) && rawWeight > 0) {
-    const weightLbs =
-      rawWeight > 1000
-        ? Math.round((rawWeight / 1000) * 2.20462262)
-        : rawWeight >= 25 && rawWeight <= 300
-          ? Math.round(rawWeight * 2.20462262)
-          : 0;
-    if (weightLbs >= 70 && weightLbs <= 450) {
-      imported.weightLbs = weightLbs;
+  // 1. Weight (settings.userData -> official weight-service/weight/range -> FIT fallback)
+  let weightKg = toWeightKg(userData.weight);
+  const { weightKg: rangeWeightKg, bmiPair } = extractWeightAndBmiFromWeightRange(weightRange);
+  if (!weightKg && rangeWeightKg) {
+    weightKg = rangeWeightKg;
+  }
+  if (!weightKg && fitBiometrics?.weightKg) {
+    weightKg = toWeightKg(fitBiometrics.weightKg);
+  }
+  const weightLbs = weightKgToValidLbs(weightKg);
+  if (weightLbs !== null) {
+    imported.weightLbs = weightLbs;
+  }
+
+  // 2. Height (settings.userData -> weight+BMI from weight-service -> weight+BMI from fitnessage -> FIT fallback)
+  const rawHeight = Number(userData.height);
+  let heightImperial = heightCmToFeetInches(rawHeight);
+  if (!heightImperial && bmiPair) {
+    heightImperial = heightCmToFeetInches(
+      heightCmFromWeightAndBmi(bmiPair.weightKg, bmiPair.bmi)
+    );
+  }
+  if (!heightImperial && weightKg && fitnessAge && typeof fitnessAge === 'object') {
+    const fitnessAgeBmi = toValidBmi(
+      fitnessAge.components?.bmi?.value ?? fitnessAge.components?.BMI?.value
+    );
+    if (fitnessAgeBmi) {
+      heightImperial = heightCmToFeetInches(heightCmFromWeightAndBmi(weightKg, fitnessAgeBmi));
     }
   }
-
-  const rawHeight = Number(userData.height);
-  if (Number.isFinite(rawHeight) && rawHeight >= 100 && rawHeight <= 240) {
-    const totalInches = Math.round(rawHeight / 2.54);
-    imported.heightFeet = Math.floor(totalInches / 12);
-    imported.heightInches = totalInches % 12;
+  if (!heightImperial && fitBiometrics?.heightCm) {
+    heightImperial = heightCmToFeetInches(fitBiometrics.heightCm);
+  }
+  if (heightImperial) {
+    imported.heightFeet = heightImperial.heightFeet;
+    imported.heightInches = heightImperial.heightInches;
   }
 
+  // 3. Max HR & Resting HR (settings.userData -> heartRateZones/v2 -> fitnessage -> FIT fallback)
   const rawMaxHr = Number(userData.maxHeartRate);
   if (Number.isFinite(rawMaxHr) && rawMaxHr >= 120 && rawMaxHr <= 230) {
     imported.maxHrBpm = Math.round(rawMaxHr);
@@ -142,19 +657,10 @@ function buildImportedProfileFromPersonalApi(settings, hrZonesRaw) {
     imported.restingHrBpm = Math.round(rawRestingHr);
   }
 
-  const rawFtp = Number(
-    userData.cyclingFtp ??
-      userData.ftp ??
-      userData.functionalThresholdPower ??
-      settings?.cyclingFtp ??
-      settings?.ftp
-  );
-  if (Number.isFinite(rawFtp) && rawFtp >= 50 && rawFtp <= 600) {
-    imported.ftpWatts = Math.round(rawFtp);
-  }
-
   const zoneEntry = Array.isArray(hrZonesRaw)
-    ? hrZonesRaw.find((z) => z?.sport === 'CYCLING') || hrZonesRaw[0]
+    ? hrZonesRaw.find((z) => z?.sport === 'CYCLING') ||
+      hrZonesRaw.find((z) => z?.sport === 'DEFAULT') ||
+      hrZonesRaw[0]
     : hrZonesRaw;
 
   if (zoneEntry && typeof zoneEntry === 'object') {
@@ -172,6 +678,73 @@ function buildImportedProfileFromPersonalApi(settings, hrZonesRaw) {
     }
   }
 
+  if (!imported.restingHrBpm && fitnessAge && typeof fitnessAge === 'object') {
+    const fitnessAgeRhr = Number(
+      fitnessAge.components?.rhr?.value ?? fitnessAge.components?.RHR?.value
+    );
+    if (Number.isFinite(fitnessAgeRhr) && fitnessAgeRhr >= 25 && fitnessAgeRhr <= 130) {
+      imported.restingHrBpm = Math.round(fitnessAgeRhr);
+    }
+  }
+
+  if (!imported.maxHrBpm && fitBiometrics?.maxHrBpm) {
+    imported.maxHrBpm = Math.round(fitBiometrics.maxHrBpm);
+  }
+  if (!imported.restingHrBpm && fitBiometrics?.restingHrBpm) {
+    imported.restingHrBpm = Math.round(fitBiometrics.restingHrBpm);
+  }
+
+  // 4. Cycling FTP (settings.userData -> direct FTP in activity details/list -> derived NP/IF or TSS -> FIT fallback)
+  let ftpWatts = toValidFtp(
+    userData.cyclingFtp ??
+      userData.ftp ??
+      userData.functionalThresholdPower ??
+      settings?.cyclingFtp ??
+      settings?.ftp
+  );
+  if (!ftpWatts) {
+    for (const detail of activityDetails) {
+      const found = extractDirectFtpFromActivity(detail);
+      if (found) {
+        ftpWatts = found;
+        break;
+      }
+    }
+  }
+  if (!ftpWatts) {
+    for (const act of cyclingActivities) {
+      const found = extractDirectFtpFromActivity(act);
+      if (found) {
+        ftpWatts = found;
+        break;
+      }
+    }
+  }
+  if (!ftpWatts && fitBiometrics?.ftpWatts) {
+    ftpWatts = toValidFtp(fitBiometrics.ftpWatts);
+  }
+  if (!ftpWatts) {
+    for (const detail of activityDetails) {
+      const derived = extractDerivedFtpFromActivity(detail);
+      if (derived) {
+        ftpWatts = derived;
+        break;
+      }
+    }
+  }
+  if (!ftpWatts) {
+    for (const act of cyclingActivities) {
+      const derived = extractDerivedFtpFromActivity(act);
+      if (derived) {
+        ftpWatts = derived;
+        break;
+      }
+    }
+  }
+  if (ftpWatts) {
+    imported.ftpWatts = ftpWatts;
+  }
+
   return imported;
 }
 
@@ -180,19 +753,23 @@ function mapPersonalApiActivities(rawActivities) {
   return rawActivities
     .filter((item) => item && typeof item.activityId === 'number')
     .slice(0, 10)
-    .map((item) => ({
-      activityId: item.activityId,
-      name: item.activityName || 'Garmin Workout',
-      typeKey: item.activityTypeDTO?.typeKey || 'cycling',
-      startedAtLocal: item.startTimeLocal || item.startTimeGMT || '',
-      durationSec: Math.round(Number(item.duration) || 0),
-      distanceMeters: Number(item.distance) || 0,
-      caloriesKcal: Math.round(Number(item.calories) || 0),
-      avgWatts: item.averagePower ? Math.round(Number(item.averagePower)) : undefined,
-      normalizedWatts: item.normalizedPower ? Math.round(Number(item.normalizedPower)) : undefined,
-      avgHr: item.averageHR ? Math.round(Number(item.averageHR)) : undefined,
-      maxHr: item.maxHR ? Math.round(Number(item.maxHR)) : undefined,
-    }));
+    .map((item) => {
+      const avgPower = item.avgPower ?? item.averagePower;
+      const normPower = item.normPower ?? item.normalizedPower;
+      return {
+        activityId: item.activityId,
+        name: item.activityName || 'Garmin Workout',
+        typeKey: item.activityType?.typeKey || item.activityTypeDTO?.typeKey || 'cycling',
+        startedAtLocal: item.startTimeLocal || item.startTimeGMT || '',
+        durationSec: Math.round(Number(item.duration) || 0),
+        distanceMeters: Number(item.distance) || 0,
+        caloriesKcal: Math.round(Number(item.calories) || 0),
+        avgWatts: avgPower ? Math.round(Number(avgPower)) : undefined,
+        normalizedWatts: normPower ? Math.round(Number(normPower)) : undefined,
+        avgHr: item.averageHR ? Math.round(Number(item.averageHR)) : undefined,
+        maxHr: item.maxHR ? Math.round(Number(item.maxHR)) : undefined,
+      };
+    });
 }
 
 function sleep(ms) {
@@ -364,47 +941,179 @@ export async function handler(event) {
         });
       }
 
+      const now = new Date();
+      const todayIso = formatUtcDate(now);
+      const thirtyDaysAgoIso = formatUtcDate(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
+
+      // Layer 1: Official Garmin Connect Personal API JSON endpoints
       const [
         settingsResult,
-        userSettingsResult,
-        socialResult,
-        ftpResult,
         hrZonesResult,
+        weightRangeResult,
+        fitnessAgeResult,
         activitiesResult,
+        cyclingActivitiesResult,
       ] = await Promise.allSettled([
         fetchPersonalApiJson('/userprofile-service/userprofile/settings', bearerToken),
-        fetchPersonalApiJson('/userprofile-service/userprofile/user-settings', bearerToken),
-        fetchPersonalApiJson('/userprofile-service/socialProfile', bearerToken),
-        fetchPersonalApiJson(
-          '/biometric-service/biometric/latestFunctionalThresholdPower/CYCLING',
-          bearerToken
-        ),
         fetchPersonalApiJson('/biometric-service/heartRateZones/v2', bearerToken),
         fetchPersonalApiJson(
+          `/weight-service/weight/range/${thirtyDaysAgoIso}/${todayIso}?includeAll=true`,
+          bearerToken
+        ),
+        fetchPersonalApiJson(`/fitnessage-service/fitnessage/v2/${todayIso}`, bearerToken),
+        fetchPersonalApiJson(
           '/activitylist-service/activities/search/activities?start=0&limit=10',
+          bearerToken
+        ),
+        fetchPersonalApiJson(
+          '/activitylist-service/activities/search/activities?start=0&limit=10&activityType=cycling',
           bearerToken
         ),
       ]);
 
       const val = (r) => (r.status === 'fulfilled' ? r.value : null);
       const settings = val(settingsResult);
-      const userSettings = val(userSettingsResult);
-      const social = val(socialResult);
-      const ftpRaw = val(ftpResult);
       const hrZones = val(hrZonesResult);
+      const weightRange = val(weightRangeResult);
+      const fitnessAge = val(fitnessAgeResult);
       const rawActivities = val(activitiesResult);
+      const rawCyclingActivities = val(cyclingActivitiesResult);
 
-      // Garmin sometimes rejects one profile endpoint; merge whichever succeeded.
-      const mergedUserData = {
-        ...(userSettings?.userData || userSettings || {}),
-        ...(settings?.userData || settings || {}),
-      };
-      const mergedSettings = { ...(userSettings || {}), ...(settings || {}), userData: mergedUserData };
-      const ftpValue = Array.isArray(ftpRaw) ? ftpRaw[0]?.functionalThresholdPower : ftpRaw?.functionalThresholdPower;
-      if (ftpValue && !mergedUserData.cyclingFtp) mergedUserData.cyclingFtp = ftpValue;
+      const recentActivityList = Array.isArray(rawActivities) ? rawActivities : [];
+      const seenCyclingIds = new Set();
+      const cyclingActivities = [];
+      for (const act of [
+        ...(Array.isArray(rawCyclingActivities) ? rawCyclingActivities : []),
+        ...recentActivityList.filter((a) => isCyclingActivity(a)),
+      ]) {
+        if (!act || typeof act.activityId !== 'number' || seenCyclingIds.has(act.activityId)) {
+          continue;
+        }
+        seenCyclingIds.add(act.activityId);
+        cyclingActivities.push(act);
+      }
 
-      const importedProfile = buildImportedProfileFromPersonalApi(mergedSettings, hrZones);
-      const recentActivities = mapPersonalApiActivities(rawActivities);
+      // Layer 2: Fetch full ActivitySummaryDTO for up to 3 recent cycling rides when direct FTP is not yet known
+      const settingsUserData =
+        settings && typeof settings === 'object' && settings.userData && typeof settings.userData === 'object'
+          ? settings.userData
+          : settings || {};
+      const hasDirectFtp = Boolean(
+        toValidFtp(
+          settingsUserData.cyclingFtp ??
+            settingsUserData.ftp ??
+            settingsUserData.functionalThresholdPower ??
+            settings?.cyclingFtp ??
+            settings?.ftp
+        ) || cyclingActivities.some((act) => extractDirectFtpFromActivity(act))
+      );
+
+      let activityDetails = [];
+      if (!hasDirectFtp && cyclingActivities.length > 0) {
+        const powerCycling = cyclingActivities.filter((act) => hasPowerMetrics(act));
+        const detailCandidates = [
+          ...powerCycling,
+          ...cyclingActivities.filter((act) => !hasPowerMetrics(act)),
+        ].slice(0, 3);
+        const detailResults = await Promise.allSettled(
+          detailCandidates.map((act) =>
+            fetchPersonalApiJson(`/activity-service/activity/${act.activityId}`, bearerToken)
+          )
+        );
+        activityDetails = detailResults.map(val).filter(Boolean);
+      }
+
+      let importedProfile = buildImportedProfileFromPersonalApi(settings, hrZones, {
+        weightRange,
+        fitnessAge,
+        cyclingActivities,
+        activityDetails,
+      });
+
+      // Layer 3: Fallback to official .FIT activity file download ONLY if weight, height, or FTP is still missing.
+      // Garmin watch .FIT files often carry user_data (msg 79: height/weight), user_profile (msg 3),
+      // and zones_target (msg 7: functional_threshold_power).
+      const needsWeightOrHeight =
+        importedProfile.weightLbs === undefined || importedProfile.heightFeet === undefined;
+      const needsFtp = importedProfile.ftpWatts === undefined;
+      if (needsWeightOrHeight || needsFtp) {
+        const fitCandidates = [];
+        const seenFitIds = new Set();
+        const addFitCandidate = (act, allowFtp) => {
+          if (
+            !act ||
+            typeof act.activityId !== 'number' ||
+            act.manualActivity ||
+            act.isManualActivity ||
+            seenFitIds.has(act.activityId)
+          ) {
+            return;
+          }
+          seenFitIds.add(act.activityId);
+          fitCandidates.push({ activityId: act.activityId, allowFtp });
+        };
+
+        if (needsFtp) {
+          const topPowerRides = cyclingActivities.filter((a) => hasPowerMetrics(a));
+          for (const ride of [...topPowerRides, ...cyclingActivities]) {
+            if (fitCandidates.length >= 2) break;
+            addFitCandidate(ride, true);
+          }
+        }
+        if (needsWeightOrHeight) {
+          const latestNonCycling = recentActivityList.find(
+            (a) =>
+              a &&
+              typeof a.activityId === 'number' &&
+              !a.manualActivity &&
+              !a.isManualActivity &&
+              !isCyclingActivity(a)
+          );
+          if (latestNonCycling && fitCandidates.length < 3) {
+            addFitCandidate(latestNonCycling, false);
+          }
+          for (const act of recentActivityList) {
+            if (fitCandidates.length >= 3) break;
+            addFitCandidate(act, isCyclingActivity(act));
+          }
+        }
+
+        if (fitCandidates.length > 0) {
+          const fitResults = await Promise.allSettled(
+            fitCandidates.slice(0, 3).map(async (cand) => {
+              const rawBytes = await fetchPersonalApiBinary(
+                `/download-service/files/activity/${cand.activityId}`,
+                bearerToken
+              );
+              if (!rawBytes) return null;
+              return parseFitBiometrics(rawBytes, { allowFtp: cand.allowFtp });
+            })
+          );
+          const mergedFit = {};
+          for (const res of fitResults) {
+            const parsed = val(res);
+            if (!parsed) continue;
+            if (!mergedFit.weightKg && parsed.weightKg) mergedFit.weightKg = parsed.weightKg;
+            if (!mergedFit.heightCm && parsed.heightCm) mergedFit.heightCm = parsed.heightCm;
+            if (!mergedFit.ftpWatts && parsed.ftpWatts) mergedFit.ftpWatts = parsed.ftpWatts;
+            if (!mergedFit.maxHrBpm && parsed.maxHrBpm) mergedFit.maxHrBpm = parsed.maxHrBpm;
+            if (!mergedFit.restingHrBpm && parsed.restingHrBpm) {
+              mergedFit.restingHrBpm = parsed.restingHrBpm;
+            }
+          }
+          if (Object.keys(mergedFit).length > 0) {
+            importedProfile = buildImportedProfileFromPersonalApi(settings, hrZones, {
+              weightRange,
+              fitnessAge,
+              cyclingActivities,
+              activityDetails,
+              fitBiometrics: mergedFit,
+            });
+          }
+        }
+      }
+
+      const recentActivities = mapPersonalApiActivities(recentActivityList);
       const isUuid = (v) =>
         typeof v === 'string' &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
@@ -412,12 +1121,12 @@ export async function handler(event) {
         candidates.find((c) => typeof c === 'string' && c.trim().length > 0 && !isUuid(c)) ||
         'Garmin Athlete';
       const athleteName = pickName(
-        social?.fullName,
-        social?.displayName,
         settings?.displayName,
         settings?.userName,
-        rawActivities?.[0]?.ownerFullName,
-        rawActivities?.[0]?.ownerDisplayName
+        recentActivityList[0]?.ownerFullName,
+        cyclingActivities[0]?.ownerFullName,
+        recentActivityList[0]?.ownerDisplayName,
+        cyclingActivities[0]?.ownerDisplayName
       );
 
       return jsonResponse(200, {

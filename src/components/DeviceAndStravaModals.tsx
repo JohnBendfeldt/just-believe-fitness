@@ -500,11 +500,22 @@ export function HistoryAndStravaModal({
       const res = await syncGarminPersonalApi(garminPersonalKey);
       onSaveGarminConfig(res.config);
       const importedEntries: string[] = [];
+      if (
+        res.importedProfile.heightFeet !== undefined &&
+        res.importedProfile.heightInches !== undefined
+      ) {
+        importedEntries.push(
+          `${res.importedProfile.heightFeet}'${res.importedProfile.heightInches}"`
+        );
+      }
       if (res.importedProfile.weightLbs !== undefined) {
         importedEntries.push(`${res.importedProfile.weightLbs} lbs`);
       }
       if (res.importedProfile.maxHrBpm !== undefined) {
         importedEntries.push(`${res.importedProfile.maxHrBpm} Max HR`);
+      }
+      if (res.importedProfile.restingHrBpm !== undefined) {
+        importedEntries.push(`${res.importedProfile.restingHrBpm} RHR`);
       }
       if (res.importedProfile.ftpWatts !== undefined) {
         importedEntries.push(`${res.importedProfile.ftpWatts}W FTP`);
