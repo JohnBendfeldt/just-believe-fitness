@@ -1,4 +1,5 @@
 import type { AthleteProfile, GarminConfig, SavedRide, StravaConfig } from '../types/fitness';
+import { FIT_DEVICE_PRESETS, type FitDevicePresetId } from './fitExporter';
 import {
   createDefaultLayoutPrefs,
   sanitizeLayoutPrefs,
@@ -10,6 +11,7 @@ const ATHLETE_STORAGE_KEY = 'jb_fitness_athlete_v1';
 const STRAVA_STORAGE_KEY = 'jb_fitness_strava_v1';
 const GARMIN_STORAGE_KEY = 'jbf_garmin_connect_v1';
 const YOUTUBE_STORAGE_KEY = 'jb_fitness_youtube_v1';
+export const FIT_DEVICE_PRESET_STORAGE_KEY = 'jbf_fit_device_preset_v1';
 export const LAYOUT_PREFS_STORAGE_KEY = 'jbf_layout_prefs_v1';
 
 const DB_NAME = 'just_believe_fitness_db';
@@ -129,6 +131,26 @@ export function loadYouTubePresets(): { lastUrl: string; presets: YouTubePreset[
 
 export function saveYouTubeState(lastUrl: string, presets: YouTubePreset[]): void {
   localStorage.setItem(YOUTUBE_STORAGE_KEY, JSON.stringify({ lastUrl, presets }));
+}
+
+export function loadFitDevicePreset(): FitDevicePresetId {
+  try {
+    const saved = localStorage.getItem(FIT_DEVICE_PRESET_STORAGE_KEY) as FitDevicePresetId | null;
+    if (saved && saved in FIT_DEVICE_PRESETS) {
+      return saved;
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+  return 'edge-830';
+}
+
+export function saveFitDevicePreset(presetId: FitDevicePresetId): void {
+  try {
+    localStorage.setItem(FIT_DEVICE_PRESET_STORAGE_KEY, presetId);
+  } catch {
+    // Ignore storage quota errors
+  }
 }
 
 export function loadLayoutPrefs(): LayoutPreferences {

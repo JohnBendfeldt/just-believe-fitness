@@ -1,11 +1,11 @@
 import type { SavedRide, StravaConfig } from '../types/fitness';
+import { buildRideFitBytes, type FitDevicePresetId } from './fitExporter';
 import {
   JBF_STRAVA_APP_DOMAIN,
   buildRideSummaryDescription,
-  buildRideTcxXml,
   normalizeRideTitle,
 } from './tcxExporter';
-import { loadStravaConfig, saveStravaConfig } from './storage';
+import { loadFitDevicePreset, loadStravaConfig, saveStravaConfig } from './storage';
 
 export { JBF_STRAVA_APP_DOMAIN, buildRideSummaryDescription, normalizeRideTitle };
 
@@ -217,23 +217,24 @@ function sleep(ms: number): Promise<void> {
 
 export async function uploadRideToStrava(
   ride: SavedRide,
-  onProgress?: (statusText: string) => void
+  onProgress?: (statusText: string) => void,
+  presetId?: FitDevicePresetId
 ): Promise<{ uploadId: number; activityId?: number }> {
-  onProgress?.('Preparing TCX telemetry file...');
+  onProgress?.('Preparing .FIT telemetry file...');
   const token = await getValidStravaAccessToken();
-  const tcxXml = buildRideTcxXml(ride);
-  const fileBlob = new Blob([tcxXml], { type: 'application/xml' });
+  const fitBytes = buildRideFitBytes(ride, presetId ?? loadFitDevicePreset());
+  const fitBuffer = new Uint8Array(fitBytes.byteLength);
+  fitBuffer.set(fitBytes);
+  const fileBlob = new Blob([fitBuffer.buffer], { type: 'application/vnd.ant.fit' });
   const description = buildRideSummaryDescription(ride);
 
   const form = new FormData();
-  form.append('file', fileBlob, `${ride.id}.tcx`);
-  form.append('data_type', 'tcx');
-  form.append('activity_type', 'ride');
-  form.append('SportType', 'VirtualRide');
+  form.append('file', fileBlob, `${ride.id}.fit`);
+  form.append('data_type', 'fit');
   form.append('trainer', '1');
   form.append('name', normalizeRideTitle(ride.title));
   form.append('description', description);
-  form.append('external_id', `jbf-${ride.id}.tcx`);
+  form.append('external_id', `jbf-${ride.id}.fit`);
 
   onProgress?.('Uploading workout to Strava...');
   const resp = await fetch(STRAVA_UPLOADS_URL, {

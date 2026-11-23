@@ -40,6 +40,7 @@ import {
   downloadFitBytes,
   downloadRideFit,
 } from '../services/fitExporter';
+import { loadFitDevicePreset, saveFitDevicePreset } from '../services/storage';
 import { RidePhotoStudio } from './RidePhotoStudio';
 import { getBluetoothUnsupportedMessage } from '../utils/browserSupport';
 
@@ -412,25 +413,13 @@ export function HistoryAndStravaModal({
   const [garminPersonalBusy, setGarminPersonalBusy] = useState(false);
   const [showPhotoStudio, setShowPhotoStudio] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [fitPreset, setFitPreset] = useState<FitDevicePresetId>(() => {
-    try {
-      const saved = window.localStorage.getItem('jbf_fit_device_preset_v1') as FitDevicePresetId | null;
-      if (saved && saved in FIT_DEVICE_PRESETS) return saved;
-    } catch {
-      // ignore storage errors
-    }
-    return 'edge-830';
-  });
+  const [fitPreset, setFitPreset] = useState<FitDevicePresetId>(() => loadFitDevicePreset());
   const tcxFileInputRef = useRef<HTMLInputElement | null>(null);
   const modalCardRef = useRef<HTMLDivElement | null>(null);
 
   const handleSelectFitPreset = (next: FitDevicePresetId) => {
     setFitPreset(next);
-    try {
-      window.localStorage.setItem('jbf_fit_device_preset_v1', next);
-    } catch {
-      // ignore storage errors
-    }
+    saveFitDevicePreset(next);
   };
 
   const handleConvertTcxUpload = async (file: File) => {

@@ -301,9 +301,12 @@ export function buildRideFitBytes(
   writer.writeDefinition(3, 20, recordFields);
 
   const points = ride.trackPoints;
+  let lastRecordTs = startFitTs - 1;
   for (let i = 0; i < points.length; i++) {
     const pt = points[i];
-    const ts = toFitTimestamp(pt.timestampMs || startMs + (pt.elapsedSec ?? i) * 1000);
+    const rawTs = toFitTimestamp(pt.timestampMs || startMs + (pt.elapsedSec ?? i) * 1000);
+    const ts = Math.max(lastRecordTs + 1, rawTs);
+    lastRecordTs = ts;
     const distCm = Math.max(0, Math.round((pt.distanceMeters || 0) * 100));
     const speedMmS = Math.max(0, Math.round((pt.speedMps || 0) * 1000));
     const hr = pt.heartRateBpm > 0 ? clampU8(pt.heartRateBpm) : undefined;
@@ -320,8 +323,10 @@ export function buildRideFitBytes(
     ]);
   }
 
+  const stopFitTs = Math.max(endFitTs, lastRecordTs);
+
   // Timer stop_all event
-  writer.writeData(2, eventFields, [endFitTs, 0, 4, 0]);
+  writer.writeData(2, eventFields, [stopFitTs, 0, 4, 0]);
 
   // Local 4: lap (global 19)
   const lapFields: FitFieldDef[] = [
@@ -349,7 +354,7 @@ export function buildRideFitBytes(
   ];
   writer.writeDefinition(4, 19, lapFields);
   writer.writeData(4, lapFields, [
-    endFitTs,
+    stopFitTs,
     startFitTs,
     durationMs,
     durationMs,
@@ -403,7 +408,7 @@ export function buildRideFitBytes(
   ];
   writer.writeDefinition(5, 18, sessionFields);
   writer.writeData(5, sessionFields, [
-    endFitTs,
+    stopFitTs,
     startFitTs,
     9,
     1,
@@ -433,7 +438,7 @@ export function buildRideFitBytes(
 
   // Local 6: activity (global 34)
   const tzOffsetSec = new Date(endMs).getTimezoneOffset() * 60;
-  const localEndFitTs = Math.max(0, endFitTs - tzOffsetSec);
+  const localEndFitTs = Math.max(0, stopFitTs - tzOffsetSec);
   const activityFields: FitFieldDef[] = [
     { num: 253, type: 'uint32' }, // timestamp
     { num: 0, type: 'uint32' }, // total_timer_time (ms)
@@ -445,7 +450,7 @@ export function buildRideFitBytes(
   ];
   writer.writeDefinition(6, 34, activityFields);
   writer.writeData(6, activityFields, [
-    endFitTs,
+    stopFitTs,
     durationMs,
     1,
     0,

@@ -20,7 +20,7 @@ import {
 import { loadGarminConfig, loadStravaConfig, saveGarminConfig, saveStravaConfig } from '../services/storage';
 import { makeSampleRide } from '../test/fixtures';
 
-describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => {
+describe('Strava OAuth, Auto-Refresh, .FIT Upload & Remote Metadata Sync', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -150,7 +150,7 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('uploads TCX multipart payload to Strava and polls until activity_id is assigned', async () => {
+  it('uploads binary .FIT multipart payload to Strava (matching manual .FIT export) and polls until activity_id is assigned', async () => {
     vi.useFakeTimers();
     saveStravaConfig({
       clientId: '111',
@@ -160,7 +160,8 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
       expiresAtSec: Math.floor(Date.now() / 1000) + 7200,
     });
 
-    vi.spyOn(globalThis, 'fetch')
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ id: 7001, status: 'Processing', error: null, activity_id: null }), {
           status: 201,
@@ -174,11 +175,27 @@ describe('Strava OAuth, Auto-Refresh, TCX Upload & Remote Metadata Sync', () => 
         )
       );
 
-    const uploadPromise = uploadRideToStrava(makeSampleRide());
+    const ride = makeSampleRide({ id: 'ride-ftp-fit-1', title: '20-Min FTP Test' });
+    const uploadPromise = uploadRideToStrava(ride);
     await vi.advanceTimersByTimeAsync(2500);
     const result = await uploadPromise;
 
     expect(result).toEqual({ uploadId: 7001, activityId: 880011 });
+
+    const uploadForm = fetchSpy.mock.calls[0][1]?.body as FormData;
+    expect(uploadForm).toBeInstanceOf(FormData);
+    expect(uploadForm.get('data_type')).toBe('fit');
+    expect(uploadForm.get('trainer')).toBe('1');
+    expect(uploadForm.get('name')).toBe('20-Min FTP Test');
+    expect(uploadForm.get('external_id')).toBe('jbf-ride-ftp-fit-1.fit');
+    expect(uploadForm.get('SportType')).toBeNull();
+    expect(uploadForm.get('activity_type')).toBeNull();
+
+    const uploadedFile = uploadForm.get('file') as File;
+    expect(uploadedFile).toBeTruthy();
+    expect(uploadedFile.name).toBe('ride-ftp-fit-1.fit');
+    const uploadedBytes = new Uint8Array(await uploadedFile.arrayBuffer());
+    expect(String.fromCharCode(uploadedBytes[8], uploadedBytes[9], uploadedBytes[10], uploadedBytes[11])).toBe('.FIT');
     vi.useRealTimers();
   });
 });

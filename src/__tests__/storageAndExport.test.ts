@@ -129,6 +129,19 @@ describe('Garmin & Strava TrainingCenterDatabase (.TCX) Exporter', () => {
     expect(xml).toContain('<Cadence>84</Cadence>');
     expect(xml).toContain('<HeartRateBpm>');
 
+    // Whole-second UTC timestamps (no millisecond jitter) and strictly increasing across duplicate-second inputs
+    expect(xml).not.toMatch(/<Time>[^<]*\.\d+Z<\/Time>/);
+    const jitteredRide = makeSampleRide({
+      startedAtIso: '2026-11-15T22:00:00.480Z',
+      trackPoints: [
+        { ...ride.trackPoints[0], timestampMs: Date.parse('2026-11-15T22:00:00.480Z') },
+        { ...ride.trackPoints[1], timestampMs: Date.parse('2026-11-15T22:00:00.490Z') },
+      ],
+    });
+    const jitteredXml = buildRideTcxXml(jitteredRide);
+    expect(jitteredXml).toContain('<Time>2026-11-15T22:00:00Z</Time>');
+    expect(jitteredXml).toContain('<Time>2026-11-15T22:00:01Z</Time>');
+
     // Ride without HR stream omits <AverageHeartRateBpm> cleanly
     const noHrRide = makeSampleRide({
       avgHr: 0,

@@ -45,17 +45,32 @@ export function buildRideSummaryDescription(ride: SavedRide): string {
   return trimmedNotes ? `${trimmedNotes}\n\n${summaryFooter}` : summaryFooter;
 }
 
+function formatTcxIsoSecond(ms: number): string {
+  const secMs = Math.round(ms / 1000) * 1000;
+  return new Date(secMs).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 /**
  * Generates a Garmin / Strava Training Center XML (.tcx) file containing
  * 1-second indoor cycling telemetry: Power (<ns3:Watts>), Cadence (<Cadence>),
  * Heart Rate (<HeartRateBpm>), Distance (<DistanceMeters>), and Calories.
  */
 export function buildRideTcxXml(ride: SavedRide): string {
-  const startIso = new Date(ride.startedAtIso).toISOString();
+  const parsedStartMs = Date.parse(ride.startedAtIso);
+  const startMs = Number.isFinite(parsedStartMs)
+    ? parsedStartMs
+    : ride.trackPoints[0]?.timestampMs ?? Date.now();
+  const startSecMs = Math.round(startMs / 1000) * 1000;
+  const startIso = formatTcxIsoSecond(startSecMs);
 
+  let lastPointSecMs = startSecMs - 1000;
   const trackpointsXml = ride.trackPoints
-    .map((pt) => {
-      const timeIso = new Date(pt.timestampMs).toISOString();
+    .map((pt, i) => {
+      const rawSecMs =
+        Math.round((pt.timestampMs || startMs + (pt.elapsedSec ?? i) * 1000) / 1000) * 1000;
+      const pointSecMs = Math.max(lastPointSecMs + 1000, rawSecMs);
+      lastPointSecMs = pointSecMs;
+      const timeIso = formatTcxIsoSecond(pointSecMs);
       const hrBlock =
         pt.heartRateBpm > 0
           ? `
