@@ -246,8 +246,18 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
     expect(footerGithub?.target).toBe('_blank');
     expect(footerGithub?.rel).toContain('noopener');
 
+    // Footer author attribution links directly to John Bendfeldt's portfolio
+    const footerAuthor = document.getElementById('footer-author-link') as HTMLAnchorElement | null;
+    expect(footerAuthor).toBeInTheDocument();
+    expect(footerAuthor?.textContent).toBe('John Bendfeldt');
+    expect(footerAuthor?.href).toBe('https://johnbendfeldt.com/');
+    expect(footerAuthor?.target).toBe('_blank');
+    expect(footerAuthor?.rel).toContain('noopener');
+    expect(footerAuthor?.rel).toContain('author');
+
     // Footer buttons also open Privacy and Terms directly and clarify open-source editability
     expect(document.getElementById('studio-footer')?.textContent).toContain('100% Local-First');
+    expect(document.getElementById('studio-footer')?.textContent).toContain('John Bendfeldt');
     expect(document.getElementById('studio-footer')?.textContent).toContain('edit it yourself');
     fireEvent.click(document.getElementById('open-privacy-btn')!);
     expect(window.location.pathname).toBe('/privacy');

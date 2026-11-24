@@ -3,6 +3,15 @@
   "private": true,
   "version": "0.0.0",
   "license": "MIT",
+  "author": {
+    "name": "John Bendfeldt",
+    "url": "https://johnbendfeldt.com/"
+  },
+  "homepage": "https://jbfit.studio/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JohnBendfeldt/just-believe-fitness.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -1,6 +1,6 @@
 # Just Believe Fitness
 
-**Live studio:** [jbfit.studio](https://jbfit.studio)
+**Live studio:** [jbfit.studio](https://jbfit.studio) · **Built by:** [John Bendfeldt](https://johnbendfeldt.com/)
 
 A **100% local-first, privacy-first** 5-zone indoor cycling studio that connects **directly** over Bluetooth to **any Echelon stationary bike**, **standard FTMS smart bikes & trainers**, **Bluetooth power pedals**, or **BLE cadence sensors**, plus **any Bluetooth heart rate monitor** — with **zero accounts, zero paywalls, and zero middleman bridge apps**.
 

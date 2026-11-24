@@ -140,6 +140,7 @@ const EMPTY_ZONE_SECONDS: Record<ZoneId, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 
 const GAUGE_MODE_STORAGE_KEY = 'jbf_gauge_mode_v1';
 const AUDIO_CUES_STORAGE_KEY = 'jbf_audio_cues_v1';
 const GITHUB_REPO_URL = 'https://github.com/JohnBendfeldt/just-believe-fitness';
+const AUTHOR_PORTFOLIO_URL = 'https://johnbendfeldt.com/';
 
 function GitHubMarkIcon({ size = 16 }: { size?: number }) {
   return (
@@ -2655,8 +2656,19 @@ export function App() {
         <div className="studio-footer-pledge">
           <strong>100% Local-First · Open Source · No Accounts · No Paywalls — Just Be Fit.</strong>
           <span>
-            Your workouts &amp; stats stay in your browser unless you choose to sync. Open source on
-            GitHub — take the code, edit it yourself, or improve it.
+            Built by{' '}
+            <a
+              id="footer-author-link"
+              href={AUTHOR_PORTFOLIO_URL}
+              target="_blank"
+              rel="noopener noreferrer author"
+              className="studio-footer-link"
+              title="John Bendfeldt — Portfolio"
+            >
+              John Bendfeldt
+            </a>
+            . Your workouts &amp; stats stay in your browser unless you choose to sync. Open source
+            on GitHub — take the code, edit it yourself, or improve it.
           </span>
         </div>
         <nav className="studio-footer-links" aria-label="Open source, privacy, and legal">
