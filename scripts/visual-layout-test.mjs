@@ -696,6 +696,30 @@ async function run() {
     });
     passedChecks++;
 
+    // 6. Audit Multi-Sport Modes (Running & Rowing + Simulators + Focus Mode) on Desktop & Phone Portrait
+    for (const sport of [
+      { id: 'running', btn: '#sport-mode-running-btn', workout: 'run-distance-5k' },
+      { id: 'rowing', btn: '#sport-mode-rowing-btn', workout: 'row-distance-2k' },
+    ]) {
+      for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await seedLayoutAndReload(page, url, null);
+        await page.click(sport.btn);
+        await page.selectOption('#workout-template-select', sport.workout);
+        await page.click('#toggle-sim-quick-btn');
+        await page.waitForSelector('#simulator-controls-bar');
+        await auditLayout(page, `sport-${sport.id} @ ${vp.name}`);
+        passedChecks++;
+
+        await page.click('#open-focus-mode-btn');
+        await page.waitForSelector('#focus-workout-modal');
+        await auditLayout(page, `sport-${sport.id}-focus @ ${vp.name}`, { skipMainGrid: true });
+        passedChecks++;
+        await page.click('#close-focus-modal-btn');
+        await page.waitForSelector('#focus-workout-modal', { state: 'detached' });
+      }
+    }
+
     assert.equal(
       pageErrors.length,
       0,

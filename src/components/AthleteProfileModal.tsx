@@ -5,9 +5,14 @@ import {
   DEFAULT_ATHLETE_PROFILE,
   computeWattsPerKg,
   feetInchesToCm,
+  formatPaceSeconds,
+  formatRowingSplit,
+  getEffectiveRowFtpWatts,
+  getEffectiveRunThresholdPaceSec,
   getHrZones,
   getPowerZones,
   lbsToKg,
+  rowingWattsToSplitSecPer500m,
 } from '../utils/zones';
 
 interface ClampedNumberInputProps {
@@ -114,6 +119,11 @@ export function AthleteProfileModal({
   const thresholdWkg = computeWattsPerKg(profile.ftpWatts, profile.weightLbs).toFixed(2);
   const weightKg = lbsToKg(profile.weightLbs).toFixed(1);
   const heightCm = Math.round(feetInchesToCm(profile.heightFeet, profile.heightInches));
+  const runThresholdSec = getEffectiveRunThresholdPaceSec(profile);
+  const runThrMin = Math.floor(runThresholdSec / 60);
+  const runThrSec = runThresholdSec % 60;
+  const rowFtpWatts = getEffectiveRowFtpWatts(profile);
+  const rowFtpSplit = formatRowingSplit(rowingWattsToSplitSecPer500m(rowFtpWatts));
 
   const updateField = <K extends keyof AthleteProfile>(key: K, val: AthleteProfile[K]) => {
     onChangeProfile({
@@ -129,9 +139,9 @@ export function AthleteProfileModal({
           <div>
             <h2 className="modal-title">Athlete Stats &amp; Zone Orientation</h2>
             <p className="modal-subtitle">
-              All power gauges, heart rate burn zones, workout targets, W/kg, and speed physics
-              scale to your profile. Starter defaults (150W FTP, 180 Max HR — roughly{' '}
-              <code>220 − age</code>) are paced conservatively so new riders don&apos;t overexert.
+              All power gauges, pace &amp; split targets, heart rate burn zones, W/kg, and physics
+              scale to your profile. Starter defaults (150W FTP, 9:00/mi Run Thr, 180 Max HR) are
+              paced conservatively so new athletes don&apos;t overexert.
             </p>
           </div>
           <button type="button" className="btn btn-sm" id="close-athlete-modal" onClick={onClose}>
@@ -141,7 +151,7 @@ export function AthleteProfileModal({
 
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="athlete-name-input">Rider Display Name</label>
+            <label htmlFor="athlete-name-input">Athlete Display Name</label>
             <input
               id="athlete-name-input"
               type="text"
@@ -185,7 +195,7 @@ export function AthleteProfileModal({
 
           <div className="field">
             <label htmlFor="athlete-ftp-watts">
-              FTP (Watts) · {thresholdWkg} W/kg
+              Bike FTP (Watts) · {thresholdWkg} W/kg
             </label>
             <ClampedNumberInput
               id="athlete-ftp-watts"
@@ -193,6 +203,43 @@ export function AthleteProfileModal({
               max={550}
               value={profile.ftpWatts}
               onCommit={(n) => updateField('ftpWatts', n)}
+            />
+          </div>
+
+          <div className="field">
+            <label>
+              Run Threshold Pace (min / sec) · {formatPaceSeconds(runThresholdSec)}/mi
+            </label>
+            <div className="height-inline">
+              <ClampedNumberInput
+                id="athlete-run-pace-min"
+                min={4}
+                max={18}
+                value={runThrMin}
+                ariaLabel="Run threshold pace minutes"
+                onCommit={(m) => updateField('runThresholdPaceSecPerMile', m * 60 + runThrSec)}
+              />
+              <ClampedNumberInput
+                id="athlete-run-pace-sec"
+                min={0}
+                max={59}
+                value={runThrSec}
+                ariaLabel="Run threshold pace seconds"
+                onCommit={(s) => updateField('runThresholdPaceSecPerMile', runThrMin * 60 + s)}
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="athlete-row-ftp-watts">
+              Row FTP (Watts) · {rowFtpSplit} /500m
+            </label>
+            <ClampedNumberInput
+              id="athlete-row-ftp-watts"
+              min={60}
+              max={550}
+              value={rowFtpWatts}
+              onCommit={(n) => updateField('rowFtpWatts', n)}
             />
           </div>
 

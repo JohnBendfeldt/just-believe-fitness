@@ -1,4 +1,10 @@
-import type { AthleteProfile, GarminConfig, SavedRide, StravaConfig } from '../types/fitness';
+import type {
+  AthleteProfile,
+  GarminConfig,
+  SavedRide,
+  SportMode,
+  StravaConfig,
+} from '../types/fitness';
 import { FIT_DEVICE_PRESETS, type FitDevicePresetId } from './fitExporter';
 import {
   createDefaultLayoutPrefs,
@@ -13,6 +19,7 @@ const GARMIN_STORAGE_KEY = 'jbf_garmin_connect_v1';
 const YOUTUBE_STORAGE_KEY = 'jb_fitness_youtube_v1';
 export const FIT_DEVICE_PRESET_STORAGE_KEY = 'jbf_fit_device_preset_v1';
 export const LAYOUT_PREFS_STORAGE_KEY = 'jbf_layout_prefs_v1';
+export const SPORT_MODE_STORAGE_KEY = 'jbf_sport_mode_v1';
 
 const DB_NAME = 'just_believe_fitness_db';
 const DB_VERSION = 1;
@@ -166,6 +173,26 @@ export function loadLayoutPrefs(): LayoutPreferences {
 export function saveLayoutPrefs(prefs: LayoutPreferences): void {
   try {
     localStorage.setItem(LAYOUT_PREFS_STORAGE_KEY, JSON.stringify(sanitizeLayoutPrefs(prefs)));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+export function loadSportMode(): SportMode {
+  try {
+    const saved = localStorage.getItem(SPORT_MODE_STORAGE_KEY);
+    if (saved === 'running' || saved === 'rowing' || saved === 'cycling') {
+      return saved;
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+  return 'cycling';
+}
+
+export function saveSportMode(sport: SportMode): void {
+  try {
+    localStorage.setItem(SPORT_MODE_STORAGE_KEY, sport);
   } catch {
     // Ignore storage quota errors
   }

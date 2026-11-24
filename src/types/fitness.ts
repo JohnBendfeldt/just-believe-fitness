@@ -1,5 +1,7 @@
 export type ZoneId = 1 | 2 | 3 | 4 | 5;
 
+export type SportMode = 'cycling' | 'running' | 'rowing';
+
 export type PowerCurveType = 'auto' | 'ex3-vector' | 'sport-compact' | 'echelon-official';
 
 export type BikeFamilyId =
@@ -7,7 +9,10 @@ export type BikeFamilyId =
   | 'echelon-sport-knob'
   | 'ftms-bike'
   | 'power-meter-bike'
-  | 'cadence-bike';
+  | 'cadence-bike'
+  | 'ftms-treadmill'
+  | 'rsc-footpod'
+  | 'ftms-rower';
 
 export type BikeUnlockStatus = 'idle' | 'unlocking' | 'unlocked' | 'failed';
 
@@ -21,6 +26,10 @@ export interface AthleteProfile {
   restingHrBpm: number;
   powerCurve: PowerCurveType;
   wattGain: number;
+  /** Runner threshold pace in seconds per mile (default 540s = 9:00 /mi). */
+  runThresholdPaceSecPerMile?: number;
+  /** Rower threshold power (Row FTP) in watts (defaults to ftpWatts when unset). */
+  rowFtpWatts?: number;
 }
 
 export interface ZoneDefinition {
@@ -39,9 +48,16 @@ export interface ZoneDefinition {
 }
 
 export interface LiveTelemetry {
+  sport?: SportMode;
   powerWatts: number;
   cadenceRpm: number;
   resistance: number;
+  /** Treadmill incline percentage (e.g. 0.0 to 15.0%). */
+  inclinePct?: number;
+  /** Rowing split pace in seconds per 500 meters (e.g. 125 = 2:05 /500m). */
+  paceSecPer500m?: number;
+  /** Cumulative stroke count from an FTMS rower. */
+  strokeCount?: number;
   heartRateBpm: number;
   speedMph: number;
   distanceMeters: number;
@@ -52,6 +68,8 @@ export interface LiveTelemetry {
   bikeFamily?: BikeFamilyId | null;
   bikeShortLabel?: string | null;
   bikeHasMotorizedResistance?: boolean;
+  bikeHasMotorizedSpeed?: boolean;
+  bikeHasMotorizedIncline?: boolean;
   bikeMaxResistance?: number;
   hrConnected: boolean;
   hrName: string | null;
@@ -65,6 +83,8 @@ export interface TrackPoint {
   powerWatts: number;
   cadenceRpm: number;
   resistance: number;
+  inclinePct?: number;
+  paceSecPer500m?: number;
   heartRateBpm: number;
   speedMps: number;
   distanceMeters: number;
@@ -85,6 +105,10 @@ export interface WorkoutSegment {
   targetZone: ZoneId;
   ftpPctRange: [number, number];
   cadenceRange: [number, number];
+  /** Optional target treadmill incline (%) for running workouts. */
+  inclinePct?: number;
+  /** Optional target speed fraction of runner threshold speed (e.g. [0.82, 0.92]). */
+  pacePctRange?: [number, number];
   coachingNote: string;
 }
 
@@ -92,14 +116,15 @@ export interface WorkoutTemplate {
   id: string;
   name: string;
   subtitle: string;
+  sport?: SportMode;
   category: 'free' | 'jbf' | 'hiit' | 'climb' | 'endurance' | 'distance';
   isFreeRide?: boolean;
   /** Marks a dedicated 20-minute FTP benchmark test (95% of 20-min avg watts = FTP). */
   isFtpTest?: boolean;
-  /** Total target distance (meters) for distance-based challenge rides (e.g. 50K, 50 mi, 100K, 100 mi). */
+  /** Total target distance (meters) for distance-based challenge rides (e.g. 50K, 50 mi, 5K, 2000m). */
   targetDistanceMeters?: number;
-  /** Native display unit for distance-based challenge rides. */
-  distanceUnit?: 'km' | 'mi';
+  /** Native display unit for distance-based challenge workouts. */
+  distanceUnit?: 'km' | 'mi' | 'm';
   segments: WorkoutSegment[];
 }
 
@@ -117,7 +142,7 @@ export interface FtpTestResult {
 }
 
 export interface DistanceProgressInfo {
-  unit: 'km' | 'mi';
+  unit: 'km' | 'mi' | 'm';
   totalTargetMeters: number;
   totalRemainingMeters: number;
   overallProgressPct: number;
@@ -141,11 +166,18 @@ export interface ActiveSegmentSummary {
     midWatts: number;
     suggestedResistanceLow: number;
     suggestedResistanceHigh: number;
+    /** Target running speed range (mph) when sport === 'running'. */
+    targetSpeedMphRange?: [number, number];
+    /** Target treadmill incline (%) when sport === 'running'. */
+    targetInclinePct?: number;
+    /** Target rowing /500m split range in seconds [fasterSplitSec, slowerSplitSec] when sport === 'rowing'. */
+    targetSplitSecRange?: [number, number];
   };
 }
 
 export interface SavedRide {
   id: string;
+  sport?: SportMode;
   title: string;
   notes?: string;
   workoutName: string;
@@ -163,6 +195,10 @@ export interface SavedRide {
   avgCadence: number;
   maxCadence: number;
   avgResistance: number;
+  avgInclinePct?: number;
+  maxInclinePct?: number;
+  avgSplitSecPer500m?: number;
+  totalStrokes?: number;
   avgHr: number;
   maxHr: number;
   athleteSnapshot: AthleteProfile;

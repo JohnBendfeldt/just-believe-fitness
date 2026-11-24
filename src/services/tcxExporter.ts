@@ -1,4 +1,10 @@
 import type { SavedRide } from '../types/fitness';
+import {
+  formatRowingSplit,
+  formatRunningPacePerMile,
+  mpsToMph,
+  rowingWattsToSplitSecPer500m,
+} from '../utils/zones';
 
 function escapeXml(str: string): string {
   return str
@@ -28,16 +34,64 @@ export function normalizeRideTitle(title: string): string {
  * Avoids repeating the workout title/duration and appends bare jbfit.studio below the summary.
  */
 export function buildRideSummaryDescription(ride: SavedRide): string {
-  const bikeTag = ride.bikeLabel || 'Indoor Bike';
-  const powerPart = `Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`;
-  const statsLine = [
-    `Just Believe Fitness · ${bikeTag}`,
-    ride.burnPoints > 0 ? `Burn Points: ${ride.burnPoints} | ${powerPart}` : powerPart,
-    ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
-    `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
-  ]
-    .filter(Boolean)
-    .join(' • ');
+  const sport = ride.sport ?? 'cycling';
+  let statsLine: string;
+
+  if (sport === 'running') {
+    const deviceTag = ride.bikeLabel || 'Treadmill';
+    const avgMph =
+      ride.durationSec > 0 && ride.distanceMeters > 0
+        ? mpsToMph(ride.distanceMeters / ride.durationSec)
+        : 0;
+    const paceStr = formatRunningPacePerMile(avgMph);
+    const pacePart =
+      avgMph > 0.4
+        ? `Avg Pace: ${paceStr} /mi (${avgMph.toFixed(1)} mph)`
+        : `Avg Power: ${ride.avgWatts}W`;
+    statsLine = [
+      `Just Believe Fitness · ${deviceTag}`,
+      ride.burnPoints > 0 ? `Burn Points: ${ride.burnPoints} | ${pacePart}` : pacePart,
+      ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
+      typeof ride.avgInclinePct === 'number' && ride.avgInclinePct > 0
+        ? `Avg Incline: ${ride.avgInclinePct.toFixed(1)}% | Calories: ${Math.round(ride.caloriesKcal)} kcal`
+        : ride.avgCadence > 0
+          ? `Avg Cadence: ${ride.avgCadence} spm | Calories: ${Math.round(ride.caloriesKcal)} kcal`
+          : `Calories: ${Math.round(ride.caloriesKcal)} kcal`,
+    ]
+      .filter(Boolean)
+      .join(' • ');
+  } else if (sport === 'rowing') {
+    const deviceTag = ride.bikeLabel || 'FTMS Rower';
+    const avgSplit =
+      ride.avgSplitSecPer500m && ride.avgSplitSecPer500m > 0
+        ? ride.avgSplitSecPer500m
+        : ride.durationSec > 0 && ride.distanceMeters > 50
+          ? (ride.durationSec / ride.distanceMeters) * 500
+          : rowingWattsToSplitSecPer500m(ride.avgWatts);
+    const splitPart =
+      avgSplit > 0
+        ? `Avg Split: ${formatRowingSplit(avgSplit)} /500m (${ride.avgWatts}W)`
+        : `Avg Power: ${ride.avgWatts}W`;
+    statsLine = [
+      `Just Believe Fitness · ${deviceTag}`,
+      ride.burnPoints > 0 ? `Burn Points: ${ride.burnPoints} | ${splitPart}` : splitPart,
+      ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
+      `Avg Rate: ${ride.avgCadence} spm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
+    ]
+      .filter(Boolean)
+      .join(' • ');
+  } else {
+    const bikeTag = ride.bikeLabel || 'Indoor Bike';
+    const powerPart = `Avg Power: ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg, NP ${ride.normalizedWatts}W)`;
+    statsLine = [
+      `Just Believe Fitness · ${bikeTag}`,
+      ride.burnPoints > 0 ? `Burn Points: ${ride.burnPoints} | ${powerPart}` : powerPart,
+      ride.avgHr > 0 ? `Avg HR: ${ride.avgHr} bpm (Max ${ride.maxHr} bpm)` : null,
+      `Avg Cadence: ${ride.avgCadence} rpm | Calories: ${Math.round(ride.caloriesKcal)} kcal`,
+    ]
+      .filter(Boolean)
+      .join(' • ');
+  }
 
   const trimmedNotes = ride.notes?.trim();
   const alreadyHasDomain = trimmedNotes?.toLowerCase().includes(JBF_STRAVA_APP_DOMAIN) ?? false;
@@ -52,10 +106,15 @@ function formatTcxIsoSecond(ms: number): string {
 
 /**
  * Generates a Garmin / Strava Training Center XML (.tcx) file containing
- * 1-second indoor cycling telemetry: Power (<ns3:Watts>), Cadence (<Cadence>),
+ * 1-second telemetry: Power (<ns3:Watts>), Cadence (<Cadence> / <ns3:RunCadence>),
  * Heart Rate (<HeartRateBpm>), Distance (<DistanceMeters>), and Calories.
  */
 export function buildRideTcxXml(ride: SavedRide): string {
+  const sport = ride.sport ?? 'cycling';
+  const tcxSportAttr = sport === 'running' ? 'Running' : sport === 'rowing' ? 'Other' : 'Biking';
+  const defaultDeviceLabel =
+    sport === 'running' ? 'Treadmill' : sport === 'rowing' ? 'FTMS Rower' : 'Indoor Bike';
+
   const parsedStartMs = Date.parse(ride.startedAtIso);
   const startMs = Number.isFinite(parsedStartMs)
     ? parsedStartMs
@@ -78,14 +137,23 @@ export function buildRideTcxXml(ride: SavedRide): string {
               <Value>${Math.round(pt.heartRateBpm)}</Value>
             </HeartRateBpm>`
           : '';
+      const cadenceLine =
+        sport === 'running'
+          ? ''
+          : `
+            <Cadence>${Math.round(pt.cadenceRpm)}</Cadence>`;
+      const runCadenceLine =
+        sport === 'running' && pt.cadenceRpm > 0
+          ? `
+                <ns3:RunCadence>${Math.round(pt.cadenceRpm / 2)}</ns3:RunCadence>`
+          : '';
 
       return `          <Trackpoint>
             <Time>${timeIso}</Time>
-            <DistanceMeters>${pt.distanceMeters.toFixed(2)}</DistanceMeters>${hrBlock}
-            <Cadence>${Math.round(pt.cadenceRpm)}</Cadence>
+            <DistanceMeters>${pt.distanceMeters.toFixed(2)}</DistanceMeters>${hrBlock}${cadenceLine}
             <Extensions>
               <ns3:TPX>
-                <ns3:Speed>${pt.speedMps.toFixed(2)}</ns3:Speed>
+                <ns3:Speed>${pt.speedMps.toFixed(2)}</ns3:Speed>${runCadenceLine}
                 <ns3:Watts>${Math.round(pt.powerWatts)}</ns3:Watts>
               </ns3:TPX>
             </Extensions>
@@ -113,7 +181,7 @@ export function buildRideTcxXml(ride: SavedRide): string {
   xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Activities>
-    <Activity Sport="Biking">
+    <Activity Sport="${tcxSportAttr}">
       <Id>${startIso}</Id>
       <Notes>${escapeXml(buildRideSummaryDescription(ride))}</Notes>
       <Lap StartTime="${startIso}">
@@ -121,7 +189,7 @@ export function buildRideTcxXml(ride: SavedRide): string {
         <DistanceMeters>${ride.distanceMeters.toFixed(2)}</DistanceMeters>
         <Calories>${Math.round(ride.caloriesKcal)}</Calories>${avgHrBlock}
         <Intensity>Active</Intensity>
-        <Cadence>${Math.round(ride.avgCadence)}</Cadence>
+        <Cadence>${Math.round(sport === 'running' ? ride.avgCadence / 2 : ride.avgCadence)}</Cadence>
         <TriggerMethod>Manual</TriggerMethod>
         <Track>
 ${trackpointsXml}
@@ -134,7 +202,7 @@ ${trackpointsXml}
         </Extensions>
       </Lap>
       <Creator xsi:type="Device_t">
-        <Name>${escapeXml(`Just Believe Fitness (${ride.bikeLabel || 'Indoor Bike'})`)}</Name>
+        <Name>${escapeXml(`Just Believe Fitness (${ride.bikeLabel || defaultDeviceLabel})`)}</Name>
         <UnitId>0</UnitId>
         <ProductID>0</ProductID>
         <Version>

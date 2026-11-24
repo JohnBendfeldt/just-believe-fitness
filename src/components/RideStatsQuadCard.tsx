@@ -1,4 +1,11 @@
-import { formatDuration, metersToMiles } from '../utils/zones';
+import type { SportMode } from '../types/fitness';
+import {
+  formatDuration,
+  formatRowingSplit,
+  formatRunningPacePerMile,
+  metersToMiles,
+  rowingWattsToSplitSecPer500m,
+} from '../utils/zones';
 import type { QuadStatId } from '../utils/layoutPrefs';
 import { TileArrangeArrows, TileArrangeGrip } from './TileReorderControls';
 import { getTileArrangeSectionProps, type TileArrangeBinding } from '../utils/tileArrange';
@@ -7,7 +14,10 @@ interface RideStatsQuadCardProps {
   id?: string;
   tileId?: string;
   className?: string;
+  sport?: SportMode;
   speedMph: number;
+  inclinePct?: number;
+  paceSecPer500m?: number;
   distanceMeters: number;
   caloriesKcal: number;
   avgRideWatts: number;
@@ -24,7 +34,10 @@ export function RideStatsQuadCard({
   id = 'compact-all-stats-card',
   tileId = 'stats',
   className = '',
+  sport = 'cycling',
   speedMph,
+  inclinePct = 0,
+  paceSecPer500m = 0,
   distanceMeters,
   caloriesKcal,
   avgRideWatts,
@@ -34,28 +47,81 @@ export function RideStatsQuadCard({
   statOrder = DEFAULT_QUAD_ORDER,
   arrange,
 }: RideStatsQuadCardProps) {
-  const cells: Record<QuadStatId, { label: string; val: string; sub: string }> = {
-    speed: {
-      label: 'Speed',
-      val: speedMph.toFixed(1),
-      sub: 'mph',
-    },
-    distance: {
-      label: 'Distance',
-      val: metersToMiles(distanceMeters).toFixed(2),
-      sub: `mi · ${(distanceMeters / 1000).toFixed(1)}k`,
-    },
-    calories: {
-      label: 'Calories',
-      val: `${Math.round(caloriesKcal)}`,
-      sub: 'kcal',
-    },
-    avgPower: {
-      label: 'Avg / NP',
-      val: `${avgRideWatts}W`,
-      sub: `NP ${npRideWatts}W`,
-    },
-  };
+  const liveRowSplit =
+    paceSecPer500m > 0 ? paceSecPer500m : rowingWattsToSplitSecPer500m(avgRideWatts);
+
+  const cells: Record<QuadStatId, { label: string; val: string; sub: string }> =
+    sport === 'running'
+      ? {
+          speed: {
+            label: 'Speed',
+            val: speedMph.toFixed(1),
+            sub: `mph · ${formatRunningPacePerMile(speedMph)}/mi`,
+          },
+          distance: {
+            label: 'Distance',
+            val: metersToMiles(distanceMeters).toFixed(2),
+            sub: `mi · ${(distanceMeters / 1000).toFixed(1)}k`,
+          },
+          calories: {
+            label: 'Calories',
+            val: `${Math.round(caloriesKcal)}`,
+            sub: 'kcal',
+          },
+          avgPower: {
+            label: 'Incline',
+            val: `${inclinePct.toFixed(1)}%`,
+            sub: `${avgRideWatts}W avg`,
+          },
+        }
+      : sport === 'rowing'
+        ? {
+            speed: {
+              label: 'Split',
+              val: formatRowingSplit(liveRowSplit),
+              sub: '/500m',
+            },
+            distance: {
+              label: 'Meters',
+              val: Math.round(distanceMeters).toLocaleString('en-US'),
+              sub: `m · ${(distanceMeters / 1000).toFixed(2)}k`,
+            },
+            calories: {
+              label: 'Calories',
+              val: `${Math.round(caloriesKcal)}`,
+              sub: 'kcal',
+            },
+            avgPower: {
+              label: 'Avg / NP',
+              val: `${avgRideWatts}W`,
+              sub: `NP ${npRideWatts}W`,
+            },
+          }
+        : {
+            speed: {
+              label: 'Speed',
+              val: speedMph.toFixed(1),
+              sub: 'mph',
+            },
+            distance: {
+              label: 'Distance',
+              val: metersToMiles(distanceMeters).toFixed(2),
+              sub: `mi · ${(distanceMeters / 1000).toFixed(1)}k`,
+            },
+            calories: {
+              label: 'Calories',
+              val: `${Math.round(caloriesKcal)}`,
+              sub: 'kcal',
+            },
+            avgPower: {
+              label: 'Avg / NP',
+              val: `${avgRideWatts}W`,
+              sub: `NP ${npRideWatts}W`,
+            },
+          };
+
+  const cardTitle =
+    sport === 'running' ? 'Run Stats' : sport === 'rowing' ? 'Row Stats' : 'Ride Stats';
 
   return (
     <section
@@ -71,7 +137,7 @@ export function RideStatsQuadCard({
       >
         <span className="dial-header-title">
           {arrange && <TileArrangeGrip />}
-          Ride Stats
+          {cardTitle}
         </span>
         {arrange ? (
           <TileArrangeArrows arrange={arrange} />

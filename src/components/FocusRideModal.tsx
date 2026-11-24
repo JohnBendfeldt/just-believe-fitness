@@ -18,6 +18,7 @@ import type {
   ActiveSegmentSummary,
   AthleteProfile,
   LiveTelemetry,
+  SportMode,
   WorkoutTemplate,
   ZoneDefinition,
   ZoneId,
@@ -28,6 +29,10 @@ import {
   formatDistanceTarget,
   formatDistanceValue,
   formatDuration,
+  formatPaceSeconds,
+  formatRowingSplit,
+  formatRunningPacePerMile,
+  getEffectiveRunThresholdPaceSec,
 } from '../utils/zones';
 import { isBrowserFullscreen, toggleBrowserFullscreen } from '../utils/fullscreen';
 import { formatWorkoutOptionLabel, groupWorkoutTemplates } from '../data/workouts';
@@ -65,6 +70,7 @@ interface FocusRideModalProps {
   activeHrZone: ZoneDefinition;
   headlineZone: ZoneDefinition;
   resistanceControl: ReactNode;
+  speedControl?: ReactNode;
   audioEnabled: boolean;
   onToggleAudio: () => void;
   isHudPipActive: boolean;
@@ -107,6 +113,7 @@ export function FocusRideModal({
   activeHrZone,
   headlineZone,
   resistanceControl,
+  speedControl,
   audioEnabled,
   onToggleAudio,
   isHudPipActive,
@@ -152,8 +159,12 @@ export function FocusRideModal({
 
   if (!isOpen) return null;
 
+  const sport: SportMode = telemetry.sport ?? 'cycling';
   const isAnySensorLive =
-    telemetry.powerWatts > 0 || telemetry.heartRateBpm > 0 || rideState === 'running';
+    telemetry.powerWatts > 0 ||
+    telemetry.speedMph > 0.2 ||
+    telemetry.heartRateBpm > 0 ||
+    rideState === 'running';
 
   const targetPalette = activeSegmentInfo
     ? ZONE_PALETTE[activeSegmentInfo.segment.targetZone]
@@ -171,7 +182,7 @@ export function FocusRideModal({
       ? dist.overallProgressPct
       : Math.min(100, Math.max(0, (segElapsed / Math.max(1, segDuration)) * 100))
     : 0;
-  const groupedWorkouts = groupWorkoutTemplates(workouts);
+  const groupedWorkouts = groupWorkoutTemplates(workouts, sport);
 
   return (
     <div
@@ -379,20 +390,80 @@ export function FocusRideModal({
               <>
                 <p className="focus-coaching-note">
                   {dist?.isGoalComplete
-                    ? `${selectedWorkout.name} complete (${formatDistanceTarget(dist.totalTargetMeters, dist.unit)})! Keep spinning easy to cool down or tap Stop & Save.`
+                    ? `${selectedWorkout.name} complete (${formatDistanceTarget(dist.totalTargetMeters, dist.unit)})! Ease into a cool-down or tap Stop & Save.`
                     : activeSegmentInfo.segment.coachingNote}
                 </p>
 
                 <div className="focus-targets-row tabular">
-                  <span className="focus-target-chip">
-                    <strong>{activeSegmentInfo.targets.minWatts}–{activeSegmentInfo.targets.maxWatts}W</strong>
-                  </span>
-                  <span className="focus-target-chip">
-                    <strong>{activeSegmentInfo.segment.cadenceRange[0]}–{activeSegmentInfo.segment.cadenceRange[1]}</strong> RPM
-                  </span>
-                  <span className="focus-target-chip">
-                    Gear <strong>{activeSegmentInfo.targets.suggestedResistanceLow}–{activeSegmentInfo.targets.suggestedResistanceHigh}</strong>
-                  </span>
+                  {sport === 'running' && activeSegmentInfo.targets.targetSpeedMphRange ? (
+                    <>
+                      <span className="focus-target-chip">
+                        <strong>
+                          {activeSegmentInfo.targets.targetSpeedMphRange[0].toFixed(1)}–
+                          {activeSegmentInfo.targets.targetSpeedMphRange[1].toFixed(1)} mph
+                        </strong>{' '}
+                        ({formatRunningPacePerMile(activeSegmentInfo.targets.targetSpeedMphRange[1])}
+                        /mi)
+                      </span>
+                      <span className="focus-target-chip">
+                        Incline{' '}
+                        <strong>
+                          {(activeSegmentInfo.targets.targetInclinePct ?? 1.0).toFixed(1)}%
+                        </strong>
+                      </span>
+                      <span className="focus-target-chip">
+                        <strong>
+                          {activeSegmentInfo.segment.cadenceRange[0]}–
+                          {activeSegmentInfo.segment.cadenceRange[1]}
+                        </strong>{' '}
+                        SPM
+                      </span>
+                    </>
+                  ) : sport === 'rowing' && activeSegmentInfo.targets.targetSplitSecRange ? (
+                    <>
+                      <span className="focus-target-chip">
+                        <strong>
+                          {formatRowingSplit(activeSegmentInfo.targets.targetSplitSecRange[0])}–
+                          {formatRowingSplit(activeSegmentInfo.targets.targetSplitSecRange[1])}
+                        </strong>{' '}
+                        /500m
+                      </span>
+                      <span className="focus-target-chip">
+                        <strong>
+                          {activeSegmentInfo.targets.minWatts}–{activeSegmentInfo.targets.maxWatts}W
+                        </strong>
+                      </span>
+                      <span className="focus-target-chip">
+                        <strong>
+                          {activeSegmentInfo.segment.cadenceRange[0]}–
+                          {activeSegmentInfo.segment.cadenceRange[1]}
+                        </strong>{' '}
+                        SPM
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="focus-target-chip">
+                        <strong>
+                          {activeSegmentInfo.targets.minWatts}–{activeSegmentInfo.targets.maxWatts}W
+                        </strong>
+                      </span>
+                      <span className="focus-target-chip">
+                        <strong>
+                          {activeSegmentInfo.segment.cadenceRange[0]}–
+                          {activeSegmentInfo.segment.cadenceRange[1]}
+                        </strong>{' '}
+                        RPM
+                      </span>
+                      <span className="focus-target-chip">
+                        Gear{' '}
+                        <strong>
+                          {activeSegmentInfo.targets.suggestedResistanceLow}–
+                          {activeSegmentInfo.targets.suggestedResistanceHigh}
+                        </strong>
+                      </span>
+                    </>
+                  )}
                   {dist && (
                     <span className="focus-target-chip">
                       <strong>{formatDistanceValue(distanceMeters, dist.unit)}</strong> /{' '}
@@ -426,9 +497,32 @@ export function FocusRideModal({
               </>
             ) : (
               <p className="focus-coaching-note">
-                Ride at your own pace — earn 1 <strong>Burn Point</strong> per minute in{' '}
-                <strong>Orange (≥ {hrZones[3].minValue} bpm / ≥ {powerZones[3].minValue}W)</strong>{' '}
-                or <strong>Red</strong>.
+                {sport === 'running' ? (
+                  <>
+                    Run at your own pace — earn 1 <strong>Burn Point</strong> per minute in{' '}
+                    <strong>
+                      Orange (≥ {hrZones[3].minValue} bpm / Thr{' '}
+                      {formatPaceSeconds(getEffectiveRunThresholdPaceSec(profile))}/mi)
+                    </strong>{' '}
+                    or <strong>Red</strong>.
+                  </>
+                ) : sport === 'rowing' ? (
+                  <>
+                    Row at your own pace — earn 1 <strong>Burn Point</strong> per minute in{' '}
+                    <strong>
+                      Orange (≥ {hrZones[3].minValue} bpm / ≥ {powerZones[3].minValue}W)
+                    </strong>{' '}
+                    or <strong>Red</strong>.
+                  </>
+                ) : (
+                  <>
+                    Ride at your own pace — earn 1 <strong>Burn Point</strong> per minute in{' '}
+                    <strong>
+                      Orange (≥ {hrZones[3].minValue} bpm / ≥ {powerZones[3].minValue}W)
+                    </strong>{' '}
+                    or <strong>Red</strong>.
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -520,6 +614,7 @@ export function FocusRideModal({
               activeHrZone={activeHrZone}
               activeSegmentInfo={activeSegmentInfo}
               resistanceControl={resistanceControl}
+              speedControl={speedControl}
               quadStatOrder={quadStatOrder}
             />
           ))}

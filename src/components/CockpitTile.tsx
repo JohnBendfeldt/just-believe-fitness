@@ -3,6 +3,7 @@ import type {
   ActiveSegmentSummary,
   AthleteProfile,
   LiveTelemetry,
+  SportMode,
   ZoneDefinition,
   ZoneId,
 } from '../types/fitness';
@@ -14,11 +15,19 @@ import {
   formatDistanceValue,
   formatDuration,
   formatHeightImperial,
+  formatPaceSeconds,
+  formatRowingSplit,
+  formatRunningPacePerMile,
   getCalorieZones,
   getDistanceZones,
+  getEffectiveRowFtpWatts,
+  getEffectiveRunThresholdPaceSec,
+  getInclineZones,
+  getRunningSpeedZones,
   getSpeedZones,
   metersToMiles,
   resolveZone,
+  rowingWattsToSplitSecPer500m,
 } from '../utils/zones';
 import { ZoneSpeedometerCard } from './ZoneSpeedometerCard';
 import { ZoneMetricCard } from './ZoneMetricCard';
@@ -52,12 +61,14 @@ export interface CockpitTileProps {
   activeHrZone: ZoneDefinition;
   activeSegmentInfo: ActiveSegmentSummary | null;
   resistanceControl: ReactNode;
+  speedControl?: ReactNode;
   quadStatOrder: QuadStatId[];
   arrange?: TileArrangeBinding;
 }
 
 const SPEED_ZONES = getSpeedZones();
 const CALORIE_ZONES = getCalorieZones();
+const INCLINE_ZONES = getInclineZones();
 
 export function CockpitTile({
   tileId,
@@ -84,22 +95,79 @@ export function CockpitTile({
   activeHrZone,
   activeSegmentInfo,
   resistanceControl,
+  speedControl,
   quadStatOrder,
   arrange,
 }: CockpitTileProps) {
   const GaugeCard = gaugeStyle === 'rings' ? ZoneSpeedometerCard : ZoneMetricCard;
   const isFocus = context === 'focus';
+  const sport: SportMode = telemetry.sport ?? 'cycling';
 
   const liveWkg = computeWattsPerKg(telemetry.powerWatts, profile.weightLbs);
-  const ftpPct =
-    profile.ftpWatts > 0 ? Math.round((telemetry.powerWatts / profile.ftpWatts) * 100) : 0;
+  const effFtp = sport === 'rowing' ? getEffectiveRowFtpWatts(profile) : profile.ftpWatts;
+  const ftpPct = effFtp > 0 ? Math.round((telemetry.powerWatts / effFtp) * 100) : 0;
   const hrPct =
     profile.maxHrBpm > 0 && telemetry.heartRateBpm > 0
       ? Math.round((telemetry.heartRateBpm / profile.maxHrBpm) * 100)
       : 0;
+  const liveRowSplit =
+    telemetry.paceSecPer500m && telemetry.paceSecPer500m > 0
+      ? telemetry.paceSecPer500m
+      : rowingWattsToSplitSecPer500m(telemetry.powerWatts);
 
   switch (tileId) {
-    case 'power':
+    case 'power': {
+      if (sport === 'running') {
+        const runThresholdSec = getEffectiveRunThresholdPaceSec(profile);
+        const runSpeedZones = getRunningSpeedZones(runThresholdSec);
+        const activeRunSpeedZone = resolveZone(telemetry.speedMph, runSpeedZones);
+        return (
+          <GaugeCard
+            id={isFocus ? 'focus-power-card' : 'power-metric-card'}
+            tileId="power"
+            className={slotClassName}
+            title="Pace"
+            valueDisplay={formatRunningPacePerMile(telemetry.speedMph)}
+            unit="/MI"
+            primaryBadge={`${telemetry.speedMph.toFixed(1)} mph · ${Math.round(telemetry.powerWatts)}W`}
+            secondarySub={
+              isFocus && activeSegmentInfo?.targets.targetSpeedMphRange
+                ? `Goal ${activeSegmentInfo.targets.targetSpeedMphRange[0].toFixed(1)}–${activeSegmentInfo.targets.targetSpeedMphRange[1].toFixed(1)} mph`
+                : `Incline ${(telemetry.inclinePct ?? 0).toFixed(1)}% · Thr ${formatPaceSeconds(runThresholdSec)}/mi`
+            }
+            zones={runSpeedZones}
+            numericValue={telemetry.speedMph}
+            activeZone={activeRunSpeedZone}
+            extraControl={speedControl}
+            arrange={arrange}
+          />
+        );
+      }
+
+      if (sport === 'rowing') {
+        return (
+          <GaugeCard
+            id={isFocus ? 'focus-power-card' : 'power-metric-card'}
+            tileId="power"
+            className={slotClassName}
+            title="Split /500m"
+            valueDisplay={formatRowingSplit(liveRowSplit)}
+            unit="/500M"
+            primaryBadge={`${Math.round(telemetry.powerWatts)}W · ${ftpPct}% FTP`}
+            secondarySub={
+              isFocus && activeSegmentInfo?.targets.targetSplitSecRange
+                ? `Goal ${formatRowingSplit(activeSegmentInfo.targets.targetSplitSecRange[0])}–${formatRowingSplit(activeSegmentInfo.targets.targetSplitSecRange[1])}`
+                : `Row FTP ${effFtp}W (${formatRowingSplit(rowingWattsToSplitSecPer500m(effFtp))})`
+            }
+            zones={powerZones}
+            numericValue={telemetry.powerWatts}
+            activeZone={activePowerZone}
+            thresholdUnitSuffix="W"
+            arrange={arrange}
+          />
+        );
+      }
+
       return (
         <GaugeCard
           id={isFocus ? 'focus-power-card' : 'power-metric-card'}
@@ -121,8 +189,88 @@ export function CockpitTile({
           arrange={arrange}
         />
       );
+    }
 
-    case 'cadence':
+    case 'cadence': {
+      if (sport === 'running') {
+        const showInclinePrimary =
+          telemetry.cadenceRpm <= 0 &&
+          (telemetry.speedMph > 0.3 || telemetry.bikeFamily === 'ftms-treadmill');
+        if (showInclinePrimary) {
+          const inclineVal = telemetry.inclinePct ?? 0;
+          const activeInclineZone = resolveZone(inclineVal, INCLINE_ZONES);
+          return (
+            <GaugeCard
+              id={isFocus ? 'focus-cadence-card' : 'cadence-metric-card'}
+              tileId="cadence"
+              className={slotClassName}
+              title="Incline"
+              valueDisplay={inclineVal.toFixed(1)}
+              unit="% GRADE"
+              primaryBadge={`${telemetry.speedMph.toFixed(1)} mph`}
+              secondarySub={
+                activeSegmentInfo?.targets.targetInclinePct !== undefined
+                  ? `${isFocus ? 'Goal' : 'Target'} ${activeSegmentInfo.targets.targetInclinePct.toFixed(1)}% grade`
+                  : 'Treadmill Grade'
+              }
+              zones={INCLINE_ZONES}
+              numericValue={inclineVal}
+              activeZone={activeInclineZone}
+              extraControl={resistanceControl}
+              arrange={arrange}
+            />
+          );
+        }
+
+        return (
+          <GaugeCard
+            id={isFocus ? 'focus-cadence-card' : 'cadence-metric-card'}
+            tileId="cadence"
+            className={slotClassName}
+            title="Cadence"
+            valueDisplay={`${Math.round(telemetry.cadenceRpm)}`}
+            unit="SPM"
+            primaryBadge={formatBikeGearBadge(telemetry)}
+            secondarySub={
+              activeSegmentInfo
+                ? `${isFocus ? 'Goal' : 'Target'} ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]} spm`
+                : 'Stride Turnover'
+            }
+            zones={cadenceZones}
+            numericValue={telemetry.cadenceRpm}
+            activeZone={activeCadenceZone}
+            extraControl={resistanceControl}
+            arrange={arrange}
+          />
+        );
+      }
+
+      if (sport === 'rowing') {
+        return (
+          <GaugeCard
+            id={isFocus ? 'focus-cadence-card' : 'cadence-metric-card'}
+            tileId="cadence"
+            className={slotClassName}
+            title="Stroke Rate"
+            valueDisplay={`${Math.round(telemetry.cadenceRpm)}`}
+            unit="SPM"
+            primaryBadge={formatBikeGearBadge(telemetry)}
+            secondarySub={
+              activeSegmentInfo
+                ? `${isFocus ? 'Goal' : 'Target'} ${activeSegmentInfo.segment.cadenceRange[0]}–${activeSegmentInfo.segment.cadenceRange[1]} spm`
+                : telemetry.strokeCount
+                  ? `${telemetry.strokeCount} strokes`
+                  : 'Stroke Rhythm'
+            }
+            zones={cadenceZones}
+            numericValue={telemetry.cadenceRpm}
+            activeZone={activeCadenceZone}
+            extraControl={resistanceControl}
+            arrange={arrange}
+          />
+        );
+      }
+
       return (
         <GaugeCard
           id={isFocus ? 'focus-cadence-card' : 'cadence-metric-card'}
@@ -144,6 +292,7 @@ export function CockpitTile({
           arrange={arrange}
         />
       );
+    }
 
     case 'hr':
       return (
@@ -170,6 +319,48 @@ export function CockpitTile({
       );
 
     case 'speed': {
+      if (sport === 'rowing') {
+        return (
+          <GaugeCard
+            id={isFocus ? 'focus-speed-card' : 'speed-metric-card'}
+            tileId="speed"
+            className={slotClassName}
+            title="Power"
+            valueDisplay={`${Math.round(telemetry.powerWatts)}`}
+            unit="WATTS"
+            primaryBadge={`${formatRowingSplit(liveRowSplit)} /500m`}
+            secondarySub={`Row FTP ${effFtp}W · ${liveWkg.toFixed(2)} W/kg`}
+            zones={powerZones}
+            numericValue={telemetry.powerWatts}
+            activeZone={activePowerZone}
+            thresholdUnitSuffix="W"
+            arrange={arrange}
+          />
+        );
+      }
+
+      if (sport === 'running') {
+        const kmh = telemetry.speedMph * 1.60934;
+        const runSpeedZones = getRunningSpeedZones(getEffectiveRunThresholdPaceSec(profile));
+        const activeRunSpeedZone = resolveZone(telemetry.speedMph, runSpeedZones);
+        return (
+          <GaugeCard
+            id={isFocus ? 'focus-speed-card' : 'speed-metric-card'}
+            tileId="speed"
+            className={slotClassName}
+            title="Speed"
+            valueDisplay={telemetry.speedMph.toFixed(1)}
+            unit="MPH"
+            primaryBadge={`${formatRunningPacePerMile(telemetry.speedMph)}/mi · ${kmh.toFixed(1)} km/h`}
+            secondarySub={`Incline ${(telemetry.inclinePct ?? 0).toFixed(1)}% · ${profile.weightLbs}#`}
+            zones={runSpeedZones}
+            numericValue={telemetry.speedMph}
+            activeZone={activeRunSpeedZone}
+            arrange={arrange}
+          />
+        );
+      }
+
       const kmh = telemetry.speedMph * 1.60934;
       const activeSpeedZone = resolveZone(telemetry.speedMph, SPEED_ZONES);
       return (
@@ -192,19 +383,30 @@ export function CockpitTile({
 
     case 'distance': {
       const distInfo = activeSegmentInfo?.distanceMode;
-      const unit = distInfo?.unit ?? 'mi';
-      const nativeValue = unit === 'km' ? distanceMeters / 1000 : metersToMiles(distanceMeters);
+      const unit = distInfo?.unit ?? (sport === 'rowing' ? 'm' : 'mi');
+      const nativeValue =
+        unit === 'm'
+          ? Math.round(distanceMeters)
+          : unit === 'km'
+            ? distanceMeters / 1000
+            : metersToMiles(distanceMeters);
       const targetNative = distInfo
-        ? unit === 'km'
-          ? distInfo.totalTargetMeters / 1000
-          : metersToMiles(distInfo.totalTargetMeters)
-        : undefined;
+        ? unit === 'm'
+          ? distInfo.totalTargetMeters
+          : unit === 'km'
+            ? distInfo.totalTargetMeters / 1000
+            : metersToMiles(distInfo.totalTargetMeters)
+        : sport === 'rowing'
+          ? 5000
+          : undefined;
       const distZones = getDistanceZones(targetNative);
       const activeDistZone = resolveZone(nativeValue, distZones);
       const altDistance =
-        unit === 'km'
-          ? `${metersToMiles(distanceMeters).toFixed(2)} mi`
-          : `${(distanceMeters / 1000).toFixed(2)} km`;
+        unit === 'm'
+          ? `${(distanceMeters / 1000).toFixed(2)} km · ${metersToMiles(distanceMeters).toFixed(2)} mi`
+          : unit === 'km'
+            ? `${metersToMiles(distanceMeters).toFixed(2)} mi`
+            : `${(distanceMeters / 1000).toFixed(2)} km`;
 
       return (
         <GaugeCard
@@ -212,8 +414,10 @@ export function CockpitTile({
           tileId="distance"
           className={slotClassName}
           title="Distance"
-          valueDisplay={nativeValue.toFixed(2)}
-          unit={unit.toUpperCase()}
+          valueDisplay={
+            unit === 'm' ? nativeValue.toLocaleString('en-US') : nativeValue.toFixed(2)
+          }
+          unit={unit === 'm' ? 'METERS' : unit.toUpperCase()}
           primaryBadge={
             distInfo
               ? `${Math.round(distInfo.overallProgressPct)}% · ${formatDistanceTarget(distInfo.totalTargetMeters, unit)}`
@@ -224,7 +428,11 @@ export function CockpitTile({
               ? distInfo.isGoalComplete
                 ? 'Challenge complete!'
                 : `${formatDistanceValue(distInfo.totalRemainingMeters, unit)} left`
-              : `Pace ${telemetry.speedMph.toFixed(1)} mph`
+              : sport === 'rowing'
+                ? `Split ${formatRowingSplit(liveRowSplit)} /500m`
+                : sport === 'running'
+                  ? `Pace ${formatRunningPacePerMile(telemetry.speedMph)} /mi`
+                  : `Pace ${telemetry.speedMph.toFixed(1)} mph`
           }
           zones={distZones}
           numericValue={nativeValue}
@@ -258,8 +466,11 @@ export function CockpitTile({
     case 'avgPower': {
       const activeAvgZone = resolveZone(avgRideWatts, powerZones);
       const avgWkg = computeWattsPerKg(avgRideWatts, profile.weightLbs);
-      const avgFtpPct =
-        profile.ftpWatts > 0 ? Math.round((avgRideWatts / profile.ftpWatts) * 100) : 0;
+      const avgFtpPct = effFtp > 0 ? Math.round((avgRideWatts / effFtp) * 100) : 0;
+      const avgSplitLabel =
+        sport === 'rowing' && avgRideWatts > 0
+          ? `${formatRowingSplit(rowingWattsToSplitSecPer500m(avgRideWatts))}/500m · `
+          : '';
       return (
         <GaugeCard
           id={isFocus ? 'focus-avg-power-card' : 'avg-power-metric-card'}
@@ -268,8 +479,8 @@ export function CockpitTile({
           title="Avg Power"
           valueDisplay={`${avgRideWatts}`}
           unit="AVG W"
-          primaryBadge={`NP ${npRideWatts}W · ${avgWkg.toFixed(2)} W/kg`}
-          secondarySub={`${avgFtpPct}% FTP (${profile.ftpWatts}W)`}
+          primaryBadge={`${avgSplitLabel}NP ${npRideWatts}W · ${avgWkg.toFixed(2)} W/kg`}
+          secondarySub={`${avgFtpPct}% ${sport === 'rowing' ? 'Row ' : ''}FTP (${effFtp}W)`}
           zones={powerZones}
           numericValue={avgRideWatts}
           activeZone={activeAvgZone}
@@ -285,7 +496,10 @@ export function CockpitTile({
           id={isFocus ? 'focus-ride-stats-card' : 'compact-all-stats-card'}
           tileId="stats"
           className={`${isFocus ? '' : 'compact-telemetry-quad'} ${slotClassName}`.trim()}
+          sport={sport}
           speedMph={telemetry.speedMph}
+          inclinePct={telemetry.inclinePct}
+          paceSecPer500m={telemetry.paceSecPer500m}
           distanceMeters={distanceMeters}
           caloriesKcal={caloriesKcal}
           avgRideWatts={avgRideWatts}
@@ -302,6 +516,7 @@ export function CockpitTile({
         <IntervalTargetCard
           id={isFocus ? 'focus-interval-card' : 'interval-target-card'}
           className={slotClassName}
+          sport={sport}
           info={activeSegmentInfo}
           arrange={arrange}
         />

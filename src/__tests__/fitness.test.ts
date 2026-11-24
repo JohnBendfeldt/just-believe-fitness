@@ -11,6 +11,9 @@ import {
   estimateDistanceEtaSec,
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
+  estimateRowingKcalPerSecond,
+  estimateRunningKcalPerSecond,
+  estimateRunningPowerWatts,
   evaluateRideFtpResult,
   feetInchesToCm,
   formatBikeGearBadge,
@@ -18,15 +21,25 @@ import {
   formatDistanceValue,
   formatDuration,
   formatHeightImperial,
+  formatRowingSplit,
+  formatRunningPacePerKm,
+  formatRunningPacePerMile,
   getCadenceZones,
   getHrZones,
+  getInclineZones,
   getPowerZones,
   getResistanceZones,
+  getRowingStrokeRateZones,
+  getRunningCadenceZones,
+  getRunningSpeedZones,
   lbsToKg,
   metersToMiles,
   mpsToMph,
   resolveHeadlineEffortZone,
   resolveZone,
+  rowingSplitSecPer500mToWatts,
+  rowingSplitToSpeedMps,
+  rowingWattsToSplitSecPer500m,
 } from '../utils/zones';
 import {
   calculateEchelonWatts,
@@ -35,12 +48,15 @@ import {
   suggestEx3Resistance,
 } from '../services/ble/echelonPowerCurve';
 import {
+  ROWING_WORKOUT_TEMPLATES,
+  RUNNING_WORKOUT_TEMPLATES,
   WORKOUT_TEMPLATES,
   formatWorkoutOptionLabel,
   getDistanceStageIndex,
   getSegmentTargetsForAthlete,
   getTotalWorkoutDistanceMeters,
   getTotalWorkoutDurationSec,
+  getWorkoutsForSport,
   groupWorkoutTemplates,
   isDistanceWorkout,
 } from '../data/workouts';
@@ -518,5 +534,158 @@ describe('Fullscreen & YouTube Utilities', () => {
     expect(buildYouTubeEmbedSrc('https://www.youtube.com/watch?v=../../evil')).toBeNull();
     expect(buildYouTubeEmbedSrc('https://youtu.be/bad?param=1')).toBeNull();
     expect(buildYouTubeEmbedSrc('https://www.youtube.com/playlist?list=<script>')).toBeNull();
+  });
+});
+
+describe('Running & Rowing Physics, 5-Zone Models & Guided Workouts', () => {
+  it('computes accurate Concept2 rowing split <-> watts physics and erg calorie burn', () => {
+    // 2:00 /500m split (120s) = 2.80 / (120/500)^3 = ~202.5 -> 203W
+    expect(rowingSplitSecPer500mToWatts(120)).toBe(203);
+    expect(rowingWattsToSplitSecPer500m(203)).toBeCloseTo(120, 0);
+    expect(formatRowingSplit(120)).toBe('2:00');
+    expect(formatRowingSplit(105)).toBe('1:45');
+    expect(formatRowingSplit(0)).toBe('--:--');
+    expect(rowingSplitToSpeedMps(120)).toBeCloseTo(500 / 120, 3);
+
+    // Concept2 calorie rate at 203W: (4*203*0.860421 + 300)/3600 ~= 0.277 kcal/sec
+    const kcalPerSec = estimateRowingKcalPerSecond(203, 155, DEFAULT_ATHLETE_PROFILE);
+    expect(kcalPerSec).toBeGreaterThan(0.25);
+    expect(kcalPerSec).toBeLessThan(0.32);
+  });
+
+  it('computes running pace, Stryd/van Dijk power with incline, ACSM calories, and multi-sport 5-zone models', () => {
+    expect(formatRunningPacePerMile(6.0)).toBe('10:00');
+    expect(formatRunningPacePerMile(7.5)).toBe('8:00');
+    expect(formatRunningPacePerKm(6.2137)).toBe('6:00');
+    expect(formatRunningPacePerMile(0)).toBe('--:--');
+
+    const flatWatts = estimateRunningPowerWatts(3.0, 0, 165);
+    const hillWatts = estimateRunningPowerWatts(3.0, 6.0, 165);
+    expect(flatWatts).toBeGreaterThan(180);
+    expect(hillWatts).toBeGreaterThan(flatWatts + 80);
+
+    const flatKcal = estimateRunningKcalPerSecond(3.0, 0, 150, DEFAULT_ATHLETE_PROFILE);
+    const hillKcal = estimateRunningKcalPerSecond(3.0, 6.0, 150, DEFAULT_ATHLETE_PROFILE);
+    expect(hillKcal).toBeGreaterThan(flatKcal);
+
+    // Running speed zones around 9:00/mi (6.67 mph) threshold
+    const runSpeedZones = getRunningSpeedZones(540);
+    expect(runSpeedZones).toHaveLength(5);
+    expect(resolveZone(3.0, runSpeedZones).zone).toBe(1);
+    expect(resolveZone(6.7, runSpeedZones).zone).toBe(4);
+    expect(resolveZone(8.0, runSpeedZones).zone).toBe(5);
+
+    const runCadZones = getRunningCadenceZones();
+    expect(resolveZone(170, runCadZones).zone).toBe(3);
+    expect(resolveZone(182, runCadZones).zone).toBe(4);
+
+    const incZones = getInclineZones();
+    expect(resolveZone(1.0, incZones).zone).toBe(1);
+    expect(resolveZone(5.0, incZones).zone).toBe(3);
+    expect(resolveZone(12.0, incZones).zone).toBe(5);
+
+    const rowSpmZones = getRowingStrokeRateZones();
+    expect(resolveZone(22, rowSpmZones).zone).toBe(2);
+    expect(resolveZone(29, rowSpmZones).zone).toBe(4);
+    expect(resolveZone(34, rowSpmZones).zone).toBe(5);
+
+    // Headline effort zone for running (grade-adjusted threshold surge without HR)
+    const runHeadline = resolveHeadlineEffortZone(0, 260, DEFAULT_ATHLETE_PROFILE, {
+      sport: 'running',
+      speedMph: 6.8,
+      inclinePct: 2.0,
+    });
+    expect(runHeadline.zoneDef.zone).toBeGreaterThanOrEqual(4);
+
+    // Headline effort zone for rowing scaled by Row FTP
+    const rowProfile: AthleteProfile = { ...DEFAULT_ATHLETE_PROFILE, rowFtpWatts: 200 };
+    const rowHeadline = resolveHeadlineEffortZone(0, 220, rowProfile, { sport: 'rowing' });
+    expect(rowHeadline.zoneDef.zone).toBe(5);
+
+    // Distance formatting in meters for rowing challenges
+    expect(formatDistanceValue(2000, 'm')).toBe('2,000 m');
+    expect(formatDistanceTarget(5000, 'm')).toBe('5,000 m');
+  });
+
+  it('validates all RUNNING_WORKOUT_TEMPLATES and ROWING_WORKOUT_TEMPLATES with exact distances, targets, and dropdown grouping', () => {
+    expect(getWorkoutsForSport('cycling')).toBe(WORKOUT_TEMPLATES);
+    expect(getWorkoutsForSport('running')).toBe(RUNNING_WORKOUT_TEMPLATES);
+    expect(getWorkoutsForSport('rowing')).toBe(ROWING_WORKOUT_TEMPLATES);
+
+    const bannedTerms = ['ot' + 'f', 'orange' + 'theory', 'sp' + 'lat', 'sp' + 'lats'];
+    const bannedPattern = new RegExp(`\\b(${bannedTerms.join('|')})\\b`, 'i');
+
+    const allMultiSport = [
+      ...RUNNING_WORKOUT_TEMPLATES.map((w) => ({ w, sport: 'running' as const })),
+      ...ROWING_WORKOUT_TEMPLATES.map((w) => ({ w, sport: 'rowing' as const })),
+    ];
+
+    const seenIds = new Set<string>();
+    const seenSegIds = new Set<string>();
+
+    for (const { w, sport } of allMultiSport) {
+      expect(seenIds.has(w.id)).toBe(false);
+      seenIds.add(w.id);
+      expect(w.sport).toBe(sport);
+      expect(w.name).not.toMatch(bannedPattern);
+      expect(w.subtitle).not.toMatch(bannedPattern);
+
+      if (w.isFreeRide) {
+        expect(w.segments).toHaveLength(0);
+      } else if (isDistanceWorkout(w)) {
+        const targetMeters = getTotalWorkoutDistanceMeters(w);
+        const stageSum = w.segments.reduce((acc, s) => acc + (s.distanceMeters ?? 0), 0);
+        expect(Math.abs(stageSum - targetMeters)).toBeLessThan(1);
+        expect(getDistanceStageIndex(w, 0)).toBe(0);
+        expect(getDistanceStageIndex(w, targetMeters)).toBe(w.segments.length);
+
+        for (const seg of w.segments) {
+          expect(seenSegIds.has(seg.id)).toBe(false);
+          seenSegIds.add(seg.id);
+          expect(seg.distanceMeters).toBeGreaterThan(0);
+          expect(seg.coachingNote).not.toMatch(bannedPattern);
+          const targets = getSegmentTargetsForAthlete(seg, DEFAULT_ATHLETE_PROFILE, null, sport);
+          if (sport === 'running') {
+            expect(targets.targetSpeedMphRange).toBeDefined();
+            expect(targets.targetSpeedMphRange![1]).toBeGreaterThanOrEqual(
+              targets.targetSpeedMphRange![0]
+            );
+          } else {
+            expect(targets.targetSplitSecRange).toBeDefined();
+            expect(targets.targetSplitSecRange![1]).toBeGreaterThanOrEqual(
+              targets.targetSplitSecRange![0]
+            );
+          }
+        }
+      } else {
+        expect(getTotalWorkoutDurationSec(w)).toBeGreaterThanOrEqual(900);
+        for (const seg of w.segments) {
+          expect(seenSegIds.has(seg.id)).toBe(false);
+          seenSegIds.add(seg.id);
+          expect(seg.durationSec).toBeGreaterThan(0);
+          expect(seg.coachingNote).not.toMatch(bannedPattern);
+        }
+      }
+    }
+
+    // Verify key benchmark templates exist
+    expect(RUNNING_WORKOUT_TEMPLATES.some((w) => w.id === 'run-distance-5k')).toBe(true);
+    expect(RUNNING_WORKOUT_TEMPLATES.some((w) => w.id === 'run-distance-half')).toBe(true);
+    expect(ROWING_WORKOUT_TEMPLATES.some((w) => w.id === 'row-distance-2k')).toBe(true);
+    expect(ROWING_WORKOUT_TEMPLATES.some((w) => w.id === 'row-distance-5k')).toBe(true);
+
+    const runGroups = groupWorkoutTemplates(RUNNING_WORKOUT_TEMPLATES, 'running');
+    expect(runGroups.map((g) => g.label)).toEqual([
+      'Open Studio',
+      'Studio Workouts',
+      'Distance Challenges',
+    ]);
+    const rowGroups = groupWorkoutTemplates(ROWING_WORKOUT_TEMPLATES, 'rowing');
+    expect(rowGroups.map((g) => g.label)).toEqual([
+      'Open Studio',
+      'Studio Workouts',
+      'Endurance Rows',
+      'Distance Challenges',
+    ]);
   });
 });

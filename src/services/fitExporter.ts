@@ -206,14 +206,33 @@ function clampU16(val: number, max = 65534): number {
 
 /**
  * Encodes a SavedRide into a spec-compliant Garmin FIT v2.0 binary file (.fit)
- * with 1-second Power, Heart Rate, Cadence, Speed, Distance, Normalized Power,
- * Intensity Factor, TSS, and optional Garmin Training Status device metadata.
+ * with 1-second Power, Heart Rate, Cadence/Stroke Rate, Speed, Distance, Normalized Power,
+ * Intensity Factor, TSS, and sport-accurate Garmin Training Status metadata for
+ * Indoor Cycling, Treadmill Running, and Indoor Rowing.
  */
 export function buildRideFitBytes(
   ride: SavedRide,
   presetId: FitDevicePresetId = 'edge-830'
 ): Uint8Array {
   const preset = FIT_DEVICE_PRESETS[presetId] ?? FIT_DEVICE_PRESETS['edge-830'];
+  const sport = ride.sport ?? 'cycling';
+  const fitSport = sport === 'running' ? 1 : sport === 'rowing' ? 4 : 2;
+  const fitSubSport =
+    sport === 'running'
+      ? preset.subSport === 58
+        ? 58
+        : 1 // treadmill (1) or virtual_activity (58)
+      : sport === 'rowing'
+        ? 14 // indoor_rowing (official FIT Fitness Equipment sub_sport)
+        : preset.subSport;
+  // For multi-sport Running & Rowing under the default Garmin Training Status preset,
+  // tag as Garmin Forerunner 965 (multisport watch) rather than Edge 830 bike computer.
+  const fitManufacturer = preset.manufacturer;
+  const fitProduct =
+    presetId === 'edge-830' && sport !== 'cycling' ? 4315 : preset.product;
+  const encodeCadence = (raw: number): number =>
+    sport === 'running' ? clampU8(Math.round(raw / 2)) : clampU8(raw);
+
   const writer = new FitBinaryWriter();
 
   const parsedStartMs = Date.parse(ride.startedAtIso);
@@ -233,7 +252,12 @@ export function buildRideFitBytes(
   // Derived speed / power / TSS summary metrics
   const avgSpeedMps = ride.distanceMeters > 0 ? ride.distanceMeters / durationSec : 0;
   const maxSpeedMps = ride.trackPoints.reduce((m, p) => Math.max(m, p.speedMps || 0), avgSpeedMps);
-  const ftpWatts = ride.athleteSnapshot?.ftpWatts || DEFAULT_ATHLETE_PROFILE.ftpWatts;
+  const ftpWatts =
+    sport === 'rowing'
+      ? ride.athleteSnapshot?.rowFtpWatts ||
+        ride.athleteSnapshot?.ftpWatts ||
+        DEFAULT_ATHLETE_PROFILE.ftpWatts
+      : ride.athleteSnapshot?.ftpWatts || DEFAULT_ATHLETE_PROFILE.ftpWatts;
   const npWatts = ride.normalizedWatts || ride.avgWatts || 0;
   const intensityFactor = ftpWatts > 0 && npWatts > 0 ? npWatts / ftpWatts : 0;
   const tss =
@@ -253,8 +277,8 @@ export function buildRideFitBytes(
   writer.writeDefinition(0, 0, fileIdFields);
   writer.writeData(0, fileIdFields, [
     4,
-    preset.manufacturer,
-    preset.product,
+    fitManufacturer,
+    fitProduct,
     preset.serialNumber,
     startFitTs,
   ]);
@@ -272,8 +296,8 @@ export function buildRideFitBytes(
   writer.writeData(1, deviceInfoFields, [
     startFitTs,
     0,
-    preset.manufacturer,
-    preset.product,
+    fitManufacturer,
+    fitProduct,
     preset.serialNumber,
     preset.softwareVersion,
   ]);
@@ -295,7 +319,7 @@ export function buildRideFitBytes(
     { num: 6, type: 'uint16' }, // speed (scale 1000 -> mm/s)
     { num: 73, type: 'uint32' }, // enhanced_speed (scale 1000 -> mm/s)
     { num: 3, type: 'uint8' }, // heart_rate (bpm)
-    { num: 4, type: 'uint8' }, // cadence (rpm)
+    { num: 4, type: 'uint8' }, // cadence (rpm / strides/min / strokes/min)
     { num: 7, type: 'uint16' }, // power (watts)
   ];
   writer.writeDefinition(3, 20, recordFields);
@@ -310,7 +334,7 @@ export function buildRideFitBytes(
     const distCm = Math.max(0, Math.round((pt.distanceMeters || 0) * 100));
     const speedMmS = Math.max(0, Math.round((pt.speedMps || 0) * 1000));
     const hr = pt.heartRateBpm > 0 ? clampU8(pt.heartRateBpm) : undefined;
-    const cad = clampU8(pt.cadenceRpm || 0);
+    const cad = encodeCadence(pt.cadenceRpm || 0);
     const watts = clampU16(pt.powerWatts || 0);
     writer.writeData(3, recordFields, [
       ts,
@@ -345,8 +369,8 @@ export function buildRideFitBytes(
     { num: 19, type: 'uint16' }, // avg_power
     { num: 20, type: 'uint16' }, // max_power
     { num: 33, type: 'uint16' }, // normalized_power
-    { num: 25, type: 'enum' }, // sport = 2 (cycling)
-    { num: 39, type: 'enum' }, // sub_sport
+    { num: 25, type: 'enum' }, // sport (1=running, 2=cycling, 4=fitness_equipment)
+    { num: 39, type: 'enum' }, // sub_sport (1=treadmill, 6=indoor_cycling, 14=indoor_rowing, 58=virtual_activity)
     { num: 0, type: 'enum' }, // event = 9 (lap)
     { num: 1, type: 'enum' }, // event_type = 1 (stop)
     { num: 24, type: 'enum' }, // lap_trigger = 7 (session_end)
@@ -364,13 +388,13 @@ export function buildRideFitBytes(
     clampU16(maxSpeedMps * 1000),
     ride.avgHr > 0 ? clampU8(ride.avgHr) : undefined,
     ride.maxHr > 0 ? clampU8(ride.maxHr) : undefined,
-    clampU8(ride.avgCadence),
-    clampU8(ride.maxCadence),
+    encodeCadence(ride.avgCadence),
+    encodeCadence(ride.maxCadence),
     clampU16(ride.avgWatts),
     clampU16(ride.maxWatts),
     npWatts > 0 ? clampU16(npWatts) : undefined,
-    2,
-    preset.subSport,
+    fitSport,
+    fitSubSport,
     9,
     1,
     7,
@@ -383,7 +407,7 @@ export function buildRideFitBytes(
     { num: 2, type: 'uint32' }, // start_time
     { num: 0, type: 'enum' }, // event = 9 (lap)
     { num: 1, type: 'enum' }, // event_type = 1 (stop)
-    { num: 5, type: 'enum' }, // sport = 2 (cycling)
+    { num: 5, type: 'enum' }, // sport
     { num: 6, type: 'enum' }, // sub_sport
     { num: 7, type: 'uint32' }, // total_elapsed_time (ms)
     { num: 8, type: 'uint32' }, // total_timer_time (ms)
@@ -412,8 +436,8 @@ export function buildRideFitBytes(
     startFitTs,
     9,
     1,
-    2,
-    preset.subSport,
+    fitSport,
+    fitSubSport,
     durationMs,
     durationMs,
     Math.max(0, Math.round(ride.distanceMeters * 100)),
@@ -422,8 +446,8 @@ export function buildRideFitBytes(
     clampU16(maxSpeedMps * 1000),
     ride.avgHr > 0 ? clampU8(ride.avgHr) : undefined,
     ride.maxHr > 0 ? clampU8(ride.maxHr) : undefined,
-    clampU8(ride.avgCadence),
-    clampU8(ride.maxCadence),
+    encodeCadence(ride.avgCadence),
+    encodeCadence(ride.maxCadence),
     clampU16(ride.avgWatts),
     clampU16(ride.maxWatts),
     npWatts > 0 ? clampU16(npWatts) : undefined,
@@ -503,6 +527,9 @@ export function parseTcxXmlToRide(xmlText: string, fallbackTitle = 'Converted In
   const lapEl = allElements.find(
     (el) => (el.localName || el.tagName.split(':').pop() || '').toLowerCase() === 'lap'
   );
+  const sportAttr = (activityEl?.getAttribute('Sport') || '').toLowerCase();
+  const parsedSport: SavedRide['sport'] =
+    sportAttr === 'running' ? 'running' : sportAttr === 'other' ? 'rowing' : 'cycling';
 
   const trackPoints: TrackPoint[] = [];
   let firstTsMs = NaN;
@@ -519,7 +546,14 @@ export function parseTcxXmlToRide(xmlText: string, fallbackTitle = 'Converted In
 
     const distanceMeters = Number(getChildTextByLocalName(tp, 'DistanceMeters')) || 0;
     const hrVal = Number(getChildTextByLocalName(tp, 'Value')) || 0;
-    const cadenceRpm = Number(getChildTextByLocalName(tp, 'Cadence')) || 0;
+    const rawRunCadence = Number(getChildTextByLocalName(tp, 'RunCadence')) || 0;
+    const rawCadence = Number(getChildTextByLocalName(tp, 'Cadence')) || 0;
+    const cadenceRpm =
+      parsedSport === 'running' && rawRunCadence > 0
+        ? rawRunCadence <= 115
+          ? rawRunCadence * 2
+          : rawRunCadence
+        : rawCadence;
     const speedMps = Number(getChildTextByLocalName(tp, 'Speed')) || 0;
     const powerWatts = Number(getChildTextByLocalName(tp, 'Watts')) || 0;
 
@@ -576,9 +610,15 @@ export function parseTcxXmlToRide(xmlText: string, fallbackTitle = 'Converted In
 
   return {
     id: `tcx-conv-${Date.now()}`,
+    sport: parsedSport,
     title: cleanTitle,
     workoutName: cleanTitle,
-    bikeLabel: 'Indoor Bike',
+    bikeLabel:
+      parsedSport === 'running'
+        ? 'Treadmill'
+        : parsedSport === 'rowing'
+          ? 'FTMS Rower'
+          : 'Indoor Bike',
     startedAtIso: new Date(startedMs).toISOString(),
     endedAtIso: new Date(startedMs + durationSec * 1000).toISOString(),
     durationSec,

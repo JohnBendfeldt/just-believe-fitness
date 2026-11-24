@@ -1,5 +1,10 @@
-import type { BikeFamilyId, BikeUnlockStatus } from '../../types/fitness';
+import type { BikeFamilyId, BikeUnlockStatus, SportMode } from '../../types/fitness';
 import { getBluetoothUnsupportedMessage } from '../../utils/browserSupport';
+import {
+  rowingSplitSecPer500mToWatts,
+  rowingSplitToSpeedMps,
+  rowingWattsToSplitSecPer500m,
+} from '../../utils/zones';
 import { isBleTransportSupported, requestBleDevice } from './bleTransport';
 
 export const ECHELON_ADV_SERVICE = '0bf669f0-45f2-11e7-9598-0800200c9a66';
@@ -12,12 +17,16 @@ export const ECHELON_ACTIVATION_FRAME = new Uint8Array([0xf0, 0xb0, 0x01, 0x01, 
 export const ECHELON_UNLOCK_ACK_FRAME = new Uint8Array([0xf0, 0xa5, 0x01, 0x0e, 0xa4]);
 
 export const FTMS_SERVICE = 0x1826;
+export const FTMS_TREADMILL_DATA = 0x2acd;
+export const FTMS_ROWER_DATA = 0x2ad1;
 export const FTMS_INDOOR_BIKE_DATA = 0x2ad2;
 export const FTMS_CONTROL_POINT = 0x2ad9;
 export const CYCLING_POWER_SERVICE = 0x1818;
 export const CYCLING_POWER_MEASUREMENT = 0x2a63;
 export const CYCLING_SPEED_CADENCE_SERVICE = 0x1816;
 export const CSC_MEASUREMENT = 0x2a5b;
+export const RUNNING_SPEED_CADENCE_SERVICE = 0x1814;
+export const RSC_MEASUREMENT = 0x2a53;
 
 const COMMON_BIKE_NAME_PREFIXES = [
   'ECH',
@@ -36,7 +45,34 @@ const COMMON_BIKE_NAME_PREFIXES = [
   'Stages',
   'Wattbike',
   'BikeErg',
+  'RowErg',
+  'Concept2',
   'PM5',
+  'WaterRower',
+  'SmartRow',
+  'Fluid',
+  'Rower',
+  'ROW',
+  'Hydrow',
+  'Aviron',
+  'RP3',
+  'Ergatta',
+  'Sole',
+  'SOLE',
+  'Horizon',
+  'NordicTrack',
+  'ProForm',
+  'Matrix',
+  'Technogym',
+  'Woodway',
+  'WalkingPad',
+  'NoblePro',
+  'Assault',
+  'Tread',
+  'Stryd',
+  'Runn',
+  'RUNN',
+  'RunPod',
   'RENPHO',
   'Zycle',
   'Joroto',
@@ -56,7 +92,14 @@ const COMMON_BIKE_NAME_PREFIXES = [
   'Coospo',
 ];
 
-export type BikeProtocolKind = 'echelon' | 'ftms' | 'cps' | 'csc';
+export type BikeProtocolKind =
+  | 'echelon'
+  | 'ftms'
+  | 'ftms-treadmill'
+  | 'ftms-rower'
+  | 'cps'
+  | 'csc'
+  | 'rsc';
 export type EchelonUnlockStatus = BikeUnlockStatus;
 export type EchelonUnlockError =
   | 'invalid-length'
@@ -74,9 +117,12 @@ export interface EchelonUnlockResult {
 export interface BikeModelProfile {
   family: BikeFamilyId;
   protocol: BikeProtocolKind;
+  sport: SportMode;
   shortLabel: string;
   displayName: string;
   hasMotorizedResistance: boolean;
+  hasMotorizedSpeed?: boolean;
+  hasMotorizedIncline?: boolean;
   hasBuiltInScreen?: boolean;
   recommendedCurve: 'ex3-vector' | 'sport-compact';
 }
@@ -91,6 +137,19 @@ export interface EchelonRawReading {
   resistance: number;
   directWatts?: number;
   maxResistance?: number;
+  sport?: SportMode;
+  /** Direct machine speed in meters/sec (FTMS Treadmill, FTMS Rower, RSC Footpod). */
+  directSpeedMps?: number;
+  /** Live treadmill incline grade (%) from FTMS Treadmill Data (0x2ACD). */
+  inclinePct?: number;
+  /** Live rowing split pace (seconds per 500m) from FTMS Rower Data (0x2AD1). */
+  paceSecPer500m?: number;
+  /** Cumulative stroke count from FTMS Rower Data (0x2AD1). */
+  strokeCount?: number;
+  /** Cumulative machine distance in meters when reported by FTMS/RSC. */
+  deviceDistanceMeters?: number;
+  /** Optional heart rate broadcast directly by an FTMS machine. */
+  machineHeartRateBpm?: number;
 }
 
 export type BikeConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -107,7 +166,7 @@ export interface EchelonBleCallbacks {
 }
 
 /**
- * Identifies the stationary bike brand/model family and resistance capabilities
+ * Identifies the fitness machine brand/model family, sport modality, and control capabilities
  * from its Bluetooth name and connected GATT protocol.
  */
 export function detectBikeModelProfile(
@@ -118,11 +177,134 @@ export function detectBikeModelProfile(
   const raw = (deviceName ?? '').trim();
   const upper = raw.toUpperCase();
 
+  if (protocol === 'ftms-treadmill') {
+    const treadmillMappings: Array<[RegExp, string, string]> = [
+      [/KICKR\s*RUN/i, 'KICKR Run', 'Wahoo KICKR RUN'],
+      [/STRIDE/i, 'Stride', 'Echelon Stride'],
+      [/SOLE|\bF63\b|\bF80\b|\bF85\b|\bTT8\b/i, 'Sole', 'Sole Treadmill'],
+      [/HORIZON|7\.0AT|7\.4AT|7\.8AT/i, 'Horizon', 'Horizon Treadmill'],
+      [/NORDICTRACK/i, 'NordicTrack', 'NordicTrack Treadmill'],
+      [/PROFORM/i, 'ProForm', 'ProForm Treadmill'],
+      [/BOWFLEX|\bBXT/i, 'Bowflex', 'Bowflex Treadmill'],
+      [/MATRIX/i, 'Matrix', 'Matrix Treadmill'],
+      [/TECHNOGYM/i, 'Technogym', 'Technogym Treadmill'],
+      [/WOODWAY/i, 'Woodway', 'Woodway Treadmill'],
+      [/WALKINGPAD|KINGSMITH|^KS-/i, 'WalkingPad', 'WalkingPad Treadmill'],
+      [/NOBLEPRO/i, 'NoblePro', 'NoblePro Treadmill'],
+      [/DOMYOS/i, 'Domyos', 'Domyos Treadmill'],
+      [/MERACH|^MRK/i, 'Merach', 'Merach Treadmill'],
+      [/ASSAULT|AIRRUNNER/i, 'Assault', 'Assault Runner'],
+      [/RUNN/i, 'Runn', 'NPE Runn Treadmill Sensor'],
+    ];
+    for (const [pattern, shortLabel, displayName] of treadmillMappings) {
+      if (pattern.test(raw)) {
+        return {
+          family: 'ftms-treadmill',
+          protocol: 'ftms-treadmill',
+          sport: 'running',
+          shortLabel,
+          displayName,
+          hasMotorizedResistance: false,
+          hasMotorizedSpeed: hasFtmsControl,
+          hasMotorizedIncline: hasFtmsControl,
+          recommendedCurve: 'ex3-vector',
+        };
+      }
+    }
+    return {
+      family: 'ftms-treadmill',
+      protocol: 'ftms-treadmill',
+      sport: 'running',
+      shortLabel: raw ? raw.slice(0, 10) : 'Treadmill',
+      displayName: raw || 'FTMS Treadmill',
+      hasMotorizedResistance: false,
+      hasMotorizedSpeed: hasFtmsControl,
+      hasMotorizedIncline: hasFtmsControl,
+      recommendedCurve: 'ex3-vector',
+    };
+  }
+
+  if (protocol === 'rsc') {
+    const rscMappings: Array<[RegExp, string, string]> = [
+      [/STRYD/i, 'Stryd', 'Stryd Footpod'],
+      [/RUNN/i, 'Runn', 'NPE Runn Sensor'],
+      [/RUNPOD|ZWIFT/i, 'RunPod', 'Zwift RunPod'],
+      [/GARMIN|HRM-PRO|FORERUNNER|FENIX/i, 'Garmin Run', 'Garmin Virtual Run'],
+      [/COROS/i, 'COROS', 'COROS POD'],
+      [/POLAR/i, 'Polar', 'Polar Stride Sensor'],
+    ];
+    for (const [pattern, shortLabel, displayName] of rscMappings) {
+      if (pattern.test(raw)) {
+        return {
+          family: 'rsc-footpod',
+          protocol: 'rsc',
+          sport: 'running',
+          shortLabel,
+          displayName,
+          hasMotorizedResistance: false,
+          recommendedCurve: 'ex3-vector',
+        };
+      }
+    }
+    return {
+      family: 'rsc-footpod',
+      protocol: 'rsc',
+      sport: 'running',
+      shortLabel: raw ? raw.slice(0, 10) : 'Run Pod',
+      displayName: raw || 'BLE Running Sensor',
+      hasMotorizedResistance: false,
+      recommendedCurve: 'ex3-vector',
+    };
+  }
+
+  if (protocol === 'ftms-rower') {
+    const rowerMappings: Array<[RegExp, string, string]> = [
+      [/ROWERG|PM5|CONCEPT2/i, 'RowErg', 'Concept2 RowErg'],
+      [/SMARTROW/i, 'SmartRow', 'WaterRower SmartRow'],
+      [/WATERROWER|COMMODULE|\bS4\b/i, 'WaterRower', 'WaterRower'],
+      [/FLUID|FDF/i, 'FluidRower', 'Fluid Rower'],
+      [/ECH.*ROW|ECHELON/i, 'Echelon Row', 'Echelon Row'],
+      [/MERACH|^MRK/i, 'Merach Row', 'Merach Rower'],
+      [/DOMYOS/i, 'Domyos Row', 'Domyos Rower'],
+      [/HYDROW/i, 'Hydrow', 'Hydrow Rower'],
+      [/AVIRON/i, 'Aviron', 'Aviron Rower'],
+      [/ERGATTA/i, 'Ergatta', 'Ergatta Rower'],
+      [/RP3/i, 'RP3', 'RP3 Dynamic Rower'],
+      [/ASSAULT/i, 'AssaultRow', 'AssaultRower'],
+      [/SCHWINN|CREWMASTER/i, 'SchwinnRow', 'Schwinn Rower'],
+      [/BOWFLEX/i, 'BowflexRow', 'Bowflex Rower'],
+      [/YESOUL/i, 'Yesoul Row', 'Yesoul Rower'],
+    ];
+    for (const [pattern, shortLabel, displayName] of rowerMappings) {
+      if (pattern.test(raw)) {
+        return {
+          family: 'ftms-rower',
+          protocol: 'ftms-rower',
+          sport: 'rowing',
+          shortLabel,
+          displayName,
+          hasMotorizedResistance: hasFtmsControl,
+          recommendedCurve: 'ex3-vector',
+        };
+      }
+    }
+    return {
+      family: 'ftms-rower',
+      protocol: 'ftms-rower',
+      sport: 'rowing',
+      shortLabel: raw ? raw.slice(0, 10) : 'Rower',
+      displayName: raw || 'FTMS Rowing Machine',
+      hasMotorizedResistance: hasFtmsControl,
+      recommendedCurve: 'ex3-vector',
+    };
+  }
+
   if (protocol === 'echelon' || upper.startsWith('ECH')) {
     if (upper.includes('SPORT-S') || upper.includes('SPORTS')) {
       return {
         family: 'echelon-sport-knob',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'Sport-s',
         displayName: 'Echelon Sport-s',
         hasMotorizedResistance: false,
@@ -134,6 +316,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-sport-knob',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'Sport',
         displayName: 'Echelon Connect Sport',
         hasMotorizedResistance: false,
@@ -144,6 +327,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-sport-knob',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-15',
         displayName: 'Echelon EX-15',
         hasMotorizedResistance: false,
@@ -154,6 +338,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-sport-knob',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'Prime',
         displayName: 'Echelon Connect Prime',
         hasMotorizedResistance: false,
@@ -164,6 +349,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-sport-knob',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'GT+',
         displayName: 'Echelon Connect GT+',
         hasMotorizedResistance: false,
@@ -174,6 +360,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-sport-knob',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-1',
         displayName: 'Echelon EX-1',
         hasMotorizedResistance: false,
@@ -184,6 +371,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-ex-motorized',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-Pro',
         displayName: 'Echelon EX-Pro',
         hasMotorizedResistance: true,
@@ -195,6 +383,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-ex-motorized',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-8s',
         displayName: 'Echelon EX-8s',
         hasMotorizedResistance: true,
@@ -206,6 +395,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-ex-motorized',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-7s',
         displayName: 'Echelon EX-7s',
         hasMotorizedResistance: true,
@@ -217,6 +407,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-ex-motorized',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-5s',
         displayName: 'Echelon EX-5s',
         hasMotorizedResistance: true,
@@ -228,6 +419,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-ex-motorized',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-5',
         displayName: 'Echelon EX-5',
         hasMotorizedResistance: true,
@@ -238,6 +430,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-ex-motorized',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-4s+',
         displayName: 'Echelon EX-4s+',
         hasMotorizedResistance: true,
@@ -249,6 +442,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-ex-motorized',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-4s',
         displayName: 'Echelon EX-4s',
         hasMotorizedResistance: true,
@@ -260,6 +454,7 @@ export function detectBikeModelProfile(
       return {
         family: 'echelon-ex-motorized',
         protocol: 'echelon',
+        sport: 'cycling',
         shortLabel: 'EX-3',
         displayName: 'Echelon EX-3',
         hasMotorizedResistance: true,
@@ -269,6 +464,7 @@ export function detectBikeModelProfile(
     return {
       family: 'echelon-ex-motorized',
       protocol: 'echelon',
+      sport: 'cycling',
       shortLabel: 'Echelon',
       displayName: raw || 'Echelon Connect Bike',
       hasMotorizedResistance: true,
@@ -302,6 +498,7 @@ export function detectBikeModelProfile(
         return {
           family: 'ftms-bike',
           protocol: 'ftms',
+          sport: 'cycling',
           shortLabel,
           displayName,
           hasMotorizedResistance: hasFtmsControl,
@@ -312,6 +509,7 @@ export function detectBikeModelProfile(
     return {
       family: 'ftms-bike',
       protocol: 'ftms',
+      sport: 'cycling',
       shortLabel: raw ? raw.slice(0, 10) : 'FTMS Bike',
       displayName: raw || 'FTMS Stationary Bike',
       hasMotorizedResistance: hasFtmsControl,
@@ -334,6 +532,7 @@ export function detectBikeModelProfile(
     return {
       family: 'power-meter-bike',
       protocol: 'cps',
+      sport: 'cycling',
       shortLabel,
       displayName: raw || 'Bluetooth Power Meter',
       hasMotorizedResistance: false,
@@ -344,6 +543,7 @@ export function detectBikeModelProfile(
   return {
     family: 'cadence-bike',
     protocol: 'csc',
+    sport: 'cycling',
     shortLabel: raw ? raw.slice(0, 10) : 'Cadence',
     displayName: raw || 'Bluetooth Cadence Bike',
     hasMotorizedResistance: false,
@@ -428,6 +628,208 @@ export function parseCscMeasurement(
   }
 
   return { cadenceRpm: null, nextSample: prevSample };
+}
+
+export interface FtmsTreadmillParsed {
+  speedMps?: number;
+  inclinePct?: number;
+  totalDistanceMeters?: number;
+  powerWatts?: number;
+  heartRateBpm?: number;
+}
+
+/**
+ * Parses standard Bluetooth SIG FTMS Treadmill Data (0x2ACD) notifications.
+ * Supports split packets where Bit 0 ("More Data") is 1 and only optional fields appear.
+ */
+export function parseFtmsTreadmillData(view: DataView): FtmsTreadmillParsed | null {
+  if (view.byteLength < 2) return null;
+  const flags = view.getUint16(0, true);
+  let offset = 2;
+  const result: FtmsTreadmillParsed = {};
+
+  // Bit 0 == 0: Instantaneous Speed (uint16, 0.01 km/h)
+  if ((flags & 0x0001) === 0 && offset + 2 <= view.byteLength) {
+    const kmh = view.getUint16(offset, true) * 0.01;
+    result.speedMps = kmh / 3.6;
+    offset += 2;
+  }
+  // Bit 1: Average Speed (uint16, 0.01 km/h)
+  if (flags & 0x0002) offset += 2;
+  // Bit 2: Total Distance (uint24, meters)
+  if (flags & 0x0004 && offset + 3 <= view.byteLength) {
+    result.totalDistanceMeters =
+      view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16);
+    offset += 3;
+  }
+  // Bit 3: Inclination (sint16, 0.1%) + Ramp Angle Setting (sint16, 0.1 deg)
+  if (flags & 0x0008 && offset + 4 <= view.byteLength) {
+    const rawIncline = view.getInt16(offset, true);
+    if (rawIncline !== 0x7fff && rawIncline >= -500 && rawIncline <= 500) {
+      result.inclinePct = Math.round(rawIncline) / 10;
+    }
+    offset += 4;
+  }
+  // Bit 4: Positive Elevation Gain (uint16) + Negative Elevation Gain (uint16)
+  if (flags & 0x0010) offset += 4;
+  // Bit 5: Instantaneous Pace (uint8, 0.1 km/min per FTMS v1.0)
+  if (flags & 0x0020) offset += 1;
+  // Bit 6: Average Pace (uint8, 0.1 km/min)
+  if (flags & 0x0040) offset += 1;
+  // Bit 7: Expended Energy (Total uint16 + Per Hour uint16 + Per Minute uint8 = 5 bytes)
+  if (flags & 0x0080) offset += 5;
+  // Bit 8: Heart Rate (uint8, bpm)
+  if (flags & 0x0100 && offset + 1 <= view.byteLength) {
+    const hr = view.getUint8(offset);
+    if (hr > 30 && hr < 240) {
+      result.heartRateBpm = hr;
+    }
+    offset += 1;
+  }
+  // Bit 9: Metabolic Equivalent (uint8)
+  if (flags & 0x0200) offset += 1;
+  // Bit 10: Elapsed Time (uint16)
+  if (flags & 0x0400) offset += 2;
+  // Bit 11: Remaining Time (uint16)
+  if (flags & 0x0800) offset += 2;
+  // Bit 12: Force on Belt (sint16, N) + Power Output (sint16, W)
+  if (flags & 0x1000 && offset + 4 <= view.byteLength) {
+    const rawWatts = view.getInt16(offset + 2, true);
+    if (rawWatts >= 0 && rawWatts < 3000) {
+      result.powerWatts = rawWatts;
+    }
+  }
+
+  return result;
+}
+
+export interface FtmsRowerParsed {
+  strokeRateSpm?: number;
+  strokeCount?: number;
+  totalDistanceMeters?: number;
+  paceSecPer500m?: number;
+  powerWatts?: number;
+  resistanceLevel?: number;
+  heartRateBpm?: number;
+}
+
+/**
+ * Parses standard Bluetooth SIG FTMS Rower Data (0x2AD1) notifications
+ * (Concept2 RowErg PM5, WaterRower/SmartRow, Fluid Rower, Merach, Domyos, Echelon Row, etc.).
+ * Supports split packets where Bit 0 ("More Data") is 1.
+ */
+export function parseFtmsRowerData(view: DataView): FtmsRowerParsed | null {
+  if (view.byteLength < 2) return null;
+  const flags = view.getUint16(0, true);
+  let offset = 2;
+  const result: FtmsRowerParsed = {};
+
+  // Bit 0 == 0: Stroke Rate (uint8, 0.5 strokes/min) + Stroke Count (uint16)
+  if ((flags & 0x0001) === 0 && offset + 3 <= view.byteLength) {
+    result.strokeRateSpm = Math.round(view.getUint8(offset) * 0.5);
+    result.strokeCount = view.getUint16(offset + 1, true);
+    offset += 3;
+  }
+  // Bit 1: Average Stroke Rate (uint8, 0.5 strokes/min)
+  if (flags & 0x0002) offset += 1;
+  // Bit 2: Total Distance (uint24, meters)
+  if (flags & 0x0004 && offset + 3 <= view.byteLength) {
+    result.totalDistanceMeters =
+      view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16);
+    offset += 3;
+  }
+  // Bit 3: Instantaneous Pace (uint16, seconds per 500m)
+  if (flags & 0x0008 && offset + 2 <= view.byteLength) {
+    const rawPace = view.getUint16(offset, true);
+    result.paceSecPer500m = rawPace > 0 && rawPace < 0xffff ? rawPace : 0;
+    offset += 2;
+  }
+  // Bit 4: Average Pace (uint16, seconds per 500m)
+  if (flags & 0x0010) offset += 2;
+  // Bit 5: Instantaneous Power (sint16, watts)
+  if (flags & 0x0020 && offset + 2 <= view.byteLength) {
+    result.powerWatts = Math.max(0, view.getInt16(offset, true));
+    offset += 2;
+  }
+  // Bit 6: Average Power (sint16, watts)
+  if (flags & 0x0040) offset += 2;
+  // Bit 7: Resistance Level (sint16 per FTMS v1.0; guard single-byte quirk if trailing)
+  if (flags & 0x0080) {
+    if (offset + 2 <= view.byteLength) {
+      result.resistanceLevel = Math.max(0, view.getInt16(offset, true));
+      offset += 2;
+    } else if (offset + 1 <= view.byteLength) {
+      result.resistanceLevel = view.getUint8(offset);
+      offset += 1;
+    }
+  }
+  // Bit 8: Expended Energy (Total uint16 + Per Hour uint16 + Per Minute uint8 = 5 bytes)
+  if (flags & 0x0100) offset += 5;
+  // Bit 9: Heart Rate (uint8, bpm)
+  if (flags & 0x0200 && offset + 1 <= view.byteLength) {
+    const hr = view.getUint8(offset);
+    if (hr > 30 && hr < 240) {
+      result.heartRateBpm = hr;
+    }
+    offset += 1;
+  }
+  // Bit 10: Metabolic Equivalent (uint8)
+  if (flags & 0x0400) offset += 1;
+  // Bit 11: Elapsed Time (uint16)
+  if (flags & 0x0800) offset += 2;
+  // Bit 12: Remaining Time (uint16)
+  if (flags & 0x1000) offset += 2;
+
+  return result;
+}
+
+export interface RscParsed {
+  speedMps: number;
+  cadenceSpm: number;
+  isRunning: boolean;
+  strideLengthMeters?: number;
+  totalDistanceMeters?: number;
+}
+
+/**
+ * Parses standard Bluetooth SIG Running Speed & Cadence Measurement (0x2A53)
+ * for footpods (Stryd, Zwift RunPod, NPE Runn, Polar/Garmin Virtual Run).
+ */
+export function parseRscMeasurement(view: DataView): RscParsed | null {
+  if (view.byteLength < 4) return null;
+  const flags = view.getUint8(0);
+  const speedMps = view.getUint16(1, true) / 256;
+  const rawCadence = view.getUint8(3);
+  const isRunning = Boolean(flags & 0x04);
+
+  // Normalize single-foot stride rate (e.g. 85 strides/min) to total steps/min (170 spm),
+  // while leaving dual-foot sensors that already transmit 150-200 spm untouched.
+  const cadenceSpm =
+    isRunning && rawCadence > 0 && rawCadence < 115
+      ? rawCadence * 2
+      : !isRunning && rawCadence > 0 && rawCadence < 75
+        ? rawCadence * 2
+        : rawCadence;
+
+  let offset = 4;
+  let strideLengthMeters: number | undefined;
+  let totalDistanceMeters: number | undefined;
+
+  if (flags & 0x01 && offset + 2 <= view.byteLength) {
+    strideLengthMeters = view.getUint16(offset, true) * 0.01;
+    offset += 2;
+  }
+  if (flags & 0x02 && offset + 4 <= view.byteLength) {
+    totalDistanceMeters = view.getUint32(offset, true) * 0.1;
+  }
+
+  return {
+    speedMps,
+    cadenceSpm,
+    isRunning,
+    ...(strideLengthMeters !== undefined ? { strideLengthMeters } : {}),
+    ...(totalDistanceMeters !== undefined ? { totalDistanceMeters } : {}),
+  };
 }
 
 function parseLeadingDecimalDigitsFromHex(bytes: number[]): number | null {
@@ -556,6 +958,12 @@ export class EchelonBikeConnection {
   private cadenceRpm = 0;
   private resistance = 1;
   private maxResistance = 32;
+  private preferredSport: SportMode | undefined;
+  private lastSpeedMps = 0;
+  private lastInclinePct = 0;
+  private lastPaceSec500m = 0;
+  private lastDirectWatts: number | undefined;
+  private lastStrokeCount = 0;
   private prevCrankSample: CrankSample | null = null;
   private lastPedalPacketAt = 0;
   private zeroCadenceWatchdog: number | null = null;
@@ -565,8 +973,11 @@ export class EchelonBikeConnection {
   private readonly boundHandleDisconnect: () => void;
   private readonly boundHandleNotify: (ev: Event) => void;
   private readonly boundHandleFtms: (ev: Event) => void;
+  private readonly boundHandleFtmsTreadmill: (ev: Event) => void;
+  private readonly boundHandleFtmsRower: (ev: Event) => void;
   private readonly boundHandleCps: (ev: Event) => void;
   private readonly boundHandleCsc: (ev: Event) => void;
+  private readonly boundHandleRsc: (ev: Event) => void;
 
   constructor(callbacks: EchelonBleCallbacks) {
     this.callbacks = callbacks;
@@ -585,6 +996,18 @@ export class EchelonBikeConnection {
         this.parseFtmsNotification(target.value);
       }
     };
+    this.boundHandleFtmsTreadmill = (ev: Event) => {
+      const target = ev.target as BluetoothRemoteGATTCharacteristic | null;
+      if (target?.value) {
+        this.parseFtmsTreadmillNotification(target.value);
+      }
+    };
+    this.boundHandleFtmsRower = (ev: Event) => {
+      const target = ev.target as BluetoothRemoteGATTCharacteristic | null;
+      if (target?.value) {
+        this.parseFtmsRowerNotification(target.value);
+      }
+    };
     this.boundHandleCps = (ev: Event) => {
       const target = ev.target as BluetoothRemoteGATTCharacteristic | null;
       if (target?.value) {
@@ -595,6 +1018,12 @@ export class EchelonBikeConnection {
       const target = ev.target as BluetoothRemoteGATTCharacteristic | null;
       if (target?.value) {
         this.parseCscNotification(target.value);
+      }
+    };
+    this.boundHandleRsc = (ev: Event) => {
+      const target = ev.target as BluetoothRemoteGATTCharacteristic | null;
+      if (target?.value) {
+        this.parseRscNotification(target.value);
       }
     };
   }
@@ -612,16 +1041,20 @@ export class EchelonBikeConnection {
   }
 
   private getCurrentDeviceLabel(): string {
-    return this.device?.name || this.modelProfile?.displayName || 'Echelon Bike';
+    return this.device?.name || this.modelProfile?.displayName || 'Fitness Machine';
   }
 
-  public async requestAndConnect(options?: { acceptAllDevices?: boolean }): Promise<void> {
+  public async requestAndConnect(options?: {
+    acceptAllDevices?: boolean;
+    preferredSport?: SportMode;
+  }): Promise<void> {
     if (!EchelonBikeConnection.isSupported()) {
       throw new Error(getBluetoothUnsupportedMessage());
     }
 
     const attemptId = ++this.connectAttemptId;
     this.manualDisconnect = false;
+    this.preferredSport = options?.preferredSport;
     this.callbacks.onStatusChange('connecting', null, undefined, null, 'idle');
 
     const optionalServices: BluetoothServiceUUID[] = [
@@ -630,6 +1063,7 @@ export class EchelonBikeConnection {
       FTMS_SERVICE,
       CYCLING_POWER_SERVICE,
       CYCLING_SPEED_CADENCE_SERVICE,
+      RUNNING_SPEED_CADENCE_SERVICE,
       'device_information',
       'battery_service',
     ];
@@ -647,6 +1081,7 @@ export class EchelonBikeConnection {
               { services: [FTMS_SERVICE] },
               { services: [CYCLING_POWER_SERVICE] },
               { services: [CYCLING_SPEED_CADENCE_SERVICE] },
+              { services: [RUNNING_SPEED_CADENCE_SERVICE] },
               ...COMMON_BIKE_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
             ],
             optionalServices,
@@ -699,12 +1134,108 @@ export class EchelonBikeConnection {
     this.ftmsControlGranted = false;
     this.prevCrankSample = null;
     this.maxResistance = 32;
+    this.lastSpeedMps = 0;
+    this.lastInclinePct = 0;
+    this.lastPaceSec500m = 0;
+    this.lastDirectWatts = undefined;
+    this.lastStrokeCount = 0;
     this.notifyChars = [];
 
     const server = await device.gatt.connect();
     if (sessionId !== this.gattSessionId) return;
 
-    // 1. Try native Echelon GATT channel first (Connect Sport, EX-15, Prime, GT+, EX-1/3/4s/4s+/5/5s/7s/8s/Pro)
+    const tryFtmsSession = async (): Promise<boolean> => {
+      try {
+        const ftms = await server.getPrimaryService(FTMS_SERVICE);
+        const probes: Array<{
+          uuid: number;
+          protocol: 'ftms' | 'ftms-rower' | 'ftms-treadmill';
+          handler: (ev: Event) => void;
+        }> =
+          this.preferredSport === 'running'
+            ? [
+                {
+                  uuid: FTMS_TREADMILL_DATA,
+                  protocol: 'ftms-treadmill',
+                  handler: this.boundHandleFtmsTreadmill,
+                },
+                { uuid: FTMS_INDOOR_BIKE_DATA, protocol: 'ftms', handler: this.boundHandleFtms },
+                {
+                  uuid: FTMS_ROWER_DATA,
+                  protocol: 'ftms-rower',
+                  handler: this.boundHandleFtmsRower,
+                },
+              ]
+            : this.preferredSport === 'rowing'
+              ? [
+                  {
+                    uuid: FTMS_ROWER_DATA,
+                    protocol: 'ftms-rower',
+                    handler: this.boundHandleFtmsRower,
+                  },
+                  { uuid: FTMS_INDOOR_BIKE_DATA, protocol: 'ftms', handler: this.boundHandleFtms },
+                  {
+                    uuid: FTMS_TREADMILL_DATA,
+                    protocol: 'ftms-treadmill',
+                    handler: this.boundHandleFtmsTreadmill,
+                  },
+                ]
+              : [
+                  { uuid: FTMS_INDOOR_BIKE_DATA, protocol: 'ftms', handler: this.boundHandleFtms },
+                  {
+                    uuid: FTMS_ROWER_DATA,
+                    protocol: 'ftms-rower',
+                    handler: this.boundHandleFtmsRower,
+                  },
+                  {
+                    uuid: FTMS_TREADMILL_DATA,
+                    protocol: 'ftms-treadmill',
+                    handler: this.boundHandleFtmsTreadmill,
+                  },
+                ];
+
+        for (const probe of probes) {
+          try {
+            const dataChar = await ftms.getCharacteristic(probe.uuid);
+            dataChar.addEventListener('characteristicvaluechanged', probe.handler);
+            await dataChar.startNotifications();
+            this.notifyChars.push(dataChar);
+
+            let hasFtmsControl = false;
+            try {
+              const ctrl = await ftms.getCharacteristic(FTMS_CONTROL_POINT);
+              if (ctrl && ctrl !== dataChar) {
+                this.ftmsControlChar = ctrl;
+                hasFtmsControl = true;
+              }
+            } catch {
+              // Read-only FTMS machines (e.g. Schwinn IC4, Concept2 RowErg) omit control point
+            }
+
+            this.modelProfile = detectBikeModelProfile(device.name, probe.protocol, hasFtmsControl);
+            const label = device.name || this.modelProfile.displayName;
+            this.startCadenceWatchdog();
+            this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile, 'idle');
+            return true;
+          } catch {
+            // Try next FTMS data characteristic
+          }
+        }
+      } catch {
+        // Device does not expose FTMS service
+      }
+      return false;
+    };
+
+    // When pairing in Running or Rowing mode, check standard FTMS first so Echelon Stride/Row
+    // over FTMS match immediately before probing the Echelon bike-only GATT service.
+    if (this.preferredSport === 'running' || this.preferredSport === 'rowing') {
+      if (await tryFtmsSession()) {
+        return;
+      }
+    }
+
+    // 1. Native Echelon Bike GATT channel (Connect Sport, EX-15, Prime, GT+, EX-1/3/4s/4s+/5/5s/7s/8s/Pro)
     try {
       const echelonService = await server.getPrimaryService(ECHELON_COMM_SERVICE);
       this.writeChar = await echelonService.getCharacteristic(ECHELON_WRITE_CHAR);
@@ -751,35 +1282,14 @@ export class EchelonBikeConnection {
       );
       return;
     } catch {
-      // Fall through to standard FTMS / Cycling Power / CSC if paired with a non-Echelon bike
+      // Fall through to standard FTMS / Cycling Power / CSC / RSC
     }
 
-    // 2. Standard FTMS Indoor Bike (0x1826) — Schwinn IC4, Bowflex C6, Yesoul, Merach, Domyos, Keiser, Wahoo, etc.
-    try {
-      const ftms = await server.getPrimaryService(FTMS_SERVICE);
-      const bikeData = await ftms.getCharacteristic(FTMS_INDOOR_BIKE_DATA);
-      bikeData.addEventListener('characteristicvaluechanged', this.boundHandleFtms);
-      await bikeData.startNotifications();
-      this.notifyChars.push(bikeData);
-
-      let hasFtmsControl = false;
-      try {
-        const ctrl = await ftms.getCharacteristic(FTMS_CONTROL_POINT);
-        if (ctrl && ctrl !== bikeData) {
-          this.ftmsControlChar = ctrl;
-          hasFtmsControl = true;
-        }
-      } catch {
-        // Manual-knob FTMS bikes (e.g. Schwinn IC4 / Bowflex C6) do not expose a motorized control point
+    // 2. Standard FTMS (0x1826) — Indoor Bikes (0x2AD2), Rowers (0x2AD1), and Treadmills (0x2ACD)
+    if (this.preferredSport !== 'running' && this.preferredSport !== 'rowing') {
+      if (await tryFtmsSession()) {
+        return;
       }
-
-      this.modelProfile = detectBikeModelProfile(device.name, 'ftms', hasFtmsControl);
-      const label = device.name || this.modelProfile.displayName;
-      this.startCadenceWatchdog();
-      this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile, 'idle');
-      return;
-    } catch {
-      // Fall through to Cycling Power
     }
 
     // 3. Standard Cycling Power Service (0x1818) — Assioma, Garmin Rally/Vector, Stages, 4iiii, smart trainers
@@ -796,21 +1306,38 @@ export class EchelonBikeConnection {
       this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile, 'idle');
       return;
     } catch {
-      // Fall through to Cycling Speed & Cadence
+      // Fall through to Cycling Speed & Cadence or Running Speed & Cadence
     }
 
-    // 4. Standard Cycling Speed & Cadence Service (0x1816) — Wahoo/Garmin/Magene/Coospo cadence pods on any spin bike
-    const csc = await server.getPrimaryService(CYCLING_SPEED_CADENCE_SERVICE);
-    const cscChar = await csc.getCharacteristic(CSC_MEASUREMENT);
-    cscChar.addEventListener('characteristicvaluechanged', this.boundHandleCsc);
-    await cscChar.startNotifications();
-    this.notifyChars.push(cscChar);
+    // 4. Standard Cycling Speed & Cadence Service (0x1816) — Wahoo/Garmin/Magene/Coospo cadence pods
+    try {
+      const csc = await server.getPrimaryService(CYCLING_SPEED_CADENCE_SERVICE);
+      const cscChar = await csc.getCharacteristic(CSC_MEASUREMENT);
+      cscChar.addEventListener('characteristicvaluechanged', this.boundHandleCsc);
+      await cscChar.startNotifications();
+      this.notifyChars.push(cscChar);
 
-    this.modelProfile = detectBikeModelProfile(device.name, 'csc');
+      this.modelProfile = detectBikeModelProfile(device.name, 'csc');
+      const label = device.name || this.modelProfile.displayName;
+      if (this.resistance < 12) {
+        this.resistance = 16; // Sensible flat-road virtual starting gear for cadence-only spin bikes
+      }
+      this.startCadenceWatchdog();
+      this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile, 'idle');
+      return;
+    } catch {
+      // Fall through to Running Speed & Cadence (0x1814)
+    }
+
+    // 5. Standard Running Speed & Cadence Service (0x1814 / 0x2A53) — Stryd, Zwift RunPod, NPE Runn, Garmin Virtual Run
+    const rsc = await server.getPrimaryService(RUNNING_SPEED_CADENCE_SERVICE);
+    const rscChar = await rsc.getCharacteristic(RSC_MEASUREMENT);
+    rscChar.addEventListener('characteristicvaluechanged', this.boundHandleRsc);
+    await rscChar.startNotifications();
+    this.notifyChars.push(rscChar);
+
+    this.modelProfile = detectBikeModelProfile(device.name, 'rsc');
     const label = device.name || this.modelProfile.displayName;
-    if (this.resistance < 12) {
-      this.resistance = 16; // Sensible flat-road virtual starting gear for cadence-only spin bikes
-    }
     this.startCadenceWatchdog();
     this.callbacks.onStatusChange('connected', label, undefined, this.modelProfile, 'idle');
   }
@@ -1048,15 +1575,42 @@ export class EchelonBikeConnection {
       window.clearInterval(this.zeroCadenceWatchdog);
     }
     this.zeroCadenceWatchdog = window.setInterval(() => {
-      if (this.cadenceRpm > 0 && Date.now() - this.lastPedalPacketAt > 4000) {
+      const sport = this.modelProfile?.sport ?? 'cycling';
+      const hasActivity =
+        this.cadenceRpm > 0 ||
+        this.lastSpeedMps > 0 ||
+        (sport === 'rowing' && ((this.lastDirectWatts ?? 0) > 0 || this.lastPaceSec500m > 0));
+      if (hasActivity && Date.now() - this.lastPedalPacketAt > 4000) {
         this.cadenceRpm = 0;
+        this.lastSpeedMps = 0;
+        this.lastPaceSec500m = 0;
+        if (sport !== 'cycling') {
+          this.lastDirectWatts = 0;
+        }
         this.callbacks.onReading({
+          sport,
           cadenceRpm: 0,
           resistance: this.resistance,
+          ...(sport === 'running'
+            ? { directSpeedMps: 0, inclinePct: this.lastInclinePct, directWatts: 0 }
+            : sport === 'rowing'
+              ? { directSpeedMps: 0, paceSecPer500m: 0, directWatts: 0, strokeCount: this.lastStrokeCount }
+              : {}),
           ...(this.maxResistance > 32 ? { maxResistance: this.maxResistance } : {}),
         });
       }
     }, 1500);
+  }
+
+  private async ensureFtmsControl(): Promise<boolean> {
+    if (!this.ftmsControlChar) return false;
+    if (!this.ftmsControlGranted) {
+      await this.enqueueWrite(new Uint8Array([0x00]), this.ftmsControlChar, {
+        preferWithResponse: false,
+      });
+      this.ftmsControlGranted = true;
+    }
+    return true;
   }
 
   private async writeEchelonResistanceFrame(level: number): Promise<void> {
@@ -1070,9 +1624,19 @@ export class EchelonBikeConnection {
     const upperBound = this.maxResistance > 32 ? this.maxResistance : 32;
     const clamped = Math.max(1, Math.min(upperBound, Math.round(level)));
     this.resistance = clamped;
+    const sport = this.modelProfile?.sport ?? 'cycling';
     this.callbacks.onReading({
+      sport,
       cadenceRpm: this.cadenceRpm,
       resistance: this.resistance,
+      ...(sport === 'rowing'
+        ? {
+            directWatts: this.lastDirectWatts,
+            paceSecPer500m: this.lastPaceSec500m,
+            directSpeedMps: this.lastSpeedMps,
+            strokeCount: this.lastStrokeCount,
+          }
+        : {}),
       ...(this.maxResistance > 32 ? { maxResistance: this.maxResistance } : {}),
     });
 
@@ -1087,17 +1651,37 @@ export class EchelonBikeConnection {
       return;
     }
 
-    // 2. Controllable FTMS smart bikes / trainers (0x2AD9 Request Control + Set Target Resistance)
-    if (this.ftmsControlChar) {
-      if (!this.ftmsControlGranted) {
-        await this.enqueueWrite(new Uint8Array([0x00]), this.ftmsControlChar, {
-          preferWithResponse: false,
-        });
-        this.ftmsControlGranted = true;
-      }
+    // 2. Controllable FTMS smart bikes / trainers / magnetic rowers (0x2AD9 OpCode 0x04)
+    if (await this.ensureFtmsControl()) {
       await this.enqueueWrite(new Uint8Array([0x04, clamped & 0xff]), this.ftmsControlChar, {
         preferWithResponse: false,
       });
+    }
+  }
+
+  /** Sets target treadmill belt speed over FTMS Control Point (0x2AD9 OpCode 0x02, uint16 0.01 km/h). */
+  public async setTargetSpeedMph(mph: number): Promise<void> {
+    const clampedMph = Math.max(0.5, Math.min(16, Math.round(mph * 10) / 10));
+    const speedKmh = clampedMph * 1.609344;
+    const speedRaw = Math.max(50, Math.min(2600, Math.round(speedKmh * 100)));
+    this.lastSpeedMps = speedKmh / 3.6;
+
+    if (await this.ensureFtmsControl()) {
+      const payload = new Uint8Array([0x02, speedRaw & 0xff, (speedRaw >> 8) & 0xff]);
+      await this.enqueueWrite(payload, this.ftmsControlChar, { preferWithResponse: false });
+    }
+  }
+
+  /** Sets target treadmill incline over FTMS Control Point (0x2AD9 OpCode 0x03, sint16 0.1%). */
+  public async setTargetInclinePct(inclinePct: number): Promise<void> {
+    const clampedPct = Math.max(-3, Math.min(20, Math.round(inclinePct * 2) / 2));
+    const raw = Math.round(clampedPct * 10);
+    const unsigned = raw < 0 ? 0x10000 + raw : raw;
+    this.lastInclinePct = clampedPct;
+
+    if (await this.ensureFtmsControl()) {
+      const payload = new Uint8Array([0x03, unsigned & 0xff, (unsigned >> 8) & 0xff]);
+      await this.enqueueWrite(payload, this.ftmsControlChar, { preferWithResponse: false });
     }
   }
 
@@ -1230,10 +1814,120 @@ export class EchelonBikeConnection {
       this.cadenceRpm = parsed.cadenceRpm;
       this.lastPedalPacketAt = Date.now();
       this.callbacks.onReading({
+        sport: 'cycling',
         cadenceRpm: this.cadenceRpm,
         resistance: this.resistance,
       });
     }
+  }
+
+  private parseFtmsTreadmillNotification(view: DataView): void {
+    const parsed = parseFtmsTreadmillData(view);
+    if (!parsed) return;
+
+    if (parsed.speedMps !== undefined) {
+      this.lastSpeedMps = parsed.speedMps;
+    }
+    if (parsed.inclinePct !== undefined) {
+      this.lastInclinePct = parsed.inclinePct;
+    }
+    if (parsed.powerWatts !== undefined) {
+      this.lastDirectWatts = parsed.powerWatts;
+    }
+
+    this.lastPedalPacketAt = Date.now();
+    this.callbacks.onReading({
+      sport: 'running',
+      cadenceRpm: this.cadenceRpm,
+      resistance: this.resistance,
+      directSpeedMps: this.lastSpeedMps,
+      inclinePct: this.lastInclinePct,
+      ...(this.lastDirectWatts !== undefined ? { directWatts: this.lastDirectWatts } : {}),
+      ...(parsed.totalDistanceMeters !== undefined
+        ? { deviceDistanceMeters: parsed.totalDistanceMeters }
+        : {}),
+      ...(parsed.heartRateBpm !== undefined ? { machineHeartRateBpm: parsed.heartRateBpm } : {}),
+    });
+  }
+
+  private parseFtmsRowerNotification(view: DataView): void {
+    const parsed = parseFtmsRowerData(view);
+    if (!parsed) return;
+
+    if (parsed.strokeRateSpm !== undefined) {
+      this.cadenceRpm = parsed.strokeRateSpm;
+    }
+    if (parsed.strokeCount !== undefined) {
+      this.lastStrokeCount = parsed.strokeCount;
+    }
+    if (parsed.resistanceLevel !== undefined) {
+      if (parsed.resistanceLevel > this.maxResistance) {
+        this.maxResistance = Math.min(100, Math.max(32, parsed.resistanceLevel));
+      }
+      this.resistance = Math.max(0, parsed.resistanceLevel);
+    }
+
+    // Reconcile pace (/500m) and power (W) using Concept2 erg physics when a rower reports only one
+    if (parsed.powerWatts !== undefined) {
+      this.lastDirectWatts = parsed.powerWatts;
+    }
+    if (parsed.paceSecPer500m !== undefined) {
+      this.lastPaceSec500m = parsed.paceSecPer500m;
+    }
+
+    let watts = this.lastDirectWatts;
+    let paceSecPer500m = this.lastPaceSec500m;
+
+    if ((watts === undefined || watts === 0) && paceSecPer500m > 30 && paceSecPer500m < 600) {
+      watts = rowingSplitSecPer500mToWatts(paceSecPer500m);
+      this.lastDirectWatts = watts;
+    } else if ((!paceSecPer500m || paceSecPer500m <= 0) && typeof watts === 'number' && watts > 1) {
+      paceSecPer500m = Math.round(rowingWattsToSplitSecPer500m(watts));
+      this.lastPaceSec500m = paceSecPer500m;
+    }
+
+    if (this.cadenceRpm === 0 && (watts ?? 0) === 0 && paceSecPer500m === 0) {
+      this.lastSpeedMps = 0;
+    } else if (paceSecPer500m > 30 && paceSecPer500m < 600) {
+      this.lastSpeedMps = rowingSplitToSpeedMps(paceSecPer500m);
+    } else {
+      this.lastSpeedMps = 0;
+    }
+
+    this.lastPedalPacketAt = Date.now();
+    this.callbacks.onReading({
+      sport: 'rowing',
+      cadenceRpm: this.cadenceRpm,
+      resistance: this.resistance,
+      directWatts: watts ?? 0,
+      paceSecPer500m,
+      directSpeedMps: this.lastSpeedMps,
+      strokeCount: this.lastStrokeCount,
+      ...(parsed.totalDistanceMeters !== undefined
+        ? { deviceDistanceMeters: parsed.totalDistanceMeters }
+        : {}),
+      ...(parsed.heartRateBpm !== undefined ? { machineHeartRateBpm: parsed.heartRateBpm } : {}),
+      ...(this.maxResistance > 32 ? { maxResistance: this.maxResistance } : {}),
+    });
+  }
+
+  private parseRscNotification(view: DataView): void {
+    const parsed = parseRscMeasurement(view);
+    if (!parsed) return;
+
+    this.lastSpeedMps = parsed.speedMps;
+    this.cadenceRpm = parsed.cadenceSpm;
+    this.lastPedalPacketAt = Date.now();
+    this.callbacks.onReading({
+      sport: 'running',
+      cadenceRpm: this.cadenceRpm,
+      resistance: this.resistance,
+      directSpeedMps: this.lastSpeedMps,
+      inclinePct: this.lastInclinePct,
+      ...(parsed.totalDistanceMeters !== undefined
+        ? { deviceDistanceMeters: parsed.totalDistanceMeters }
+        : {}),
+    });
   }
 
   private async handleUnexpectedDisconnect(): Promise<void> {
@@ -1246,7 +1940,7 @@ export class EchelonBikeConnection {
       return;
     }
 
-    const label = this.device.name || this.modelProfile?.displayName || 'Stationary Bike';
+    const label = this.device.name || this.modelProfile?.displayName || 'Fitness Machine';
     this.callbacks.onStatusChange(
       'reconnecting',
       label,
@@ -1293,8 +1987,11 @@ export class EchelonBikeConnection {
     for (const ch of this.notifyChars) {
       ch.removeEventListener('characteristicvaluechanged', this.boundHandleNotify);
       ch.removeEventListener('characteristicvaluechanged', this.boundHandleFtms);
+      ch.removeEventListener('characteristicvaluechanged', this.boundHandleFtmsTreadmill);
+      ch.removeEventListener('characteristicvaluechanged', this.boundHandleFtmsRower);
       ch.removeEventListener('characteristicvaluechanged', this.boundHandleCps);
       ch.removeEventListener('characteristicvaluechanged', this.boundHandleCsc);
+      ch.removeEventListener('characteristicvaluechanged', this.boundHandleRsc);
     }
     this.notifyChars = [];
     if (this.device) {
@@ -1320,6 +2017,11 @@ export class EchelonBikeConnection {
     this.modelProfile = null;
     this.prevCrankSample = null;
     this.cadenceRpm = 0;
+    this.lastSpeedMps = 0;
+    this.lastInclinePct = 0;
+    this.lastPaceSec500m = 0;
+    this.lastDirectWatts = undefined;
+    this.lastStrokeCount = 0;
     this.callbacks.onStatusChange('disconnected', null, undefined, null, 'idle');
   }
 }

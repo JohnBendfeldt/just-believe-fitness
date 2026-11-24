@@ -568,4 +568,70 @@ describe('End-to-End Studio App Integration & Regression Suite', () => {
       expect(document.getElementById('athlete-stats-chip')?.textContent).toContain('209W FTP');
     });
   });
+
+  it('switches cleanly across Bike, Run, and Row modes with sport-specific workouts, live Pace/Split gauges, simulators, and saved RUN/ROW history', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<App />);
+
+    // Default sport is Cycling
+    expect(document.getElementById('sport-mode-cycling-btn')).toHaveAttribute('aria-pressed', 'true');
+    const workoutSelect = document.getElementById('workout-template-select') as HTMLSelectElement;
+    expect(Array.from(workoutSelect.options).some((o) => o.textContent === '50K Challenge')).toBe(true);
+
+    // Switch to Running mode
+    fireEvent.click(document.getElementById('sport-mode-running-btn')!);
+    expect(document.getElementById('sport-mode-running-btn')).toHaveAttribute('aria-pressed', 'true');
+    expect(Array.from(workoutSelect.options).some((o) => o.textContent === '5K Challenge')).toBe(true);
+    expect(document.getElementById('power-metric-card')?.textContent).toContain('Pace');
+    expect(document.getElementById('power-metric-card')?.textContent).toContain('/MI');
+
+    // Start Run workout (auto-enables Run simulator), advance 6s, and save
+    fireEvent.click(document.getElementById('start-ride-btn')!);
+    expect(document.getElementById('sim-run-speed-slider')).toBeInTheDocument();
+    expect(document.getElementById('sim-run-incline-slider')).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6200);
+    });
+
+    fireEvent.click(document.getElementById('finish-save-ride-btn')!);
+    await act(async () => {
+      fireEvent.click(document.getElementById('confirm-stop-save-btn')!);
+    });
+
+    await waitFor(() => {
+      const historyModal = document.getElementById('history-strava-modal');
+      expect(historyModal).toBeInTheDocument();
+      expect(historyModal?.textContent).toContain('RUN');
+      expect(historyModal?.textContent).toContain('Avg Pace');
+    });
+
+    // Close History, turn off simulator, and switch to Rowing mode
+    fireEvent.click(document.getElementById('close-history-modal')!);
+    fireEvent.click(document.getElementById('sport-mode-rowing-btn')!);
+    expect(document.getElementById('sport-mode-rowing-btn')).toHaveAttribute('aria-pressed', 'true');
+    expect(Array.from(workoutSelect.options).some((o) => o.textContent === '2,000m Erg Test')).toBe(true);
+    expect(document.getElementById('power-metric-card')?.textContent).toContain('Split /500m');
+    expect(document.getElementById('cadence-metric-card')?.textContent).toContain('Stroke Rate');
+    expect(document.getElementById('sim-row-watts-slider')).toBeInTheDocument();
+
+    // Record 6s Row session and save
+    fireEvent.click(document.getElementById('start-ride-btn')!);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6200);
+    });
+    fireEvent.click(document.getElementById('finish-save-ride-btn')!);
+    await act(async () => {
+      fireEvent.click(document.getElementById('confirm-stop-save-btn')!);
+    });
+
+    await waitFor(() => {
+      const historyModal = document.getElementById('history-strava-modal');
+      expect(historyModal).toBeInTheDocument();
+      expect(historyModal?.textContent).toContain('ROW');
+      expect(historyModal?.textContent).toContain('Avg Split');
+    });
+
+    vi.useRealTimers();
+  });
 });

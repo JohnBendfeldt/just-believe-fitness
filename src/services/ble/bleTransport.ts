@@ -11,6 +11,7 @@ const SIG_SERVICE_ALIASES: Record<string, string> = {
   fitness_machine: '00001826-0000-1000-8000-00805f9b34fb',
   cycling_power: '00001818-0000-1000-8000-00805f9b34fb',
   cycling_speed_and_cadence: '00001816-0000-1000-8000-00805f9b34fb',
+  running_speed_and_cadence: '00001814-0000-1000-8000-00805f9b34fb',
   heart_rate: '0000180d-0000-1000-8000-00805f9b34fb',
   battery_service: '0000180f-0000-1000-8000-00805f9b34fb',
   device_information: '0000180a-0000-1000-8000-00805f9b34fb',

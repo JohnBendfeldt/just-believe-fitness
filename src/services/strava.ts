@@ -232,6 +232,11 @@ export async function uploadRideToStrava(
   form.append('file', fileBlob, `${ride.id}.fit`);
   form.append('data_type', 'fit');
   form.append('trainer', '1');
+  if (ride.sport === 'running') {
+    form.append('sport_type', 'Run');
+  } else if (ride.sport === 'rowing') {
+    form.append('sport_type', 'Rowing');
+  }
   form.append('name', normalizeRideTitle(ride.title));
   form.append('description', description);
   form.append('external_id', `jbf-${ride.id}.fit`);

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AthleteProfile, TrackPoint, ZoneId } from '../types/fitness';
+import type { AthleteProfile, SportMode, TrackPoint, ZoneId } from '../types/fitness';
 import { ZoneDistributionList } from './ZoneDistributionList';
 import {
+  ZONE_PALETTE,
+  getEffectiveRowFtpWatts,
   getHrZones,
   getPowerZones,
   resolveZone,
@@ -10,6 +12,7 @@ import {
 interface LiveZoneGraphProps {
   points: TrackPoint[];
   profile: AthleteProfile;
+  sport?: SportMode;
   hrZoneSeconds: Record<ZoneId, number>;
   powerZoneSeconds: Record<ZoneId, number>;
   hasHrStream: boolean;
@@ -20,6 +23,7 @@ type GraphMode = 'combined' | 'hr' | 'power';
 export function LiveZoneGraph({
   points,
   profile,
+  sport = 'cycling',
   hrZoneSeconds,
   powerZoneSeconds,
   hasHrStream,
@@ -61,7 +65,8 @@ export function LiveZoneGraph({
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
 
-    const powerZones = getPowerZones(profile.ftpWatts);
+    const effFtp = sport === 'rowing' ? getEffectiveRowFtpWatts(profile) : profile.ftpWatts;
+    const powerZones = getPowerZones(effFtp);
     const hrZones = getHrZones(profile.maxHrBpm);
 
     // Show most recent 240 seconds (4 minutes) of high-resolution bars
@@ -78,13 +83,13 @@ export function LiveZoneGraph({
     ctx.setLineDash([4, 4]);
 
     const maxPowerScale = Math.max(
-      profile.ftpWatts * 1.45,
+      effFtp * 1.45,
       ...windowPoints.map((p) => p.powerWatts),
       300
     );
 
     if (mode !== 'hr') {
-      const ftpY = padTop + plotH * (1 - profile.ftpWatts / maxPowerScale);
+      const ftpY = padTop + plotH * (1 - effFtp / maxPowerScale);
       ctx.beginPath();
       ctx.moveTo(padX, ftpY);
       ctx.lineTo(width - padX, ftpY);
@@ -93,7 +98,13 @@ export function LiveZoneGraph({
       ctx.setLineDash([]);
       ctx.fillStyle = 'rgba(249, 115, 22, 0.85)';
       ctx.font = '600 10px JetBrains Mono, monospace';
-      ctx.fillText(`FTP ${profile.ftpWatts}W`, padX + 4, Math.max(11, ftpY - 4));
+      const refLabel =
+        sport === 'rowing'
+          ? `ROW FTP ${effFtp}W`
+          : sport === 'running'
+            ? `RUN POWER`
+            : `FTP ${effFtp}W`;
+      ctx.fillText(refLabel, padX + 4, Math.max(11, ftpY - 4));
     } else {
       const burnHr = Math.round(profile.maxHrBpm * 0.84);
       const minHr = 70;
@@ -118,16 +129,19 @@ export function LiveZoneGraph({
     const slots = Math.max(60, windowPoints.length);
     const stepX = plotW / slots;
 
-    // 1. Draw JBF 5-zone color-coded Power Bars (in 'combined' or 'power' mode)
+    // 1. Draw JBF 5-zone color-coded Power/Pace Effort Bars (in 'combined' or 'power' mode)
     if (mode === 'combined' || mode === 'power') {
       const barW = Math.max(1.5, stepX - 1);
       windowPoints.forEach((pt, idx) => {
-        const z = resolveZone(pt.powerWatts, powerZones);
+        const barColor =
+          sport === 'running'
+            ? ZONE_PALETTE[pt.powerZone].color
+            : resolveZone(pt.powerWatts, powerZones).color;
         const ratio = Math.min(1, Math.max(0.02, pt.powerWatts / maxPowerScale));
         const bh = ratio * plotH;
         const bx = padX + idx * stepX;
         const by = padTop + plotH - bh;
-        ctx.fillStyle = z.color;
+        ctx.fillStyle = barColor;
         ctx.globalAlpha = mode === 'combined' ? 0.78 : 0.92;
         ctx.fillRect(bx, by, barW, bh);
       });
@@ -189,16 +203,25 @@ export function LiveZoneGraph({
     }
 
     ctx.restore();
-  }, [points, profile, mode, canvasWidth]);
+  }, [points, profile, sport, mode, canvasWidth]);
 
   const activeZoneTotals = hasHrStream ? hrZoneSeconds : powerZoneSeconds;
+  const effortLabel = sport === 'running' ? 'Pace' : 'Power';
 
   return (
     <section className="graph-panel" id="telemetry-timeline-panel">
       <div>
         <div className="graph-header">
           <h2 className="panel-heading">
-            Live Intensity Timeline ({mode === 'hr' ? 'Garmin HR Zones' : mode === 'power' ? 'FTP Power Bars' : 'Power + HR'})
+            Live Intensity Timeline (
+            {mode === 'hr'
+              ? 'Garmin HR Zones'
+              : mode === 'power'
+                ? sport === 'running'
+                  ? 'Run Effort Bars'
+                  : 'FTP Power Bars'
+                : `${effortLabel} + HR`}
+            )
           </h2>
           <div className="graph-mode-tabs">
             <button
@@ -207,7 +230,7 @@ export function LiveZoneGraph({
               className={`btn btn-sm ${mode === 'combined' ? 'btn-primary' : ''}`}
               onClick={() => setMode('combined')}
             >
-              Power + HR
+              {effortLabel} + HR
             </button>
             <button
               type="button"
@@ -223,7 +246,7 @@ export function LiveZoneGraph({
               className={`btn btn-sm ${mode === 'power' ? 'btn-primary' : ''}`}
               onClick={() => setMode('power')}
             >
-              Power Only
+              {effortLabel} Only
             </button>
           </div>
         </div>
@@ -241,7 +264,7 @@ export function LiveZoneGraph({
       <div className="graph-zone-col">
         <div className="graph-header" style={{ marginBottom: 0 }}>
           <h2 className="panel-heading">
-            Time in {hasHrStream ? 'HR' : 'Power'} Zones
+            Time in {hasHrStream ? 'HR' : effortLabel} Zones
           </h2>
           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
             Z4 + Z5 = BURN PTS

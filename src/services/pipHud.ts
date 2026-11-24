@@ -5,15 +5,24 @@ import {
   computeWattsPerKg,
   formatBikeGearBadge,
   formatDuration,
+  formatRowingSplit,
+  formatRunningPacePerMile,
   getCadenceZones,
   getCalorieZones,
   getDistanceZones,
+  getEffectiveRowFtpWatts,
+  getEffectiveRunThresholdPaceSec,
   getHrZones,
+  getInclineZones,
   getPowerZones,
+  getRowingStrokeRateZones,
+  getRunningCadenceZones,
+  getRunningSpeedZones,
   getSpeedZones,
   metersToMiles,
   resolveHeadlineEffortZone,
   resolveZone,
+  rowingWattsToSplitSecPer500m,
 } from '../utils/zones';
 
 export interface HudRenderSnapshot {
@@ -174,11 +183,20 @@ export function renderTelemetryHudCanvas(
     segmentRemainingLabel,
   } = snap;
 
+  const sport = telemetry.sport ?? 'cycling';
+  const effectiveFtp = sport === 'rowing' ? getEffectiveRowFtpWatts(profile) : profile.ftpWatts;
   const hrZones = getHrZones(profile.maxHrBpm);
-  const powerZones = getPowerZones(profile.ftpWatts);
-  const cadenceZones = getCadenceZones();
-  const speedZones = getSpeedZones();
-  const distanceZones = getDistanceZones();
+  const powerZones = getPowerZones(effectiveFtp);
+  const runSpeedZones = getRunningSpeedZones(getEffectiveRunThresholdPaceSec(profile));
+  const inclineZones = getInclineZones();
+  const cadenceZones =
+    sport === 'running'
+      ? getRunningCadenceZones()
+      : sport === 'rowing'
+        ? getRowingStrokeRateZones()
+        : getCadenceZones();
+  const speedZones = sport === 'running' ? runSpeedZones : getSpeedZones();
+  const distanceZones = getDistanceZones(sport === 'rowing' ? 5000 : undefined);
   const calorieZones = getCalorieZones();
 
   const activeHr = resolveZone(telemetry.heartRateBpm, hrZones);
@@ -186,13 +204,15 @@ export function renderTelemetryHudCanvas(
   const activeCadence = resolveZone(telemetry.cadenceRpm, cadenceZones);
   const activeSpeed = resolveZone(telemetry.speedMph, speedZones);
   const distanceMiles = metersToMiles(distanceMeters);
-  const activeDistance = resolveZone(distanceMiles, distanceZones);
+  const distanceMetricVal = sport === 'rowing' ? distanceMeters : distanceMiles;
+  const activeDistance = resolveZone(distanceMetricVal, distanceZones);
   const activeCalories = resolveZone(caloriesKcal, calorieZones);
   const activeAvgPower = resolveZone(avgRideWatts, powerZones);
   const { zoneDef: headline } = resolveHeadlineEffortZone(
     telemetry.heartRateBpm,
     telemetry.powerWatts,
-    profile
+    profile,
+    { sport, speedMph: telemetry.speedMph, inclinePct: telemetry.inclinePct }
   );
 
   // Matte obsidian background
@@ -231,12 +251,20 @@ export function renderTelemetryHudCanvas(
   const cardW = (W - pad * 2 - gap * 2) / 3;
 
   const ftpPct =
-    profile.ftpWatts > 0 ? Math.round((telemetry.powerWatts / profile.ftpWatts) * 100) : 0;
+    effectiveFtp > 0 ? Math.round((telemetry.powerWatts / effectiveFtp) * 100) : 0;
   const wkg = computeWattsPerKg(telemetry.powerWatts, profile.weightLbs).toFixed(2);
   const hrPct =
     profile.maxHrBpm > 0 && telemetry.heartRateBpm > 0
       ? Math.round((telemetry.heartRateBpm / profile.maxHrBpm) * 100)
       : 0;
+
+  const liveRowSplit =
+    telemetry.paceSecPer500m && telemetry.paceSecPer500m > 0
+      ? telemetry.paceSecPer500m
+      : rowingWattsToSplitSecPer500m(telemetry.powerWatts);
+  const runIncline = telemetry.inclinePct ?? 0;
+  const runShowsIncline =
+    sport === 'running' && telemetry.cadenceRpm <= 0 && telemetry.speedMph > 0.3;
 
   const cardById: Record<
     GaugeTileId,
@@ -251,26 +279,60 @@ export function renderTelemetryHudCanvas(
       progress: number;
     }
   > = {
-    power: {
-      label: 'POWER',
-      value: `${Math.round(telemetry.powerWatts)}`,
-      unit: 'WATTS',
-      sub: `${ftpPct}% FTP · ${wkg} W/kg`,
-      zones: powerZones,
-      active: activePower,
-      isLive: telemetry.powerWatts > 0,
-      progress: computeSegmentedGaugeProgress(telemetry.powerWatts, powerZones),
-    },
-    cadence: {
-      label: 'CADENCE',
-      value: `${Math.round(telemetry.cadenceRpm)}`,
-      unit: 'RPM',
-      sub: formatBikeGearBadge(telemetry),
-      zones: cadenceZones,
-      active: activeCadence,
-      isLive: telemetry.cadenceRpm > 0,
-      progress: computeSegmentedGaugeProgress(telemetry.cadenceRpm, cadenceZones),
-    },
+    power:
+      sport === 'running'
+        ? {
+            label: 'PACE',
+            value: formatRunningPacePerMile(telemetry.speedMph),
+            unit: '/MI',
+            sub: `${telemetry.speedMph.toFixed(1)} mph · ${Math.round(telemetry.powerWatts)}W`,
+            zones: runSpeedZones,
+            active: resolveZone(telemetry.speedMph, runSpeedZones),
+            isLive: telemetry.speedMph > 0.3,
+            progress: computeSegmentedGaugeProgress(telemetry.speedMph, runSpeedZones),
+          }
+        : sport === 'rowing'
+          ? {
+              label: 'SPLIT /500M',
+              value: formatRowingSplit(liveRowSplit),
+              unit: '/500M',
+              sub: `${Math.round(telemetry.powerWatts)}W · ${ftpPct}% FTP`,
+              zones: powerZones,
+              active: activePower,
+              isLive: telemetry.powerWatts > 0 || liveRowSplit > 0,
+              progress: computeSegmentedGaugeProgress(telemetry.powerWatts, powerZones),
+            }
+          : {
+              label: 'POWER',
+              value: `${Math.round(telemetry.powerWatts)}`,
+              unit: 'WATTS',
+              sub: `${ftpPct}% FTP · ${wkg} W/kg`,
+              zones: powerZones,
+              active: activePower,
+              isLive: telemetry.powerWatts > 0,
+              progress: computeSegmentedGaugeProgress(telemetry.powerWatts, powerZones),
+            },
+    cadence: runShowsIncline
+      ? {
+          label: 'INCLINE',
+          value: runIncline.toFixed(1),
+          unit: '% GRADE',
+          sub: `${telemetry.speedMph.toFixed(1)} mph · ${formatRunningPacePerMile(telemetry.speedMph)}/mi`,
+          zones: inclineZones,
+          active: resolveZone(Math.max(0, runIncline), inclineZones),
+          isLive: true,
+          progress: computeSegmentedGaugeProgress(Math.max(0.2, runIncline), inclineZones),
+        }
+      : {
+          label: sport === 'rowing' ? 'STROKE RATE' : 'CADENCE',
+          value: `${Math.round(telemetry.cadenceRpm)}`,
+          unit: sport === 'cycling' ? 'RPM' : 'SPM',
+          sub: formatBikeGearBadge(telemetry),
+          zones: cadenceZones,
+          active: activeCadence,
+          isLive: telemetry.cadenceRpm > 0,
+          progress: computeSegmentedGaugeProgress(telemetry.cadenceRpm, cadenceZones),
+        },
     hr: {
       label: 'HEART RATE',
       value: telemetry.heartRateBpm > 0 ? `${Math.round(telemetry.heartRateBpm)}` : '--',
@@ -286,26 +348,53 @@ export function renderTelemetryHudCanvas(
       isLive: telemetry.heartRateBpm > 0,
       progress: computeSegmentedGaugeProgress(telemetry.heartRateBpm, hrZones),
     },
-    speed: {
-      label: 'SPEED',
-      value: telemetry.speedMph.toFixed(1),
-      unit: 'MPH',
-      sub: `${(telemetry.speedMph * 1.60934).toFixed(1)} km/h`,
-      zones: speedZones,
-      active: activeSpeed,
-      isLive: telemetry.speedMph > 0,
-      progress: computeSegmentedGaugeProgress(telemetry.speedMph, speedZones),
-    },
-    distance: {
-      label: 'DISTANCE',
-      value: distanceMiles.toFixed(2),
-      unit: 'MI',
-      sub: `${(distanceMeters / 1000).toFixed(2)} km`,
-      zones: distanceZones,
-      active: activeDistance,
-      isLive: distanceMeters > 0,
-      progress: computeSegmentedGaugeProgress(distanceMiles, distanceZones),
-    },
+    speed:
+      sport === 'rowing'
+        ? {
+            label: 'WATTS',
+            value: `${Math.round(telemetry.powerWatts)}`,
+            unit: 'WATTS',
+            sub: `${formatRowingSplit(liveRowSplit)} /500m`,
+            zones: powerZones,
+            active: activePower,
+            isLive: telemetry.powerWatts > 0,
+            progress: computeSegmentedGaugeProgress(telemetry.powerWatts, powerZones),
+          }
+        : {
+            label: 'SPEED',
+            value: telemetry.speedMph.toFixed(1),
+            unit: 'MPH',
+            sub:
+              sport === 'running'
+                ? `${formatRunningPacePerMile(telemetry.speedMph)} /mi · ${(telemetry.speedMph * 1.60934).toFixed(1)} km/h`
+                : `${(telemetry.speedMph * 1.60934).toFixed(1)} km/h`,
+            zones: speedZones,
+            active: activeSpeed,
+            isLive: telemetry.speedMph > 0,
+            progress: computeSegmentedGaugeProgress(telemetry.speedMph, speedZones),
+          },
+    distance:
+      sport === 'rowing'
+        ? {
+            label: 'DISTANCE',
+            value: `${Math.round(distanceMeters)}`,
+            unit: 'METERS',
+            sub: `${(distanceMeters / 1000).toFixed(2)} km`,
+            zones: distanceZones,
+            active: activeDistance,
+            isLive: distanceMeters > 0,
+            progress: computeSegmentedGaugeProgress(distanceMeters, distanceZones),
+          }
+        : {
+            label: 'DISTANCE',
+            value: distanceMiles.toFixed(2),
+            unit: 'MI',
+            sub: `${(distanceMeters / 1000).toFixed(2)} km`,
+            zones: distanceZones,
+            active: activeDistance,
+            isLive: distanceMeters > 0,
+            progress: computeSegmentedGaugeProgress(distanceMiles, distanceZones),
+          },
     calories: {
       label: 'CALORIES',
       value: `${Math.round(caloriesKcal)}`,
@@ -323,7 +412,10 @@ export function renderTelemetryHudCanvas(
       label: 'AVG POWER',
       value: `${avgRideWatts}`,
       unit: 'AVG W',
-      sub: `NP ${npRideWatts}W · ${computeWattsPerKg(avgRideWatts, profile.weightLbs).toFixed(2)} W/kg`,
+      sub:
+        sport === 'rowing'
+          ? `${formatRowingSplit(rowingWattsToSplitSecPer500m(avgRideWatts))} /500m · NP ${npRideWatts}W`
+          : `NP ${npRideWatts}W · ${computeWattsPerKg(avgRideWatts, profile.weightLbs).toFixed(2)} W/kg`,
       zones: powerZones,
       active: activeAvgPower,
       isLive: avgRideWatts > 0,

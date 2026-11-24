@@ -198,6 +198,90 @@ describe('Strava OAuth, Auto-Refresh, .FIT Upload & Remote Metadata Sync', () =>
     expect(String.fromCharCode(uploadedBytes[8], uploadedBytes[9], uploadedBytes[10], uploadedBytes[11])).toBe('.FIT');
     vi.useRealTimers();
   });
+
+  it('sends sport_type=Run for running and sport_type=Rowing for rowing uploads with sport-native descriptions', async () => {
+    vi.useFakeTimers();
+    saveStravaConfig({
+      clientId: '111',
+      clientSecret: '222',
+      accessToken: 'live-token',
+      refreshToken: 'live-refresh',
+      expiresAtSec: Math.floor(Date.now() / 1000) + 7200,
+    });
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 7101, status: 'Processing', error: null, activity_id: null }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 7101, status: 'Ready', error: null, activity_id: 990101 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 7102, status: 'Processing', error: null, activity_id: null }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 7102, status: 'Ready', error: null, activity_id: 990102 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const runRide = makeSampleRide({
+      id: 'run-strava-1',
+      sport: 'running',
+      title: '5K Challenge',
+      bikeLabel: 'Horizon 7.4 AT',
+      durationSec: 1500,
+      distanceMeters: 5000,
+      avgInclinePct: 1.5,
+      avgCadence: 174,
+    });
+    const runDesc = buildRideSummaryDescription(runRide);
+    expect(runDesc).toContain('Avg Pace:');
+    expect(runDesc).toContain('/mi');
+    expect(runDesc).toContain('Incline: 1.5%');
+
+    const runPromise = uploadRideToStrava(runRide);
+    await vi.advanceTimersByTimeAsync(2500);
+    const runRes = await runPromise;
+    expect(runRes.activityId).toBe(990101);
+    const runForm = fetchSpy.mock.calls[0][1]?.body as FormData;
+    expect(runForm.get('sport_type')).toBe('Run');
+
+    const rowRide = makeSampleRide({
+      id: 'row-strava-1',
+      sport: 'rowing',
+      title: '2,000m Erg Test',
+      bikeLabel: 'Concept2 RowErg PM5',
+      durationSec: 480,
+      distanceMeters: 2000,
+      avgWatts: 205,
+      avgSplitSecPer500m: 120,
+      avgCadence: 28,
+    });
+    const rowDesc = buildRideSummaryDescription(rowRide);
+    expect(rowDesc).toContain('Avg Split: 2:00 /500m');
+    expect(rowDesc).toContain('28 spm');
+
+    const rowPromise = uploadRideToStrava(rowRide);
+    await vi.advanceTimersByTimeAsync(2500);
+    const rowRes = await rowPromise;
+    expect(rowRes.activityId).toBe(990102);
+    const rowForm = fetchSpy.mock.calls[2][1]?.body as FormData;
+    expect(rowForm.get('sport_type')).toBe('Rowing');
+
+    vi.useRealTimers();
+  });
 });
 
 describe('Garmin Connect SSO, 2FA/MFA, Duplicate-Safe Import & Rolling Tokens', () => {

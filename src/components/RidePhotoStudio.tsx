@@ -10,6 +10,13 @@ import {
 } from 'lucide-react';
 import type { SavedRide } from '../types/fitness';
 import {
+  formatRowingSplit,
+  formatRunningPacePerMile,
+  metersToMiles,
+  mpsToMph,
+  rowingWattsToSplitSecPer500m,
+} from '../utils/zones';
+import {
   canvasToPngBlob,
   renderRideShareCanvas,
   type ShareOverlayStyle,
@@ -108,13 +115,23 @@ export function RidePhotoStudio({
         canShare?: (data: ShareData) => boolean;
       };
       if (typeof nav.share === 'function' && (!nav.canShare || nav.canShare({ files: [file] }))) {
+        const avgMph =
+          ride.durationSec > 0 ? mpsToMph(ride.distanceMeters / ride.durationSec) : 0;
+        const avgSplit =
+          ride.avgSplitSecPer500m && ride.avgSplitSecPer500m > 0
+            ? ride.avgSplitSecPer500m
+            : rowingWattsToSplitSecPer500m(ride.avgWatts);
+        const fallbackText =
+          ride.burnPoints > 0
+            ? `${ride.burnPoints} Burn Points on Just Believe Fitness!\njbfit.studio`
+            : ride.sport === 'running'
+              ? `${metersToMiles(ride.distanceMeters).toFixed(2)} mi at ${formatRunningPacePerMile(avgMph)}/mi on Just Believe Fitness!\njbfit.studio`
+              : ride.sport === 'rowing'
+                ? `${Math.round(ride.distanceMeters).toLocaleString('en-US')}m at ${formatRowingSplit(avgSplit)}/500m (${ride.avgWatts}W) on Just Believe Fitness!\njbfit.studio`
+                : `Avg ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg) on Just Believe Fitness!\njbfit.studio`;
         await nav.share({
           title: title.trim() || ride.title,
-          text:
-            notes.trim() ||
-            (ride.burnPoints > 0
-              ? `${ride.burnPoints} Burn Points on Just Believe Fitness!\njbfit.studio`
-              : `Avg ${ride.avgWatts}W (${ride.avgWkg.toFixed(2)} W/kg) on Just Believe Fitness!\njbfit.studio`),
+          text: notes.trim() || fallbackText,
           files: [file],
         });
       } else {

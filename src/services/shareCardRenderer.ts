@@ -4,11 +4,20 @@ import {
   ZONE_PALETTE,
   computeSegmentedGaugeProgress,
   formatDuration,
+  formatRowingSplit,
+  formatRunningPacePerMile,
   getCadenceZones,
+  getEffectiveRowFtpWatts,
+  getEffectiveRunThresholdPaceSec,
   getHrZones,
   getPowerZones,
+  getRowingStrokeRateZones,
+  getRunningCadenceZones,
+  getRunningSpeedZones,
   metersToMiles,
+  mpsToMph,
   resolveZone,
+  rowingWattsToSplitSecPer500m,
 } from '../utils/zones';
 
 export type ShareOverlayStyle = 'timeline' | 'rings' | 'minimal';
@@ -339,6 +348,21 @@ export function renderRideShareCanvas(
   }
   ctx.restore();
 
+  const sport = ride.sport ?? 'cycling';
+  const avgMph =
+    ride.durationSec > 0 && ride.distanceMeters > 0
+      ? mpsToMph(ride.distanceMeters / ride.durationSec)
+      : 0;
+  const avgRunPace = formatRunningPacePerMile(avgMph);
+  const avgRowSplitSec =
+    ride.avgSplitSecPer500m && ride.avgSplitSecPer500m > 0
+      ? ride.avgSplitSecPer500m
+      : ride.durationSec > 0 && ride.distanceMeters > 50
+        ? (ride.durationSec / ride.distanceMeters) * 500
+        : rowingWattsToSplitSecPer500m(ride.avgWatts);
+  const avgRowSplitStr = formatRowingSplit(avgRowSplitSec);
+  const rowDistMetersStr = `${Math.round(ride.distanceMeters).toLocaleString('en-US')} m`;
+
   // 3. Bottom Telemetry Overlay by Selected Style
   if (overlayStyle === 'minimal') {
     // Transparent Floating Strava-Style Sticker
@@ -346,15 +370,59 @@ export function renderRideShareCanvas(
     ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
     ctx.shadowBlur = 18;
 
-    const stats = [
-      { label: 'AVG POWER', val: `${ride.avgWatts} W`, sub: `${ride.avgWkg.toFixed(2)} W/kg` },
-      {
-        label: 'HEART RATE',
-        val: ride.avgHr > 0 ? `${ride.avgHr} BPM` : `MAX ${ride.maxWatts}W`,
-        sub: ride.maxHr > 0 ? `Max ${ride.maxHr} bpm` : `NP ${ride.normalizedWatts}W`,
-      },
-      { label: 'TIME · DIST', val: formatDuration(ride.durationSec), sub: `${miles} mi · ${kcal} kcal` },
-    ];
+    const stats =
+      sport === 'running'
+        ? [
+            {
+              label: 'AVG PACE',
+              val: `${avgRunPace} /MI`,
+              sub: `${avgMph.toFixed(1)} mph · ${ride.avgWatts}W`,
+            },
+            {
+              label: 'HEART RATE',
+              val: ride.avgHr > 0 ? `${ride.avgHr} BPM` : `${ride.avgCadence} SPM`,
+              sub:
+                ride.maxHr > 0
+                  ? `Max ${ride.maxHr} bpm`
+                  : `Incline ${(ride.avgInclinePct ?? 0).toFixed(1)}%`,
+            },
+            {
+              label: 'TIME · DIST',
+              val: formatDuration(ride.durationSec),
+              sub: `${miles} mi · ${kcal} kcal`,
+            },
+          ]
+        : sport === 'rowing'
+          ? [
+              {
+                label: 'AVG SPLIT',
+                val: `${avgRowSplitStr}`,
+                sub: `/500m · ${ride.avgWatts}W avg`,
+              },
+              {
+                label: 'HEART RATE',
+                val: ride.avgHr > 0 ? `${ride.avgHr} BPM` : `${ride.avgCadence} SPM`,
+                sub: ride.maxHr > 0 ? `Max ${ride.maxHr} bpm` : `Max ${ride.maxWatts}W`,
+              },
+              {
+                label: 'TIME · DIST',
+                val: formatDuration(ride.durationSec),
+                sub: `${rowDistMetersStr} · ${kcal} kcal`,
+              },
+            ]
+          : [
+              { label: 'AVG POWER', val: `${ride.avgWatts} W`, sub: `${ride.avgWkg.toFixed(2)} W/kg` },
+              {
+                label: 'HEART RATE',
+                val: ride.avgHr > 0 ? `${ride.avgHr} BPM` : `MAX ${ride.maxWatts}W`,
+                sub: ride.maxHr > 0 ? `Max ${ride.maxHr} bpm` : `NP ${ride.normalizedWatts}W`,
+              },
+              {
+                label: 'TIME · DIST',
+                val: formatDuration(ride.durationSec),
+                sub: `${miles} mi · ${kcal} kcal`,
+              },
+            ];
 
     const baseY = 1165;
     const colW = (SHARE_CARD_WIDTH - padX * 2) / 3;
@@ -392,9 +460,17 @@ export function renderRideShareCanvas(
     ctx.stroke();
 
     const pwrZones = getPowerZones(
-      ride.athleteSnapshot.ftpWatts || DEFAULT_ATHLETE_PROFILE.ftpWatts
+      sport === 'rowing'
+        ? getEffectiveRowFtpWatts(ride.athleteSnapshot)
+        : ride.athleteSnapshot.ftpWatts || DEFAULT_ATHLETE_PROFILE.ftpWatts
     );
-    const cadZones = getCadenceZones();
+    const runZones = getRunningSpeedZones(getEffectiveRunThresholdPaceSec(ride.athleteSnapshot));
+    const cadZones =
+      sport === 'running'
+        ? getRunningCadenceZones()
+        : sport === 'rowing'
+          ? getRowingStrokeRateZones()
+          : getCadenceZones();
     const hrZones = getHrZones(
       ride.athleteSnapshot.maxHrBpm || DEFAULT_ATHLETE_PROFILE.maxHrBpm
     );
@@ -403,29 +479,79 @@ export function renderRideShareCanvas(
     const centers = [padX + innerW * 0.18, padX + innerW * 0.5, padX + innerW * 0.82];
     const ringCy = cardY + 165;
 
-    drawSpeedometerRingOnCanvas(
-      ctx,
-      centers[0],
-      ringCy,
-      108,
-      ride.avgWatts,
-      pwrZones,
-      `${ride.avgWatts}`,
-      'Watts',
-      `Avg · ${ride.avgWkg.toFixed(2)} W/kg`
-    );
+    if (sport === 'running') {
+      drawSpeedometerRingOnCanvas(
+        ctx,
+        centers[0],
+        ringCy,
+        108,
+        avgMph,
+        runZones,
+        avgRunPace,
+        '/MI',
+        `Avg ${avgMph.toFixed(1)} MPH`
+      );
+      drawSpeedometerRingOnCanvas(
+        ctx,
+        centers[1],
+        ringCy,
+        108,
+        ride.avgCadence,
+        cadZones,
+        ride.avgCadence > 0 ? `${ride.avgCadence}` : `${(ride.avgInclinePct ?? 0).toFixed(1)}`,
+        ride.avgCadence > 0 ? 'SPM' : '% GRADE',
+        ride.avgCadence > 0
+          ? `Max ${ride.maxCadence} SPM`
+          : `Max ${(ride.maxInclinePct ?? 0).toFixed(1)}%`
+      );
+    } else if (sport === 'rowing') {
+      drawSpeedometerRingOnCanvas(
+        ctx,
+        centers[0],
+        ringCy,
+        108,
+        ride.avgWatts,
+        pwrZones,
+        avgRowSplitStr,
+        '/500M',
+        `Avg ${ride.avgWatts}W`
+      );
+      drawSpeedometerRingOnCanvas(
+        ctx,
+        centers[1],
+        ringCy,
+        108,
+        ride.avgCadence,
+        cadZones,
+        `${ride.avgCadence}`,
+        'SPM',
+        `Max ${ride.maxCadence} SPM`
+      );
+    } else {
+      drawSpeedometerRingOnCanvas(
+        ctx,
+        centers[0],
+        ringCy,
+        108,
+        ride.avgWatts,
+        pwrZones,
+        `${ride.avgWatts}`,
+        'Watts',
+        `Avg · ${ride.avgWkg.toFixed(2)} W/kg`
+      );
 
-    drawSpeedometerRingOnCanvas(
-      ctx,
-      centers[1],
-      ringCy,
-      108,
-      ride.avgCadence,
-      cadZones,
-      `${ride.avgCadence}`,
-      'RPM',
-      `Max ${ride.maxCadence} RPM`
-    );
+      drawSpeedometerRingOnCanvas(
+        ctx,
+        centers[1],
+        ringCy,
+        108,
+        ride.avgCadence,
+        cadZones,
+        `${ride.avgCadence}`,
+        'RPM',
+        `Max ${ride.maxCadence} RPM`
+      );
+    }
 
     drawSpeedometerRingOnCanvas(
       ctx,
@@ -443,8 +569,9 @@ export function renderRideShareCanvas(
     ctx.fillStyle = '#E2E8F0';
     ctx.font = '700 26px "JetBrains Mono", monospace';
     ctx.textAlign = 'center';
+    const distSummary = sport === 'rowing' ? rowDistMetersStr.toUpperCase() : `${miles} MI`;
     ctx.fillText(
-      `${formatDuration(ride.durationSec)}   •   ${miles} MI   •   ${kcal} KCAL   •   MAX ${ride.maxWatts}W`,
+      `${formatDuration(ride.durationSec)}   •   ${distSummary}   •   ${kcal} KCAL   •   MAX ${ride.maxWatts}W`,
       SHARE_CARD_WIDTH / 2,
       cardY + 375
     );
@@ -466,28 +593,78 @@ export function renderRideShareCanvas(
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
   ctx.stroke();
 
-  const metrics = [
-    {
-      label: 'AVG POWER',
-      val: `${ride.avgWatts}W`,
-      sub: `${ride.avgWkg.toFixed(2)} W/kg · Max ${ride.maxWatts}W`,
-    },
-    {
-      label: 'HEART RATE',
-      val: ride.avgHr > 0 ? `${ride.avgHr} bpm` : '--',
-      sub: ride.maxHr > 0 ? `Max ${ride.maxHr} bpm` : `NP ${ride.normalizedWatts}W`,
-    },
-    {
-      label: 'DURATION',
-      val: formatDuration(ride.durationSec),
-      sub: `Avg ${ride.avgCadence} rpm`,
-    },
-    {
-      label: 'DIST · WORK',
-      val: `${miles} mi`,
-      sub: `${kcal} kcal`,
-    },
-  ];
+  const metrics =
+    sport === 'running'
+      ? [
+          {
+            label: 'AVG PACE',
+            val: `${avgRunPace}`,
+            sub: `/mi · ${avgMph.toFixed(1)} mph`,
+          },
+          {
+            label: 'HEART RATE',
+            val: ride.avgHr > 0 ? `${ride.avgHr} bpm` : '--',
+            sub: ride.maxHr > 0 ? `Max ${ride.maxHr} bpm` : `Avg ${ride.avgWatts}W`,
+          },
+          {
+            label: 'DURATION',
+            val: formatDuration(ride.durationSec),
+            sub:
+              ride.avgCadence > 0
+                ? `Avg ${ride.avgCadence} spm`
+                : `Inc ${(ride.avgInclinePct ?? 0).toFixed(1)}%`,
+          },
+          {
+            label: 'DIST · WORK',
+            val: `${miles} mi`,
+            sub: `${kcal} kcal`,
+          },
+        ]
+      : sport === 'rowing'
+        ? [
+            {
+              label: 'AVG SPLIT',
+              val: `${avgRowSplitStr}`,
+              sub: `/500m · ${ride.avgWatts}W`,
+            },
+            {
+              label: 'HEART RATE',
+              val: ride.avgHr > 0 ? `${ride.avgHr} bpm` : '--',
+              sub: ride.maxHr > 0 ? `Max ${ride.maxHr} bpm` : `Max ${ride.maxWatts}W`,
+            },
+            {
+              label: 'DURATION',
+              val: formatDuration(ride.durationSec),
+              sub: `Avg ${ride.avgCadence} spm`,
+            },
+            {
+              label: 'DIST · WORK',
+              val: rowDistMetersStr,
+              sub: `${kcal} kcal`,
+            },
+          ]
+        : [
+            {
+              label: 'AVG POWER',
+              val: `${ride.avgWatts}W`,
+              sub: `${ride.avgWkg.toFixed(2)} W/kg · Max ${ride.maxWatts}W`,
+            },
+            {
+              label: 'HEART RATE',
+              val: ride.avgHr > 0 ? `${ride.avgHr} bpm` : '--',
+              sub: ride.maxHr > 0 ? `Max ${ride.maxHr} bpm` : `NP ${ride.normalizedWatts}W`,
+            },
+            {
+              label: 'DURATION',
+              val: formatDuration(ride.durationSec),
+              sub: `Avg ${ride.avgCadence} rpm`,
+            },
+            {
+              label: 'DIST · WORK',
+              val: `${miles} mi`,
+              sub: `${kcal} kcal`,
+            },
+          ];
 
   const colWidth = (panelW - 72) / 4;
   metrics.forEach((m, i) => {

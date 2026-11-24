@@ -2,9 +2,12 @@ import type {
   AthleteProfile,
   EffortCue,
   LiveTelemetry,
+  SportMode,
   ZoneDefinition,
   ZoneId,
 } from '../types/fitness';
+
+export const DEFAULT_RUN_THRESHOLD_PACE_SEC_PER_MILE = 540; // 9:00 /mi (~6.67 mph)
 
 export const DEFAULT_ATHLETE_PROFILE: AthleteProfile = {
   name: 'Rider',
@@ -16,7 +19,25 @@ export const DEFAULT_ATHLETE_PROFILE: AthleteProfile = {
   restingHrBpm: 65,
   powerCurve: 'auto',
   wattGain: 1.0,
+  runThresholdPaceSecPerMile: DEFAULT_RUN_THRESHOLD_PACE_SEC_PER_MILE,
+  rowFtpWatts: 150,
 };
+
+export function getEffectiveRunThresholdPaceSec(profile: AthleteProfile): number {
+  const raw = profile.runThresholdPaceSecPerMile;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 240 && raw <= 1200) {
+    return Math.round(raw);
+  }
+  return DEFAULT_RUN_THRESHOLD_PACE_SEC_PER_MILE;
+}
+
+export function getEffectiveRowFtpWatts(profile: AthleteProfile): number {
+  const raw = profile.rowFtpWatts;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 60 && raw <= 550) {
+    return Math.round(raw);
+  }
+  return Math.max(60, Math.round(profile.ftpWatts));
+}
 
 export const ZONE_PALETTE: Record<
   ZoneId,
@@ -137,20 +158,26 @@ export function metersToMiles(meters: number): number {
   return meters / METERS_PER_MILE;
 }
 
-/** Formats a live distance readout (e.g. "49.82 km" or "31.07 mi"). */
+/** Formats a live distance readout (e.g. "49.82 km", "31.07 mi", or "2,000 m"). */
 export function formatDistanceValue(
   meters: number,
-  unit: 'km' | 'mi',
+  unit: 'km' | 'mi' | 'm',
   decimals = 2
 ): string {
   const safeMeters = Math.max(0, meters);
+  if (unit === 'm') {
+    return `${Math.round(safeMeters).toLocaleString('en-US')} m`;
+  }
   const val = unit === 'km' ? safeMeters / 1000 : metersToMiles(safeMeters);
   return `${val.toFixed(decimals)} ${unit}`;
 }
 
-/** Formats a clean route/stage target label (e.g. "50 km", "100 mi", "1.5 mi"). */
-export function formatDistanceTarget(meters: number, unit: 'km' | 'mi'): string {
+/** Formats a clean route/stage target label (e.g. "50 km", "100 mi", "2,000 m", "1.5 mi"). */
+export function formatDistanceTarget(meters: number, unit: 'km' | 'mi' | 'm'): string {
   const safeMeters = Math.max(0, meters);
+  if (unit === 'm') {
+    return `${Math.round(safeMeters).toLocaleString('en-US')} m`;
+  }
   const val = unit === 'km' ? safeMeters / 1000 : metersToMiles(safeMeters);
   const rounded = Math.round(val * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)} ${unit}`;
@@ -743,22 +770,43 @@ export function computeSegmentedGaugeProgress(value: number, zones: ZoneDefiniti
 
 /**
  * Determines overall JBF studio intensity banner zone:
- * Uses Heart Rate zone when HR is streaming, or seamlessly falls back to Power zone (% FTP)
- * if riding without an HR sensor, or reflects immediate Zone 4/5 power surges.
+ * Uses Heart Rate zone when HR is streaming, or seamlessly falls back to sport primary effort
+ * (Power % FTP for cycling/rowing, or Grade-Adjusted Pace/Speed zone for running), or reflects
+ * immediate Zone 4/5 surges.
  */
 export function resolveHeadlineEffortZone(
   hrBpm: number,
   watts: number,
-  profile: AthleteProfile
+  profile: AthleteProfile,
+  options?: { sport?: SportMode; speedMph?: number; inclinePct?: number }
 ): { zoneDef: ZoneDefinition; driver: 'hr' | 'power' } {
   const hrZones = getHrZones(profile.maxHrBpm);
-  const powerZones = getPowerZones(profile.ftpWatts);
+  const sport = options?.sport ?? 'cycling';
 
-  if (hrBpm > 40 && watts > 0) {
+  let primaryZoneDef: ZoneDefinition;
+  let hasPrimarySignal = watts > 0;
+
+  if (sport === 'running') {
+    const runZones = getRunningSpeedZones(getEffectiveRunThresholdPaceSec(profile));
+    const speedMph = options?.speedMph ?? 0;
+    const inclinePct = options?.inclinePct ?? 0;
+    // Grade-adjusted effective speed: each +1% incline adds ~0.22 mph equivalent aerobic effort
+    const gapMph = speedMph > 0.3 ? speedMph + Math.max(0, inclinePct) * 0.22 : 0;
+    primaryZoneDef = resolveZone(gapMph, runZones);
+    hasPrimarySignal = speedMph > 0.3;
+  } else if (sport === 'rowing') {
+    const rowZones = getPowerZones(getEffectiveRowFtpWatts(profile));
+    primaryZoneDef = resolveZone(watts, rowZones);
+    hasPrimarySignal = watts > 0;
+  } else {
+    const powerZones = getPowerZones(profile.ftpWatts);
+    primaryZoneDef = resolveZone(watts, powerZones);
+  }
+
+  if (hrBpm > 40 && hasPrimarySignal) {
     const hrZ = resolveZone(hrBpm, hrZones);
-    const pwrZ = resolveZone(watts, powerZones);
-    if (pwrZ.zone >= 4 && pwrZ.zone > hrZ.zone) {
-      return { zoneDef: pwrZ, driver: 'power' };
+    if (primaryZoneDef.zone >= 4 && primaryZoneDef.zone > hrZ.zone) {
+      return { zoneDef: primaryZoneDef, driver: 'power' };
     }
     return { zoneDef: hrZ, driver: 'hr' };
   }
@@ -767,7 +815,7 @@ export function resolveHeadlineEffortZone(
     return { zoneDef: resolveZone(hrBpm, hrZones), driver: 'hr' };
   }
 
-  return { zoneDef: resolveZone(watts, powerZones), driver: 'power' };
+  return { zoneDef: primaryZoneDef, driver: 'power' };
 }
 
 export function cueDisplayLabel(cue: EffortCue): string {
@@ -893,8 +941,366 @@ export function evaluateRideFtpResult(
   return undefined;
 }
 
+/**
+ * Formats seconds-per-unit pace (e.g. 510 -> "8:30", 124 -> "2:04").
+ * Returns "--:--" for invalid, zero, or stalled values.
+ */
+export function formatPaceSeconds(totalSec: number, maxValidSec = 1800): string {
+  if (!Number.isFinite(totalSec) || totalSec <= 0 || totalSec > maxValidSec) {
+    return '--:--';
+  }
+  const rounded = Math.round(totalSec);
+  const mins = Math.floor(rounded / 60);
+  const secs = rounded % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+export function formatRunningPacePerMile(speedMph: number): string {
+  if (!Number.isFinite(speedMph) || speedMph <= 0.4) return '--:--';
+  return formatPaceSeconds(3600 / speedMph, 2400);
+}
+
+export function formatRunningPacePerKm(speedMph: number): string {
+  if (!Number.isFinite(speedMph) || speedMph <= 0.4) return '--:--';
+  const kmh = speedMph * 1.609344;
+  return formatPaceSeconds(3600 / kmh, 1500);
+}
+
+/** Concept2 official erg physics: watts = 2.80 / (pace_sec_per_m)^3. */
+export function rowingWattsToSplitSecPer500m(watts: number): number {
+  if (!Number.isFinite(watts) || watts <= 1) return 0;
+  return 500 * Math.cbrt(2.8 / watts);
+}
+
+export function rowingSplitSecPer500mToWatts(splitSecPer500m: number): number {
+  if (!Number.isFinite(splitSecPer500m) || splitSecPer500m <= 30 || splitSecPer500m > 600) {
+    return 0;
+  }
+  const secPerMeter = splitSecPer500m / 500;
+  return Math.round(2.8 / Math.pow(secPerMeter, 3));
+}
+
+export function rowingSplitToSpeedMps(splitSecPer500m: number): number {
+  if (!Number.isFinite(splitSecPer500m) || splitSecPer500m <= 30 || splitSecPer500m > 600) {
+    return 0;
+  }
+  return 500 / splitSecPer500m;
+}
+
+export function formatRowingSplit(splitSecPer500m: number): string {
+  return formatPaceSeconds(splitSecPer500m, 599);
+}
+
+/**
+ * Estimates running mechanical power (watts) from treadmill/footpod speed, incline grade %,
+ * and athlete body weight using Stryd/van Dijk metabolic-mechanical running cost.
+ */
+export function estimateRunningPowerWatts(
+  speedMps: number,
+  inclinePct: number,
+  weightLbs: number
+): number {
+  if (!Number.isFinite(speedMps) || speedMps <= 0.15) return 0;
+  const weightKg = lbsToKg(weightLbs);
+  // Smooth transition from walking cost (~0.68 J/kg/m) to running cost (~0.98 J/kg/m)
+  const runBlend = Math.min(1, Math.max(0, (speedMps - 1.5) / 0.6));
+  const flatCost = 0.68 + 0.3 * runBlend;
+  const flatWatts = weightKg * flatCost * speedMps;
+  const grade = Math.max(-0.05, Math.min(0.3, (inclinePct || 0) / 100));
+  const climbWatts =
+    grade >= 0
+      ? (weightKg * 9.80665 * speedMps * grade) / 0.9
+      : weightKg * 9.80665 * speedMps * grade * 0.45;
+  return Math.max(0, Math.round(flatWatts + climbWatts));
+}
+
+/** ACSM running/walking treadmill kcal/sec formula with HR fallback. */
+export function estimateRunningKcalPerSecond(
+  speedMps: number,
+  inclinePct: number,
+  heartRateBpm: number,
+  profile: AthleteProfile
+): number {
+  if (speedMps > 0.15) {
+    const weightKg = lbsToKg(profile.weightLbs);
+    const vMetersPerMin = speedMps * 60;
+    const grade = Math.max(-0.03, Math.min(0.3, (inclinePct || 0) / 100));
+    const vo2 =
+      speedMps >= 1.9
+        ? 3.5 + 0.2 * vMetersPerMin + 0.9 * vMetersPerMin * Math.max(0, grade)
+        : 3.5 + 0.1 * vMetersPerMin + 1.8 * vMetersPerMin * Math.max(0, grade);
+    const kcalPerMin = (vo2 * weightKg) / 200;
+    return Math.max(0, kcalPerMin / 60);
+  }
+  return estimateKcalPerSecond(0, heartRateBpm, profile);
+}
+
+/** Concept2 erg calorie burn rate: kcal/hr = 4 * watts * 0.860421 + 300 when actively rowing. */
+export function estimateRowingKcalPerSecond(
+  watts: number,
+  heartRateBpm: number,
+  profile: AthleteProfile
+): number {
+  if (watts > 3) {
+    const kcalPerHour = 4 * watts * 0.860421 + 300;
+    return kcalPerHour / 3600;
+  }
+  return estimateKcalPerSecond(0, heartRateBpm, profile);
+}
+
+/**
+ * 5-Color Treadmill / Running Speed Zones (MPH) scaled to the athlete's Threshold Pace.
+ * Higher mph = higher effort zone (naturally matches clockwise speedometer dial).
+ */
+export function getRunningSpeedZones(
+  thresholdPaceSecPerMile = DEFAULT_RUN_THRESHOLD_PACE_SEC_PER_MILE
+): ZoneDefinition[] {
+  const safePace = Math.max(240, Math.min(1200, thresholdPaceSecPerMile));
+  const thresholdMph = 3600 / safePace;
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+
+  const z2Min = r1(thresholdMph * 0.68);
+  const z3Min = r1(thresholdMph * 0.81);
+  const z4Min = r1(thresholdMph * 0.94);
+  const z5Min = r1(thresholdMph * 1.07);
+  const z5Max = r1(thresholdMph * 1.32);
+
+  return [
+    {
+      zone: 1,
+      ...ZONE_PALETTE[1],
+      name: 'Z1 · Recovery / Walk',
+      stageLabel: 'RECOVERY',
+      minPct: 0,
+      maxPct: 67,
+      minValue: 0,
+      maxValue: r1(Math.max(0.1, z2Min - 0.1)),
+    },
+    {
+      zone: 2,
+      ...ZONE_PALETTE[2],
+      name: 'Z2 · Easy Aerobic',
+      stageLabel: 'EASY RUN',
+      minPct: 68,
+      maxPct: 80,
+      minValue: z2Min,
+      maxValue: r1(z3Min - 0.1),
+    },
+    {
+      zone: 3,
+      ...ZONE_PALETTE[3],
+      name: 'Z3 · Base Tempo',
+      stageLabel: 'BASE PACE',
+      minPct: 81,
+      maxPct: 93,
+      minValue: z3Min,
+      maxValue: r1(z4Min - 0.1),
+    },
+    {
+      zone: 4,
+      ...ZONE_PALETTE[4],
+      name: 'Z4 · Threshold Push',
+      stageLabel: 'THRESHOLD',
+      minPct: 94,
+      maxPct: 106,
+      minValue: z4Min,
+      maxValue: r1(z5Min - 0.1),
+    },
+    {
+      zone: 5,
+      ...ZONE_PALETTE[5],
+      name: 'Z5 · VO2 / Sprint',
+      stageLabel: 'ALL OUT',
+      minPct: 107,
+      maxPct: 132,
+      minValue: z5Min,
+      maxValue: z5Max,
+    },
+  ];
+}
+
+/** 5-Color Running Cadence Zones (Steps Per Minute). */
+export function getRunningCadenceZones(): ZoneDefinition[] {
+  return [
+    {
+      zone: 1,
+      ...ZONE_PALETTE[1],
+      name: 'Walk / Easy',
+      stageLabel: 'WALK',
+      minPct: 0,
+      maxPct: 72,
+      minValue: 0,
+      maxValue: 144,
+    },
+    {
+      zone: 2,
+      ...ZONE_PALETTE[2],
+      name: 'Easy Stride',
+      stageLabel: 'EASY JOG',
+      minPct: 73,
+      maxPct: 81,
+      minValue: 145,
+      maxValue: 162,
+    },
+    {
+      zone: 3,
+      ...ZONE_PALETTE[3],
+      name: 'Base Turnover',
+      stageLabel: 'BASE SPM',
+      minPct: 82,
+      maxPct: 88,
+      minValue: 163,
+      maxValue: 175,
+    },
+    {
+      zone: 4,
+      ...ZONE_PALETTE[4],
+      name: 'Fast Cadence',
+      stageLabel: 'FAST STRIDE',
+      minPct: 89,
+      maxPct: 93,
+      minValue: 176,
+      maxValue: 186,
+    },
+    {
+      zone: 5,
+      ...ZONE_PALETTE[5],
+      name: 'Sprint Turnover',
+      stageLabel: 'SPRINT',
+      minPct: 94,
+      maxPct: 100,
+      minValue: 187,
+      maxValue: 210,
+    },
+  ];
+}
+
+/** 5-Color Treadmill Incline Zones (% Grade). */
+export function getInclineZones(): ZoneDefinition[] {
+  return [
+    {
+      zone: 1,
+      ...ZONE_PALETTE[1],
+      name: 'Flat Road',
+      stageLabel: 'FLAT',
+      minPct: 0,
+      maxPct: 10,
+      minValue: 0,
+      maxValue: 1.4,
+    },
+    {
+      zone: 2,
+      ...ZONE_PALETTE[2],
+      name: 'Rolling Grade',
+      stageLabel: 'ROLLING',
+      minPct: 11,
+      maxPct: 25,
+      minValue: 1.5,
+      maxValue: 3.4,
+    },
+    {
+      zone: 3,
+      ...ZONE_PALETTE[3],
+      name: 'Steady Climb',
+      stageLabel: 'CLIMB',
+      minPct: 26,
+      maxPct: 45,
+      minValue: 3.5,
+      maxValue: 6.4,
+    },
+    {
+      zone: 4,
+      ...ZONE_PALETTE[4],
+      name: 'Steep Hill',
+      stageLabel: 'STEEP',
+      minPct: 46,
+      maxPct: 70,
+      minValue: 6.5,
+      maxValue: 9.9,
+    },
+    {
+      zone: 5,
+      ...ZONE_PALETTE[5],
+      name: 'Summit Grade',
+      stageLabel: 'SUMMIT',
+      minPct: 71,
+      maxPct: 100,
+      minValue: 10,
+      maxValue: 15,
+    },
+  ];
+}
+
+/** 5-Color Rowing Stroke Rate Zones (Strokes Per Minute). */
+export function getRowingStrokeRateZones(): ZoneDefinition[] {
+  return [
+    {
+      zone: 1,
+      ...ZONE_PALETTE[1],
+      name: 'Easy Paddle',
+      stageLabel: 'PADDLE',
+      minPct: 0,
+      maxPct: 50,
+      minValue: 0,
+      maxValue: 19,
+    },
+    {
+      zone: 2,
+      ...ZONE_PALETTE[2],
+      name: 'Steady State',
+      stageLabel: 'STEADY',
+      minPct: 51,
+      maxPct: 62,
+      minValue: 20,
+      maxValue: 23,
+    },
+    {
+      zone: 3,
+      ...ZONE_PALETTE[3],
+      name: 'Base Rhythm',
+      stageLabel: 'RHYTHM',
+      minPct: 63,
+      maxPct: 74,
+      minValue: 24,
+      maxValue: 27,
+    },
+    {
+      zone: 4,
+      ...ZONE_PALETTE[4],
+      name: 'Race Push',
+      stageLabel: 'RACE RATE',
+      minPct: 75,
+      maxPct: 86,
+      minValue: 28,
+      maxValue: 31,
+    },
+    {
+      zone: 5,
+      ...ZONE_PALETTE[5],
+      name: 'Sprint Rate',
+      stageLabel: 'SPRINT',
+      minPct: 87,
+      maxPct: 100,
+      minValue: 32,
+      maxValue: 42,
+    },
+  ];
+}
+
 export function formatBikeGearBadge(telemetry: LiveTelemetry): string {
   const maxRes = telemetry.bikeMaxResistance ?? 32;
+  if (telemetry.sport === 'running') {
+    const inc = telemetry.inclinePct ?? 0;
+    const prefix = telemetry.bikeConnected ? (telemetry.bikeShortLabel || 'TREAD').toUpperCase() : 'INCLINE';
+    return `${prefix} ${inc.toFixed(1)}%`;
+  }
+  if (telemetry.sport === 'rowing') {
+    if (!telemetry.bikeConnected) {
+      return `DAMPER ${telemetry.resistance}/${Math.min(maxRes, 10)}`;
+    }
+    const prefix = (telemetry.bikeShortLabel || 'ERG').toUpperCase();
+    return telemetry.resistance > 0 ? `${prefix} LV ${telemetry.resistance}` : `${prefix} FTMS`;
+  }
   if (!telemetry.bikeConnected) {
     return `GEAR ${telemetry.resistance}/${maxRes}`;
   }
@@ -907,6 +1313,12 @@ export function formatBikeGearBadge(telemetry: LiveTelemetry): string {
       return `KNOB ${telemetry.resistance}/32`;
     case 'ftms-bike':
       return `RES ${telemetry.resistance}/${maxRes}`;
+    case 'ftms-treadmill':
+      return `INCLINE ${(telemetry.inclinePct ?? 0).toFixed(1)}%`;
+    case 'rsc-footpod':
+      return 'BLE FOOTPOD';
+    case 'ftms-rower':
+      return telemetry.resistance > 0 ? `ROW LV ${telemetry.resistance}` : 'FTMS ROWER';
     case 'echelon-ex-motorized': {
       const prefix = (telemetry.bikeShortLabel || 'ECH').toUpperCase();
       return `${prefix} RES ${telemetry.resistance}/32`;

@@ -21,13 +21,20 @@ import {
   EchelonBikeConnection,
   FTMS_CONTROL_POINT,
   FTMS_INDOOR_BIKE_DATA,
+  FTMS_ROWER_DATA,
   FTMS_SERVICE,
+  FTMS_TREADMILL_DATA,
+  RSC_MEASUREMENT,
+  RUNNING_SPEED_CADENCE_SERVICE,
   StationaryBikeConnection,
   computeEchelonUnlockResponse,
   detectBikeModelProfile,
   isEchelonPostAuthFrame,
   parseCpsMeasurement,
   parseCscMeasurement,
+  parseFtmsRowerData,
+  parseFtmsTreadmillData,
+  parseRscMeasurement,
   solveEchelonUnlockChallenge,
   type EchelonRawReading,
   type EchelonUnlockStatus,
@@ -1088,5 +1095,275 @@ describe('Capacitor Native iOS CoreBluetooth Transport Adapter', () => {
     await new Promise((r) => window.setTimeout(r, 10));
     expect(mockBleClient.stopNotifications).toHaveBeenCalled();
     expect(mockBleClient.disconnect).toHaveBeenCalledWith('IOS-UUID-ECH-4S');
+  });
+});
+
+describe('FTMS Treadmill (0x2ACD), FTMS Rower (0x2AD1) & BLE Running Footpod (0x1814/0x2A53) Protocols', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (navigator as unknown as { bluetooth?: unknown }).bluetooth;
+  });
+
+  it('classifies FTMS treadmills, RSC footpods, and FTMS rowers (including Echelon Stride, Echelon Row & Concept2 PM5)', () => {
+    const horizon = detectBikeModelProfile('Horizon 7.4 AT', 'ftms-treadmill', true);
+    expect(horizon.sport).toBe('running');
+    expect(horizon.family).toBe('ftms-treadmill');
+    expect(horizon.hasMotorizedSpeed).toBe(true);
+    expect(horizon.hasMotorizedIncline).toBe(true);
+
+    const echStride = detectBikeModelProfile('ECH-STRIDE-501', 'ftms-treadmill', true);
+    expect(echStride.sport).toBe('running');
+    expect(echStride.family).toBe('ftms-treadmill');
+    expect(echStride.shortLabel).toBe('Stride');
+
+    const stryd = detectBikeModelProfile('Stryd Pod 42', 'rsc', false);
+    expect(stryd.sport).toBe('running');
+    expect(stryd.family).toBe('rsc-footpod');
+    expect(stryd.shortLabel).toBe('Stryd');
+
+    const c2Row = detectBikeModelProfile('PM5 430123456 Row', 'ftms-rower', false);
+    expect(c2Row.sport).toBe('rowing');
+    expect(c2Row.family).toBe('ftms-rower');
+    expect(c2Row.displayName).toBe('Concept2 RowErg');
+
+    const c2Bike = detectBikeModelProfile('PM5 430123456 Bike', 'ftms', false);
+    expect(c2Bike.sport).toBe('cycling');
+    expect(c2Bike.family).toBe('ftms-bike');
+
+    const echRow = detectBikeModelProfile('ECH-ROW-992', 'ftms-rower', true);
+    expect(echRow.sport).toBe('rowing');
+    expect(echRow.family).toBe('ftms-rower');
+    expect(echRow.shortLabel).toBe('Echelon Row');
+  });
+
+  it('parses FTMS Treadmill Data (0x2ACD) full and split More Data packets with speed, incline, distance, HR & force/power', () => {
+    // Primary packet: bit0=0 (inst speed present), bit2=1 (total distance), bit3=1 (incline+ramp), bit8=1 (HR)
+    // Flags = 0x010C (LE: 0x0C, 0x01)
+    // Speed = 1000 * 0.01 km/h = 10.00 km/h (~2.778 m/s) -> LE: 0xE8, 0x03
+    // Total Distance (uint24) = 1609 m -> LE: 0x49, 0x06, 0x00
+    // Incline (sint16 * 0.1%) = +2.5% (25) -> LE: 0x19, 0x00; Ramp (sint16 * 0.1 deg) = +1.4 deg (14) -> LE: 0x0E, 0x00
+    // HR (uint8) = 154 -> 0x9A
+    const primary = new Uint8Array([0x0c, 0x01, 0xe8, 0x03, 0x49, 0x06, 0x00, 0x19, 0x00, 0x0e, 0x00, 0x9a]);
+    const parsedPrimary = parseFtmsTreadmillData(new DataView(primary.buffer));
+    expect(parsedPrimary).not.toBeNull();
+    expect(parsedPrimary?.speedMps).toBeCloseTo(10 / 3.6, 3);
+    expect(parsedPrimary?.totalDistanceMeters).toBe(1609);
+    expect(parsedPrimary?.inclinePct).toBeCloseTo(2.5, 1);
+    expect(parsedPrimary?.heartRateBpm).toBe(154);
+
+    // Split follow-up packet: bit0=1 (More Data: no inst speed), bit12=1 (Force + Power Output)
+    // Flags = 0x1001 (LE: 0x01, 0x10), Force = 420 N (0xA4, 0x01), Power = 265 W (0x09, 0x01)
+    const split = new Uint8Array([0x01, 0x10, 0xa4, 0x01, 0x09, 0x01]);
+    const parsedSplit = parseFtmsTreadmillData(new DataView(split.buffer));
+    expect(parsedSplit?.speedMps).toBeUndefined();
+    expect(parsedSplit?.powerWatts).toBe(265);
+  });
+
+  it('parses Concept2 PM5 split FTMS Rower Data (0x2AD1) packets with stroke rate, pace/500m, watts, resistance & HR', () => {
+    // Packet A: bit0=0 (stroke rate + count present), bit2=1 (total distance)
+    // Flags = 0x0004 (LE: 0x04, 0x00)
+    // Stroke Rate = 54 * 0.5 = 27 spm (0x36), Stroke Count = 120 (0x78, 0x00), Total Distance = 850m (0x52, 0x03, 0x00)
+    const pktA = new Uint8Array([0x04, 0x00, 0x36, 0x78, 0x00, 0x52, 0x03, 0x00]);
+    const parsedA = parseFtmsRowerData(new DataView(pktA.buffer));
+    expect(parsedA?.strokeRateSpm).toBe(27);
+    expect(parsedA?.strokeCount).toBe(120);
+    expect(parsedA?.totalDistanceMeters).toBe(850);
+
+    // Packet B: bit0=1 (More Data), bit3=1 (Inst Pace /500m), bit5=1 (Inst Power), bit7=1 (Resistance), bit9=1 (HR)
+    // Flags = 0x0001 | 0x0008 | 0x0020 | 0x0080 | 0x0200 = 0x02A9 (LE: 0xA9, 0x02)
+    // Pace = 122 s/500m (0x7A, 0x00), Power = 193 W (0xC1, 0x00), Resistance = 6 (0x06, 0x00), HR = 162 (0xA2)
+    const pktB = new Uint8Array([0xa9, 0x02, 0x7a, 0x00, 0xc1, 0x00, 0x06, 0x00, 0xa2]);
+    const parsedB = parseFtmsRowerData(new DataView(pktB.buffer));
+    expect(parsedB?.strokeRateSpm).toBeUndefined();
+    expect(parsedB?.paceSecPer500m).toBe(122);
+    expect(parsedB?.powerWatts).toBe(193);
+    expect(parsedB?.resistanceLevel).toBe(6);
+    expect(parsedB?.heartRateBpm).toBe(162);
+  });
+
+  it('parses BLE Running Speed & Cadence (0x2A53) payloads with stride-to-SPM normalization', () => {
+    // Flags = 0x06 (bit1=Total Distance present, bit2=Running)
+    // Speed = 768 / 256 = 3.0 m/s (0x00, 0x03)
+    // Cadence = 88 strides/min -> normalized to 176 spm (0x58)
+    // Total Distance = 10000 * 0.1m = 1000m (0x10, 0x27, 0x00, 0x00)
+    const payload = new Uint8Array([0x06, 0x00, 0x03, 0x58, 0x10, 0x27, 0x00, 0x00]);
+    const parsed = parseRscMeasurement(new DataView(payload.buffer));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.speedMps).toBeCloseTo(3.0, 3);
+    expect(parsed?.cadenceSpm).toBe(176);
+    expect(parsed?.isRunning).toBe(true);
+    expect(parsed?.totalDistanceMeters).toBeCloseTo(1000, 1);
+  });
+
+  it('connects to an FTMS Treadmill (0x2ACD), caches split packets, and writes 0x2AD9 target speed & incline frames', async () => {
+    const treadChar = new MockGattCharacteristic();
+    const ctrlChar = new MockGattCharacteristic();
+    ctrlChar.properties = { write: true };
+
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: {
+        requestDevice: vi.fn(async () => ({
+          name: 'Horizon 7.4 AT',
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          gatt: {
+            connected: true,
+            disconnect: vi.fn(),
+            connect: vi.fn(async () => ({
+              getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+                if (uuid === FTMS_SERVICE) {
+                  return {
+                    getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                      if (cUuid === FTMS_TREADMILL_DATA) return treadChar;
+                      if (cUuid === FTMS_CONTROL_POINT) return ctrlChar;
+                      throw new Error('Characteristic not found');
+                    }),
+                  };
+                }
+                throw new Error('Service not found');
+              }),
+            })),
+          },
+        })),
+      },
+    });
+
+    const readings: EchelonRawReading[] = [];
+    const statuses: Array<{ status: string; sport?: string }> = [];
+    const conn = new EchelonBikeConnection({
+      onReading: (r) => readings.push(r),
+      onStatusChange: (status, _name, _msg, profile) =>
+        statuses.push({ status, sport: profile?.sport }),
+    });
+
+    await conn.requestAndConnect({ preferredSport: 'running' });
+    expect(statuses.at(-1)).toEqual({ status: 'connected', sport: 'running' });
+
+    // Emit primary treadmill packet (10 km/h, 3.0% incline)
+    treadChar.emitNotification(
+      new Uint8Array([0x08, 0x00, 0xe8, 0x03, 0x1e, 0x00, 0x11, 0x00])
+    );
+    expect(readings.at(-1)?.sport).toBe('running');
+    expect(readings.at(-1)?.directSpeedMps).toBeCloseTo(10 / 3.6, 2);
+    expect(readings.at(-1)?.inclinePct).toBeCloseTo(3.0, 1);
+
+    // Send motorized target speed (6.0 mph = 9.66 km/h -> 966 = 0x03C6) and target incline (4.5% -> 45 = 0x002D)
+    await conn.setTargetSpeedMph(6.0);
+    await conn.setTargetInclinePct(4.5);
+
+    const writtenHex = ctrlChar.writtenPayloads.map(bytesToHex);
+    expect(writtenHex).toContain('00'); // Request Control (0x00)
+    expect(writtenHex).toContain('02c603'); // Set Target Speed 9.66 km/h
+    expect(writtenHex).toContain('032d00'); // Set Target Incline +4.5%
+
+    conn.disconnect();
+  });
+
+  it('connects to an FTMS Rower (0x2AD1) and merges split Concept2 PM5 notifications', async () => {
+    const rowerChar = new MockGattCharacteristic();
+
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: {
+        requestDevice: vi.fn(async () => ({
+          name: 'PM5 430123456 Row',
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          gatt: {
+            connected: true,
+            disconnect: vi.fn(),
+            connect: vi.fn(async () => ({
+              getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+                if (uuid === FTMS_SERVICE) {
+                  return {
+                    getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                      if (cUuid === FTMS_ROWER_DATA) return rowerChar;
+                      throw new Error('Characteristic not found');
+                    }),
+                  };
+                }
+                throw new Error('Service not found');
+              }),
+            })),
+          },
+        })),
+      },
+    });
+
+    const readings: EchelonRawReading[] = [];
+    const conn = new EchelonBikeConnection({
+      onReading: (r) => readings.push(r),
+      onStatusChange: () => {},
+    });
+
+    await conn.requestAndConnect({ preferredSport: 'rowing' });
+    expect(conn.getModelProfile()?.sport).toBe('rowing');
+
+    // Packet A: 26 spm (52 * 0.5), 40 strokes
+    rowerChar.emitNotification(new Uint8Array([0x00, 0x00, 52, 40, 0x00]));
+    // Packet B (More Data): pace 120s/500m (0x78, 0x00), power 203W (0xCB, 0x00)
+    rowerChar.emitNotification(new Uint8Array([0x29, 0x00, 0x78, 0x00, 0xcb, 0x00]));
+
+    const last = readings.at(-1);
+    expect(last?.sport).toBe('rowing');
+    expect(last?.cadenceRpm).toBe(26);
+    expect(last?.strokeCount).toBe(40);
+    expect(last?.paceSecPer500m).toBe(120);
+    expect(last?.directWatts).toBe(203);
+    expect(last?.directSpeedMps).toBeCloseTo(500 / 120, 2);
+
+    conn.disconnect();
+  });
+
+  it('connects to a BLE Running Speed & Cadence footpod (0x1814 / 0x2A53) when FTMS is absent', async () => {
+    const rscChar = new MockGattCharacteristic();
+
+    Object.defineProperty(navigator, 'bluetooth', {
+      configurable: true,
+      value: {
+        requestDevice: vi.fn(async () => ({
+          name: 'Stryd Footpod',
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          gatt: {
+            connected: true,
+            disconnect: vi.fn(),
+            connect: vi.fn(async () => ({
+              getPrimaryService: vi.fn(async (uuid: BluetoothServiceUUID) => {
+                if (uuid === RUNNING_SPEED_CADENCE_SERVICE) {
+                  return {
+                    getCharacteristic: vi.fn(async (cUuid: BluetoothCharacteristicUUID) => {
+                      if (cUuid === RSC_MEASUREMENT) return rscChar;
+                      throw new Error('Characteristic not found');
+                    }),
+                  };
+                }
+                throw new Error('Service not found');
+              }),
+            })),
+          },
+        })),
+      },
+    });
+
+    const readings: EchelonRawReading[] = [];
+    const conn = new EchelonBikeConnection({
+      onReading: (r) => readings.push(r),
+      onStatusChange: () => {},
+    });
+
+    await conn.requestAndConnect({ preferredSport: 'running' });
+    expect(conn.getModelProfile()?.family).toBe('rsc-footpod');
+    expect(conn.getModelProfile()?.sport).toBe('running');
+
+    // Emit running speed 3.0 m/s, 86 strides/min -> 172 spm
+    rscChar.emitNotification(new Uint8Array([0x04, 0x00, 0x03, 86]));
+    const last = readings.at(-1);
+    expect(last?.sport).toBe('running');
+    expect(last?.directSpeedMps).toBeCloseTo(3.0, 2);
+    expect(last?.cadenceRpm).toBe(172);
+
+    conn.disconnect();
   });
 });

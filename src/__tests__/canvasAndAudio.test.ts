@@ -109,6 +109,88 @@ describe('Floating PiP Telemetry HUD Canvas & Wake/Audio Services', () => {
     expect(barCalls.length).toBeGreaterThan(20);
     const barTexts = barCalls.filter((c) => c.op === 'fillText').map((c) => String(c.args[0]));
     expect(barTexts.some((t) => t.includes('34.25 KM LEFT'))).toBe(true);
+
+    // Running PiP HUD & Share Card
+    const runCanvas = document.createElement('canvas');
+    runCanvas.width = 640;
+    runCanvas.height = 360;
+    renderTelemetryHudCanvas(runCanvas, {
+      telemetry: makeSampleTelemetry({
+        sport: 'running',
+        speedMph: 7.5,
+        inclinePct: 2.0,
+        cadenceRpm: 176,
+      }),
+      profile: DEFAULT_ATHLETE_PROFILE,
+      elapsedSec: 300,
+      burnPoints: 5,
+      gaugeMode: 'rings',
+    });
+    const runHudTexts = getRecordedCanvasCalls(runCanvas)
+      .filter((c) => c.op === 'fillText')
+      .map((c) => String(c.args[0]));
+    expect(runHudTexts.some((t) => t.includes('8:00'))).toBe(true);
+    expect(runHudTexts.some((t) => t.includes('/MI'))).toBe(true);
+
+    // Rowing PiP HUD & Share Card
+    const rowCanvas = document.createElement('canvas');
+    rowCanvas.width = 640;
+    rowCanvas.height = 360;
+    renderTelemetryHudCanvas(rowCanvas, {
+      telemetry: makeSampleTelemetry({
+        sport: 'rowing',
+        powerWatts: 203,
+        paceSecPer500m: 120,
+        cadenceRpm: 28,
+      }),
+      profile: DEFAULT_ATHLETE_PROFILE,
+      elapsedSec: 240,
+      burnPoints: 4,
+      distanceMeters: 1000,
+      gaugeMode: 'rings',
+    });
+    const rowHudTexts = getRecordedCanvasCalls(rowCanvas)
+      .filter((c) => c.op === 'fillText')
+      .map((c) => String(c.args[0]));
+    expect(rowHudTexts.some((t) => t.includes('2:00'))).toBe(true);
+    expect(rowHudTexts.some((t) => t.includes('/500M'))).toBe(true);
+
+    // Share cards for Running and Rowing across all 3 overlay styles
+    const runShare = document.createElement('canvas');
+    for (const style of ['timeline', 'rings', 'minimal'] as const) {
+      renderRideShareCanvas(runShare, {
+        ride: makeSampleRide({
+          sport: 'running',
+          title: '5K Challenge',
+          durationSec: 1500,
+          distanceMeters: 5000,
+          avgInclinePct: 1.5,
+          avgCadence: 174,
+        }),
+        photo: null,
+        overlayStyle: style,
+      });
+    }
+    const rowShare = document.createElement('canvas');
+    for (const style of ['timeline', 'rings', 'minimal'] as const) {
+      renderRideShareCanvas(rowShare, {
+        ride: makeSampleRide({
+          sport: 'rowing',
+          title: '2,000m Erg Test',
+          durationSec: 480,
+          distanceMeters: 2000,
+          avgWatts: 203,
+          avgSplitSecPer500m: 120,
+          avgCadence: 28,
+        }),
+        photo: null,
+        overlayStyle: style,
+      });
+    }
+    const rowShareTexts = getRecordedCanvasCalls(rowShare)
+      .filter((c) => c.op === 'fillText')
+      .map((c) => String(c.args[0]));
+    expect(rowShareTexts.some((t) => t.includes('2:00'))).toBe(true);
   });
 
   it('acquires and releases Screen Wake Lock and synthesizes Web Audio interval cues', async () => {

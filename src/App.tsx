@@ -29,6 +29,7 @@ import type {
   GarminImportedProfile,
   LiveTelemetry,
   SavedRide,
+  SportMode,
   StravaConfig,
   TrackPoint,
   ZoneId,
@@ -40,18 +41,31 @@ import {
   estimateDistanceEtaSec,
   estimateIndoorSpeedMps,
   estimateKcalPerSecond,
+  estimateRowingKcalPerSecond,
+  estimateRunningKcalPerSecond,
+  estimateRunningPowerWatts,
   evaluateRideFtpResult,
   formatDistanceTarget,
   formatDistanceValue,
   formatDuration,
   formatHeightImperial,
+  formatPaceSeconds,
+  formatRowingSplit,
+  formatRunningPacePerMile,
   getCadenceZones,
+  getEffectiveRowFtpWatts,
+  getEffectiveRunThresholdPaceSec,
   getHrZones,
   getPowerZones,
+  getRowingStrokeRateZones,
+  getRunningCadenceZones,
+  getRunningSpeedZones,
   metersToMiles,
   mpsToMph,
   resolveHeadlineEffortZone,
   resolveZone,
+  rowingSplitToSpeedMps,
+  rowingWattsToSplitSecPer500m,
 } from './utils/zones';
 import {
   COCKPIT_TILE_META,
@@ -79,11 +93,11 @@ import {
 import { EchelonBikeConnection } from './services/ble/echelonBle';
 import { GarminHeartRateConnection } from './services/ble/garminHrBle';
 import {
-  WORKOUT_TEMPLATES,
   formatWorkoutOptionLabel,
   getDistanceStageIndex,
   getSegmentTargetsForAthlete,
   getTotalWorkoutDistanceMeters,
+  getWorkoutsForSport,
   groupWorkoutTemplates,
   isDistanceWorkout,
 } from './data/workouts';
@@ -93,12 +107,14 @@ import {
   loadAthleteProfile,
   loadGarminConfig,
   loadLayoutPrefs,
+  loadSportMode,
   loadStravaConfig,
   loadYouTubePresets,
   saveAthleteProfile,
   saveGarminConfig,
   saveLayoutPrefs,
   saveRideToDb,
+  saveSportMode,
   saveStravaConfig,
   saveYouTubeState,
 } from './services/storage';
@@ -176,18 +192,42 @@ function loadAudioCuesEnabled(): boolean {
   }
 }
 
+function resolvePrimaryEffortZone(
+  tel: LiveTelemetry,
+  profile: AthleteProfile,
+  sport: SportMode
+): ZoneId {
+  if (sport === 'running') {
+    const gradeAdjustedMph = tel.speedMph * (1 + Math.max(0, tel.inclinePct ?? 0) * 0.045);
+    return resolveZone(
+      gradeAdjustedMph,
+      getRunningSpeedZones(getEffectiveRunThresholdPaceSec(profile))
+    ).zone;
+  }
+  const effFtp = sport === 'rowing' ? getEffectiveRowFtpWatts(profile) : profile.ftpWatts;
+  return resolveZone(tel.powerWatts, getPowerZones(effFtp)).zone;
+}
+
 export function App() {
   // Athlete Profile (safe starter defaults: Rider, 5'8", 165 lbs, 150W FTP, 180 Max HR)
   const [profile, setProfile] = useState<AthleteProfile>(() => loadAthleteProfile());
   const profileRef = useRef<AthleteProfile>(profile);
 
+  // Active Sport Modality ('cycling' | 'running' | 'rowing')
+  const [sportMode, setSportMode] = useState<SportMode>(() => loadSportMode());
+  const sportModeRef = useRef<SportMode>(sportMode);
+
   // Gauge Layout Mode ('rings' 2/3-col speedometer grid vs 'bars' horizontal Garmin bars)
   const [gaugeMode, setGaugeMode] = useState<GaugeDisplayMode>(() => loadGaugeDisplayMode());
 
   // Workout Selection & Active Session State
-  const [selectedWorkoutId, setSelectedWorkoutId] = useState<string>('free-ride');
+  const [selectedWorkoutId, setSelectedWorkoutId] = useState<string>(
+    () => getWorkoutsForSport(loadSportMode())[0].id
+  );
   const [rideState, setRideState] = useState<'idle' | 'running' | 'paused'>('idle');
+  const rideStateRef = useRef<'idle' | 'running' | 'paused'>('idle');
   const [elapsedSec, setElapsedSec] = useState<number>(0);
+  const elapsedSecRef = useRef<number>(0);
   const [startedAtMs, setStartedAtMs] = useState<number | null>(null);
   const [distanceMeters, setDistanceMeters] = useState<number>(0);
   const distanceMetersRef = useRef<number>(0);
@@ -203,10 +243,14 @@ export function App() {
   const [segmentOffsetSec, setSegmentOffsetSec] = useState<number>(0);
 
   // Live Telemetry State
-  const [telemetry, setTelemetry] = useState<LiveTelemetry>({
+  const [telemetry, setTelemetry] = useState<LiveTelemetry>(() => ({
+    sport: loadSportMode(),
     powerWatts: 0,
     cadenceRpm: 0,
     resistance: 18,
+    inclinePct: 0,
+    paceSecPer500m: 0,
+    strokeCount: 0,
     heartRateBpm: 0,
     speedMph: 0,
     distanceMeters: 0,
@@ -217,12 +261,18 @@ export function App() {
     hrName: null,
     hrStatus: 'disconnected',
     isSimulating: false,
-  });
+  }));
   const telemetryRef = useRef<LiveTelemetry>(telemetry);
 
-  // Simulator Controls
+  // Simulator Controls (Bike, Treadmill, Rower)
   const [simResistance, setSimResistance] = useState<number>(18);
   const [simCadence, setSimCadence] = useState<number>(85);
+  const [simRunSpeedMph, setSimRunSpeedMph] = useState<number>(6.2);
+  const [simRunInclinePct, setSimRunInclinePct] = useState<number>(1.0);
+  const [simRowWatts, setSimRowWatts] = useState<number>(165);
+  const [simRowStrokeRate, setSimRowStrokeRate] = useState<number>(24);
+  const [simRowDamper, setSimRowDamper] = useState<number>(5);
+  const simRowStrokesRef = useRef<number>(0);
   const simCurrentHrRef = useRef<number>(122);
 
   // YouTube & PiP State
@@ -426,6 +476,56 @@ export function App() {
     telemetryRef.current = telemetry;
   }, [telemetry]);
 
+  useEffect(() => {
+    sportModeRef.current = sportMode;
+  }, [sportMode]);
+
+  useEffect(() => {
+    rideStateRef.current = rideState;
+  }, [rideState]);
+
+  useEffect(() => {
+    elapsedSecRef.current = elapsedSec;
+  }, [elapsedSec]);
+
+  const handleSelectSportMode = useCallback(
+    (nextSport: SportMode, options?: { fromDevice?: boolean }) => {
+      if (!options?.fromDevice && nextSport === sportModeRef.current) return;
+      if (!options?.fromDevice && (rideStateRef.current !== 'idle' || elapsedSecRef.current > 0)) {
+        showToast('Finish or discard your active workout before switching sport mode.');
+        return;
+      }
+
+      sportModeRef.current = nextSport;
+      setSportMode(nextSport);
+      saveSportMode(nextSport);
+
+      if (rideStateRef.current === 'idle' && elapsedSecRef.current === 0) {
+        const nextWorkouts = getWorkoutsForSport(nextSport);
+        setSelectedWorkoutId(nextWorkouts[0].id);
+        setSegmentOffsetSec(0);
+      }
+
+      setPreviewPoints([]);
+      simRowStrokesRef.current = 0;
+      setTelemetry((prev) => ({
+        ...prev,
+        sport: nextSport,
+        ...(!prev.bikeConnected && !prev.isSimulating
+          ? {
+              powerWatts: 0,
+              cadenceRpm: 0,
+              speedMph: 0,
+              inclinePct: 0,
+              paceSecPer500m: 0,
+              strokeCount: 0,
+            }
+          : {}),
+      }));
+    },
+    [showToast]
+  );
+
   // Initialize WakeLock, Audio, IndexedDB Rides, and Strava OAuth Redirect Check
   useEffect(() => {
     wakeRef.current = new ScreenWakeManager();
@@ -461,9 +561,73 @@ export function App() {
   // Instantiate BLE Connection Managers
   useEffect(() => {
     const bikeConn = new EchelonBikeConnection({
-      onReading: ({ cadenceRpm, resistance, directWatts, maxResistance }) => {
+      onReading: ({
+        cadenceRpm,
+        resistance,
+        directWatts,
+        maxResistance,
+        sport: readingSport,
+        directSpeedMps,
+        inclinePct,
+        paceSecPer500m,
+        strokeCount,
+        machineHeartRateBpm,
+      }) => {
         const p = profileRef.current;
         const model = bikeConn.getModelProfile();
+        const activeSport = readingSport ?? model?.sport ?? sportModeRef.current;
+
+        if (activeSport === 'running') {
+          const speedMps = typeof directSpeedMps === 'number' ? directSpeedMps : 0;
+          const grade = typeof inclinePct === 'number' ? inclinePct : 0;
+          const watts =
+            typeof directWatts === 'number' && directWatts > 0
+              ? Math.round(directWatts * p.wattGain)
+              : estimateRunningPowerWatts(speedMps, grade, p.weightLbs);
+          setTelemetry((prev) => ({
+            ...prev,
+            sport: 'running',
+            cadenceRpm,
+            resistance,
+            inclinePct: grade,
+            powerWatts: watts,
+            speedMph: mpsToMph(speedMps),
+            heartRateBpm:
+              !prev.hrConnected && machineHeartRateBpm ? machineHeartRateBpm : prev.heartRateBpm,
+          }));
+          return;
+        }
+
+        if (activeSport === 'rowing') {
+          const watts = typeof directWatts === 'number' ? Math.round(directWatts * p.wattGain) : 0;
+          const splitSec =
+            typeof paceSecPer500m === 'number' && paceSecPer500m > 0
+              ? paceSecPer500m
+              : watts > 3
+                ? rowingWattsToSplitSecPer500m(watts)
+                : 0;
+          const speedMps =
+            typeof directSpeedMps === 'number' && directSpeedMps > 0
+              ? directSpeedMps
+              : splitSec > 0
+                ? rowingSplitToSpeedMps(splitSec)
+                : 0;
+          setTelemetry((prev) => ({
+            ...prev,
+            sport: 'rowing',
+            cadenceRpm,
+            resistance,
+            paceSecPer500m: splitSec,
+            strokeCount: typeof strokeCount === 'number' ? strokeCount : prev.strokeCount,
+            powerWatts: watts,
+            speedMph: mpsToMph(speedMps),
+            bikeMaxResistance: maxResistance ?? prev.bikeMaxResistance ?? 10,
+            heartRateBpm:
+              !prev.hrConnected && machineHeartRateBpm ? machineHeartRateBpm : prev.heartRateBpm,
+          }));
+          return;
+        }
+
         const watts =
           typeof directWatts === 'number'
             ? Math.round(directWatts * p.wattGain)
@@ -478,16 +642,34 @@ export function App() {
         const speedMps = estimateIndoorSpeedMps(watts, p);
         setTelemetry((prev) => ({
           ...prev,
+          sport: 'cycling',
           cadenceRpm,
           resistance,
           powerWatts: watts,
           speedMph: mpsToMph(speedMps),
           bikeMaxResistance: maxResistance ?? prev.bikeMaxResistance ?? 32,
+          heartRateBpm:
+            !prev.hrConnected && machineHeartRateBpm ? machineHeartRateBpm : prev.heartRateBpm,
         }));
       },
       onStatusChange: (status, deviceName, message, modelProfile, unlockStatus) => {
+        const connectedSport = status === 'connected' ? modelProfile?.sport : undefined;
+        let autoSwitchedMsg = message;
+        if (connectedSport && connectedSport !== sportModeRef.current) {
+          handleSelectSportMode(connectedSport, { fromDevice: true });
+          const sportLabel =
+            connectedSport === 'running'
+              ? 'Running'
+              : connectedSport === 'rowing'
+                ? 'Rowing'
+                : 'Cycling';
+          autoSwitchedMsg = message
+            ? `${message} Switched to ${sportLabel} mode.`
+            : `Connected — switched to ${sportLabel} mode.`;
+        }
         setTelemetry((prev) => ({
           ...prev,
+          sport: connectedSport ?? prev.sport ?? sportModeRef.current,
           bikeStatus: status,
           bikeConnected: status === 'connected',
           bikeName: deviceName,
@@ -495,10 +677,15 @@ export function App() {
           bikeFamily: modelProfile?.family ?? null,
           bikeShortLabel: modelProfile?.shortLabel ?? null,
           bikeHasMotorizedResistance: modelProfile?.hasMotorizedResistance ?? false,
-          bikeMaxResistance: status === 'connected' ? prev.bikeMaxResistance ?? 32 : 32,
+          bikeHasMotorizedSpeed: modelProfile?.hasMotorizedSpeed ?? false,
+          bikeHasMotorizedIncline: modelProfile?.hasMotorizedIncline ?? false,
+          bikeMaxResistance:
+            status === 'connected'
+              ? prev.bikeMaxResistance ?? (connectedSport === 'rowing' ? 10 : 32)
+              : 32,
           isSimulating: status === 'connected' ? false : prev.isSimulating,
         }));
-        if (message) showToast(message);
+        if (autoSwitchedMsg) showToast(autoSwitchedMsg);
       },
     });
 
@@ -527,13 +714,24 @@ export function App() {
       bikeConn.disconnect();
       hrConn.disconnect();
     };
-  }, [showToast]);
+  }, [showToast, handleSelectSportMode]);
 
   // Re-orient live Watts & Speed immediately whenever Athlete Profile changes
   const handleUpdateProfile = useCallback((next: AthleteProfile) => {
     setProfile(next);
     saveAthleteProfile(next);
     setTelemetry((prev) => {
+      if (prev.sport === 'running') {
+        if (prev.speedMph <= 0.1) return prev;
+        const speedMps = prev.speedMph / 2.23693629;
+        return {
+          ...prev,
+          powerWatts: estimateRunningPowerWatts(speedMps, prev.inclinePct ?? 0, next.weightLbs),
+        };
+      }
+      if (prev.sport === 'rowing') {
+        return prev;
+      }
       if (prev.cadenceRpm <= 0 && prev.powerWatts <= 0) return prev;
       if (prev.bikeConnected && prev.bikeFamily === 'power-meter-bike') {
         const speedMps = estimateIndoorSpeedMps(prev.powerWatts, next);
@@ -596,9 +794,10 @@ export function App() {
   }, []);
 
   // Selected Workout & Active Segment Resolution
+  const activeWorkouts = useMemo(() => getWorkoutsForSport(sportMode), [sportMode]);
   const selectedWorkout = useMemo(
-    () => WORKOUT_TEMPLATES.find((w) => w.id === selectedWorkoutId) ?? WORKOUT_TEMPLATES[0],
-    [selectedWorkoutId]
+    () => activeWorkouts.find((w) => w.id === selectedWorkoutId) ?? activeWorkouts[0],
+    [activeWorkouts, selectedWorkoutId]
   );
 
   const activeSegmentInfo: ActiveSegmentSummary | null = (() => {
@@ -608,7 +807,7 @@ export function App() {
 
     if (isDistanceWorkout(selectedWorkout)) {
       const totalTargetMeters = getTotalWorkoutDistanceMeters(selectedWorkout);
-      const unit = selectedWorkout.distanceUnit ?? 'mi';
+      const unit = selectedWorkout.distanceUnit ?? (sportMode === 'rowing' ? 'm' : 'mi');
       const totalRemainingMeters = Math.max(0, totalTargetMeters - distanceMeters);
       const overallProgressPct = Math.min(
         100,
@@ -650,7 +849,7 @@ export function App() {
               isGoalComplete,
             },
             nextSegment: nextSeg,
-            targets: getSegmentTargetsForAthlete(seg, profile, telemetry.bikeFamily),
+            targets: getSegmentTargetsForAthlete(seg, profile, telemetry.bikeFamily, sportMode),
           };
         }
         cursorMeters += segDist;
@@ -675,7 +874,7 @@ export function App() {
           isGoalComplete: true,
         },
         nextSegment: null,
-        targets: getSegmentTargetsForAthlete(lastSeg, profile, telemetry.bikeFamily),
+        targets: getSegmentTargetsForAthlete(lastSeg, profile, telemetry.bikeFamily, sportMode),
       };
     }
 
@@ -693,7 +892,7 @@ export function App() {
           segment: seg,
           remainingSec,
           nextSegment: nextSeg,
-          targets: getSegmentTargetsForAthlete(seg, profile, telemetry.bikeFamily),
+          targets: getSegmentTargetsForAthlete(seg, profile, telemetry.bikeFamily, sportMode),
         };
       }
       cursor += seg.durationSec;
@@ -705,38 +904,98 @@ export function App() {
       segment: lastSeg,
       remainingSec: 0,
       nextSegment: null,
-      targets: getSegmentTargetsForAthlete(lastSeg, profile, telemetry.bikeFamily),
+      targets: getSegmentTargetsForAthlete(lastSeg, profile, telemetry.bikeFamily, sportMode),
     };
   })();
 
-  // Interactive Ride Simulator Loop (updates every 1s when enabled)
+  // Interactive Multi-Sport Studio Simulator Loop (updates every 1s when enabled)
   useEffect(() => {
     if (!telemetry.isSimulating) return;
 
     const tickSim = () => {
       const p = profileRef.current;
+
+      const stepHr = (intensityRatio: number): number => {
+        const targetHr = Math.min(
+          p.maxHrBpm,
+          Math.max(
+            p.restingHrBpm + 24,
+            Math.round(p.maxHrBpm * (0.52 + 0.37 * intensityRatio))
+          )
+        );
+        const currentHr = simCurrentHrRef.current;
+        const nextHr = Math.round(
+          currentHr + (targetHr - currentHr) * 0.14 + (Math.random() - 0.5) * 1.4
+        );
+        simCurrentHrRef.current = nextHr;
+        return nextHr;
+      };
+
+      if (sportMode === 'running') {
+        const speedMph = Math.max(
+          1.5,
+          Math.min(15, Math.round((simRunSpeedMph + (Math.random() - 0.5) * 0.08) * 10) / 10)
+        );
+        const speedMps = speedMph / 2.23693629;
+        const watts = estimateRunningPowerWatts(speedMps, simRunInclinePct, p.weightLbs);
+        const baseSpm =
+          speedMph < 4.2 ? 110 + speedMph * 8 : 146 + (speedMph - 4.2) * 6.5;
+        const cadenceSpm = Math.round(
+          Math.max(95, Math.min(202, baseSpm + (Math.random() - 0.5) * 3))
+        );
+        const thresholdMph = 3600 / getEffectiveRunThresholdPaceSec(p);
+        const gradeAdjMph = speedMph * (1 + Math.max(0, simRunInclinePct) * 0.045);
+        const nextHr = stepHr(gradeAdjMph / Math.max(3.5, thresholdMph));
+
+        setTelemetry((prev) => ({
+          ...prev,
+          sport: 'running',
+          cadenceRpm: cadenceSpm,
+          inclinePct: simRunInclinePct,
+          resistance: Math.round(simRunInclinePct * 2),
+          powerWatts: watts,
+          speedMph,
+          heartRateBpm: prev.hrConnected ? prev.heartRateBpm : nextHr,
+        }));
+        return;
+      }
+
+      if (sportMode === 'rowing') {
+        const watts = Math.max(30, Math.round(simRowWatts + (Math.random() - 0.5) * 6));
+        const spm = Math.max(
+          14,
+          Math.min(44, Math.round(simRowStrokeRate + (Math.random() - 0.5) * 1.2))
+        );
+        const splitSec = rowingWattsToSplitSecPer500m(watts);
+        const speedMps = rowingSplitToSpeedMps(splitSec);
+        simRowStrokesRef.current += spm / 60;
+        const rowFtp = getEffectiveRowFtpWatts(p);
+        const nextHr = stepHr(watts / Math.max(80, rowFtp));
+
+        setTelemetry((prev) => ({
+          ...prev,
+          sport: 'rowing',
+          cadenceRpm: spm,
+          resistance: simRowDamper,
+          paceSecPer500m: splitSec,
+          strokeCount: Math.floor(simRowStrokesRef.current),
+          powerWatts: watts,
+          speedMph: mpsToMph(speedMps),
+          bikeMaxResistance: 10,
+          heartRateBpm: prev.hrConnected ? prev.heartRateBpm : nextHr,
+        }));
+        return;
+      }
+
       const jitter = Math.round((Math.random() - 0.5) * 3);
       const cadence = Math.max(40, simCadence + jitter);
       const watts = calculateEchelonWatts(simResistance, cadence, p.powerCurve, p.wattGain);
       const speedMps = estimateIndoorSpeedMps(watts, p);
-
-      // Physiological HR response oriented to Athlete FTP & Max HR
-      const intensityRatio = watts / Math.max(80, p.ftpWatts);
-      const targetHr = Math.min(
-        p.maxHrBpm,
-        Math.max(
-          p.restingHrBpm + 24,
-          Math.round(p.maxHrBpm * (0.52 + 0.37 * intensityRatio))
-        )
-      );
-      const currentHr = simCurrentHrRef.current;
-      const nextHr = Math.round(
-        currentHr + (targetHr - currentHr) * 0.14 + (Math.random() - 0.5) * 1.4
-      );
-      simCurrentHrRef.current = nextHr;
+      const nextHr = stepHr(watts / Math.max(80, p.ftpWatts));
 
       setTelemetry((prev) => ({
         ...prev,
+        sport: 'cycling',
         cadenceRpm: cadence,
         resistance: simResistance,
         powerWatts: watts,
@@ -748,7 +1007,17 @@ export function App() {
     tickSim();
     const id = window.setInterval(tickSim, 1000);
     return () => window.clearInterval(id);
-  }, [telemetry.isSimulating, simResistance, simCadence]);
+  }, [
+    telemetry.isSimulating,
+    sportMode,
+    simResistance,
+    simCadence,
+    simRunSpeedMph,
+    simRunInclinePct,
+    simRowWatts,
+    simRowStrokeRate,
+    simRowDamper,
+  ]);
 
   // When the simulator is switched off, clear the values it was feeding so gauges, stats and
   // the timeline don't stay frozen on the last simulated reading. Real sensors are left alone.
@@ -760,6 +1029,8 @@ export function App() {
         powerWatts: prev.bikeConnected ? prev.powerWatts : 0,
         cadenceRpm: prev.bikeConnected ? prev.cadenceRpm : 0,
         speedMph: prev.bikeConnected ? prev.speedMph : 0,
+        inclinePct: prev.bikeConnected ? prev.inclinePct : 0,
+        paceSecPer500m: prev.bikeConnected ? prev.paceSecPer500m : 0,
         heartRateBpm: prev.hrConnected ? prev.heartRateBpm : 0,
       }));
       simCurrentHrRef.current = profileRef.current.restingHrBpm + 24;
@@ -768,7 +1039,7 @@ export function App() {
   }, [telemetry.isSimulating]);
 
   // Pre-ride preview: while idle, stream live/simulated readings into a rolling buffer so the
-  // timeline reacts to Simulate or a paired bike before Start. Never saved or counted in stats.
+  // timeline reacts to Simulate or a paired machine before Start. Never saved or counted in stats.
   useEffect(() => {
     if (
       rideState !== 'idle' ||
@@ -780,19 +1051,22 @@ export function App() {
     const timer = window.setInterval(() => {
       const t = telemetryRef.current;
       const p = profileRef.current;
-      if (t.powerWatts <= 0 && t.heartRateBpm <= 0) return;
+      const activeSport = t.sport ?? sportModeRef.current;
+      if (t.powerWatts <= 0 && t.speedMph <= 0.1 && t.heartRateBpm <= 0) return;
       const point: TrackPoint = {
         timestampMs: Date.now(),
         elapsedSec: 0,
         powerWatts: t.powerWatts,
         cadenceRpm: t.cadenceRpm,
         resistance: t.resistance,
+        ...(activeSport === 'running' ? { inclinePct: t.inclinePct ?? 0 } : {}),
+        ...(activeSport === 'rowing' && t.paceSecPer500m ? { paceSecPer500m: t.paceSecPer500m } : {}),
         heartRateBpm: t.heartRateBpm,
         speedMps: 0,
         distanceMeters: 0,
         caloriesKcal: 0,
         hrZone: resolveZone(t.heartRateBpm, getHrZones(p.maxHrBpm)).zone,
-        powerZone: resolveZone(t.powerWatts, getPowerZones(p.ftpWatts)).zone,
+        powerZone: resolvePrimaryEffortZone(t, p, activeSport),
       };
       setPreviewPoints((prev) => [
         ...prev.filter((pt) => pt.timestampMs >= sessionStartMs).slice(-239),
@@ -809,15 +1083,25 @@ export function App() {
     const timer = window.setInterval(() => {
       const currTel = telemetryRef.current;
       const currProf = profileRef.current;
+      const activeSport = currTel.sport ?? sportModeRef.current;
       const hrZ = resolveZone(currTel.heartRateBpm, getHrZones(currProf.maxHrBpm)).zone;
-      const pwrZ = resolveZone(currTel.powerWatts, getPowerZones(currProf.ftpWatts)).zone;
+      const pwrZ = resolvePrimaryEffortZone(currTel, currProf, activeSport);
 
-      const speedMps = estimateIndoorSpeedMps(currTel.powerWatts, currProf);
-      const kcalDelta = estimateKcalPerSecond(
-        currTel.powerWatts,
-        currTel.heartRateBpm,
-        currProf
-      );
+      const speedMps =
+        activeSport === 'running' || activeSport === 'rowing'
+          ? Math.max(0, currTel.speedMph / 2.23693629)
+          : estimateIndoorSpeedMps(currTel.powerWatts, currProf);
+      const kcalDelta =
+        activeSport === 'running'
+          ? estimateRunningKcalPerSecond(
+              speedMps,
+              currTel.inclinePct ?? 0,
+              currTel.heartRateBpm,
+              currProf
+            )
+          : activeSport === 'rowing'
+            ? estimateRowingKcalPerSecond(currTel.powerWatts, currTel.heartRateBpm, currProf)
+            : estimateKcalPerSecond(currTel.powerWatts, currTel.heartRateBpm, currProf);
 
       const prevDist = distanceMetersRef.current;
       const nextDist = prevDist + speedMps;
@@ -826,7 +1110,7 @@ export function App() {
       // Distance-driven challenge transitions, milestone toasts (25/50/75%), and finish celebration
       if (isDistanceWorkout(selectedWorkout) && selectedWorkout.segments.length > 0) {
         const totalTarget = getTotalWorkoutDistanceMeters(selectedWorkout);
-        const unit = selectedWorkout.distanceUnit ?? 'mi';
+        const unit = selectedWorkout.distanceUnit ?? (activeSport === 'rowing' ? 'm' : 'mi');
         const prevStage = getDistanceStageIndex(selectedWorkout, prevDist);
         const nextStage = getDistanceStageIndex(selectedWorkout, nextDist);
 
@@ -835,7 +1119,7 @@ export function App() {
           if (nextStage >= selectedWorkout.segments.length) {
             audioRef.current?.playCoachClip('workout-complete');
             showToast(
-              `${selectedWorkout.name} complete (${formatDistanceTarget(totalTarget, unit)})! Spin easy to cool down or tap Stop & Save.`
+              `${selectedWorkout.name} complete (${formatDistanceTarget(totalTarget, unit)})! Ease into a cool-down or tap Stop & Save.`
             );
           } else {
             const nextSeg = selectedWorkout.segments[nextStage];
@@ -893,6 +1177,10 @@ export function App() {
             powerWatts: currTel.powerWatts,
             cadenceRpm: currTel.cadenceRpm,
             resistance: currTel.resistance,
+            ...(activeSport === 'running' ? { inclinePct: currTel.inclinePct ?? 0 } : {}),
+            ...(activeSport === 'rowing' && currTel.paceSecPer500m
+              ? { paceSecPer500m: currTel.paceSecPer500m }
+              : {}),
             heartRateBpm: currTel.heartRateBpm,
             speedMps,
             distanceMeters: nextDist,
@@ -1200,7 +1488,7 @@ export function App() {
     setRideState('idle');
     if (elapsedSec < 5 || trackPoints.length === 0) {
       handleResetWorkout();
-      showToast('Ride was under 5 seconds — reset without saving.');
+      showToast('Workout was under 5 seconds — reset without saving.');
       return;
     }
 
@@ -1208,6 +1496,12 @@ export function App() {
     const cadArr = trackPoints.map((p) => p.cadenceRpm);
     const resArr = trackPoints.map((p) => p.resistance);
     const hrArr = trackPoints.map((p) => p.heartRateBpm).filter((h) => h > 0);
+    const inclineArr = trackPoints
+      .map((p) => p.inclinePct)
+      .filter((v): v is number => typeof v === 'number');
+    const splitArr = trackPoints
+      .map((p) => p.paceSecPer500m)
+      .filter((v): v is number => typeof v === 'number' && v > 30 && v < 600);
 
     const avgWatts = Math.round(wattsArr.reduce((a, b) => a + b, 0) / wattsArr.length);
     const maxWatts = Math.max(...wattsArr, 0);
@@ -1221,18 +1515,47 @@ export function App() {
       : 0;
     const maxHr = hrArr.length ? Math.max(...hrArr) : 0;
 
-    const bikeLabel = telemetry.bikeConnected
-      ? bikeBleRef.current?.getModelProfile()?.displayName || telemetry.bikeName || 'Indoor Bike'
-      : 'Indoor Bike';
+    const avgInclinePct =
+      sportMode === 'running' && inclineArr.length > 0
+        ? Math.round((inclineArr.reduce((a, b) => a + b, 0) / inclineArr.length) * 10) / 10
+        : undefined;
+    const maxInclinePct =
+      sportMode === 'running' && inclineArr.length > 0
+        ? Math.round(Math.max(...inclineArr) * 10) / 10
+        : undefined;
+    const avgSplitSecPer500m =
+      sportMode === 'rowing'
+        ? splitArr.length > 0
+          ? Math.round(splitArr.reduce((a, b) => a + b, 0) / splitArr.length)
+          : avgWatts > 3
+            ? Math.round(rowingWattsToSplitSecPer500m(avgWatts))
+            : undefined
+        : undefined;
+    const totalStrokes =
+      sportMode === 'rowing' && telemetry.strokeCount && telemetry.strokeCount > 0
+        ? Math.round(telemetry.strokeCount)
+        : undefined;
 
-    const ftpTestResult = evaluateRideFtpResult(
-      wattsArr,
-      profile.ftpWatts,
-      Boolean(selectedWorkout.isFtpTest)
-    );
+    const fallbackMachineLabel =
+      sportMode === 'running'
+        ? 'Treadmill'
+        : sportMode === 'rowing'
+          ? 'FTMS Rower'
+          : 'Indoor Bike';
+    const bikeLabel = telemetry.bikeConnected
+      ? bikeBleRef.current?.getModelProfile()?.displayName ||
+        telemetry.bikeName ||
+        fallbackMachineLabel
+      : fallbackMachineLabel;
+
+    const ftpTestResult =
+      sportMode === 'cycling'
+        ? evaluateRideFtpResult(wattsArr, profile.ftpWatts, Boolean(selectedWorkout.isFtpTest))
+        : undefined;
 
     const ride: SavedRide = {
       id: `ride-${Date.now()}`,
+      sport: sportMode,
       title: `${selectedWorkout.name}`,
       workoutName: selectedWorkout.name,
       bikeLabel,
@@ -1249,6 +1572,10 @@ export function App() {
       avgCadence,
       maxCadence,
       avgResistance,
+      ...(avgInclinePct !== undefined ? { avgInclinePct } : {}),
+      ...(maxInclinePct !== undefined ? { maxInclinePct } : {}),
+      ...(avgSplitSecPer500m !== undefined ? { avgSplitSecPer500m } : {}),
+      ...(totalStrokes !== undefined ? { totalStrokes } : {}),
       avgHr,
       maxHr,
       athleteSnapshot: { ...profile },
@@ -1266,7 +1593,7 @@ export function App() {
     handleResetWorkout();
   };
 
-  // Simulator Effort Preset Helper (orients directly to Athlete's FTP)
+  // Simulator Effort Preset Helpers (orients directly to Athlete's Bike FTP, Run Threshold, or Row FTP)
   const applySimulatorEffort = (ftpMultiplier: number, targetCadence: number) => {
     const desiredWatts = Math.round(profile.ftpWatts * ftpMultiplier);
     const recRes = suggestBikeResistance(
@@ -1282,8 +1609,91 @@ export function App() {
     }
   };
 
-  // Resistance +/- Stepper Handler (works on motorized BLE bikes, cadence-pod virtual gear, and Simulator)
+  const applyRunSimulatorEffort = (thresholdMultiplier: number, inclinePct: number) => {
+    const thresholdMph = 3600 / getEffectiveRunThresholdPaceSec(profile);
+    const targetMph = Math.max(
+      2.0,
+      Math.min(14.0, Math.round(thresholdMph * thresholdMultiplier * 10) / 10)
+    );
+    setSimRunSpeedMph(targetMph);
+    setSimRunInclinePct(inclinePct);
+    if (!telemetry.isSimulating) {
+      setTelemetry((prev) => ({ ...prev, sport: 'running', isSimulating: true }));
+    }
+  };
+
+  const applyRowSimulatorEffort = (ftpMultiplier: number, targetStrokeRate: number) => {
+    const rowFtp = getEffectiveRowFtpWatts(profile);
+    const desiredWatts = Math.max(50, Math.min(480, Math.round(rowFtp * ftpMultiplier)));
+    setSimRowWatts(desiredWatts);
+    setSimRowStrokeRate(targetStrokeRate);
+    if (!telemetry.isSimulating) {
+      setTelemetry((prev) => ({ ...prev, sport: 'rowing', isSimulating: true }));
+    }
+  };
+
+  // Treadmill Speed +/- Stepper Handler (FTMS 0x2AD9 OpCode 0x02 or Run Simulator)
+  const adjustTreadmillSpeed = (deltaMph: number) => {
+    const baseMph = telemetry.isSimulating ? simRunSpeedMph : telemetry.speedMph;
+    const nextMph = Math.max(1.0, Math.min(15.0, Math.round((baseMph + deltaMph) * 10) / 10));
+    if (telemetry.isSimulating || !telemetry.bikeConnected) {
+      setSimRunSpeedMph(nextMph);
+    }
+    if (telemetry.bikeConnected && telemetry.bikeHasMotorizedSpeed) {
+      void bikeBleRef.current?.setTargetSpeedMph(nextMph);
+    } else {
+      const speedMps = nextMph / 2.23693629;
+      const watts = estimateRunningPowerWatts(speedMps, telemetry.inclinePct ?? 0, profile.weightLbs);
+      setTelemetry((prev) => ({
+        ...prev,
+        speedMph: nextMph,
+        powerWatts: watts,
+      }));
+    }
+  };
+
+  // Treadmill Incline +/- Stepper Handler (FTMS 0x2AD9 OpCode 0x03 or Run Simulator)
+  const adjustTreadmillIncline = (deltaPct: number) => {
+    const baseInc = telemetry.isSimulating ? simRunInclinePct : (telemetry.inclinePct ?? 0);
+    const nextInc = Math.max(0, Math.min(15, Math.round((baseInc + deltaPct) * 10) / 10));
+    if (telemetry.isSimulating || !telemetry.bikeConnected) {
+      setSimRunInclinePct(nextInc);
+    }
+    if (telemetry.bikeConnected && telemetry.bikeHasMotorizedIncline) {
+      void bikeBleRef.current?.setTargetInclinePct(nextInc);
+    } else {
+      const speedMps = telemetry.speedMph / 2.23693629;
+      const watts = estimateRunningPowerWatts(speedMps, nextInc, profile.weightLbs);
+      setTelemetry((prev) => ({
+        ...prev,
+        inclinePct: nextInc,
+        powerWatts: watts,
+      }));
+    }
+  };
+
+  // Resistance / Damper +/- Stepper Handler (works on motorized BLE bikes, FTMS rowers, cadence-pod virtual gear, and Simulator)
   const adjustResistance = (delta: number) => {
+    if (sportMode === 'running') {
+      adjustTreadmillIncline(delta * 0.5);
+      return;
+    }
+
+    if (sportMode === 'rowing') {
+      const upperBound = telemetry.bikeConnected ? (telemetry.bikeMaxResistance ?? 10) : 10;
+      const baseRes = telemetry.isSimulating ? simRowDamper : telemetry.resistance;
+      const nextLevel = Math.max(1, Math.min(upperBound, baseRes + delta));
+      if (telemetry.isSimulating || !telemetry.bikeConnected) {
+        setSimRowDamper(nextLevel);
+      }
+      if (telemetry.bikeConnected) {
+        void bikeBleRef.current?.setResistanceLevel(nextLevel);
+      } else {
+        setTelemetry((prev) => ({ ...prev, resistance: nextLevel }));
+      }
+      return;
+    }
+
     const upperBound = telemetry.bikeMaxResistance ?? 32;
     const nextLevel = Math.max(1, Math.min(upperBound, telemetry.resistance + delta));
     if (telemetry.isSimulating) {
@@ -1407,10 +1817,20 @@ export function App() {
     }
   };
 
-  // Live Zone Computations Oriented to Athlete Profile
+  // Live Zone Computations Oriented to Athlete Profile & Active Sport
+  const effectivePowerFtp =
+    sportMode === 'rowing' ? getEffectiveRowFtpWatts(profile) : profile.ftpWatts;
   const hrZones = useMemo(() => getHrZones(profile.maxHrBpm), [profile.maxHrBpm]);
-  const powerZones = useMemo(() => getPowerZones(profile.ftpWatts), [profile.ftpWatts]);
-  const cadenceZones = useMemo(() => getCadenceZones(), []);
+  const powerZones = useMemo(() => getPowerZones(effectivePowerFtp), [effectivePowerFtp]);
+  const cadenceZones = useMemo(
+    () =>
+      sportMode === 'running'
+        ? getRunningCadenceZones()
+        : sportMode === 'rowing'
+          ? getRowingStrokeRateZones()
+          : getCadenceZones(),
+    [sportMode]
+  );
 
   const activeHrZone = resolveZone(telemetry.heartRateBpm, hrZones);
   const activePowerZone = resolveZone(telemetry.powerWatts, powerZones);
@@ -1418,16 +1838,53 @@ export function App() {
   const { zoneDef: headlineZone } = resolveHeadlineEffortZone(
     telemetry.heartRateBpm,
     telemetry.powerWatts,
-    profile
+    profile,
+    {
+      sport: sportMode,
+      speedMph: telemetry.speedMph,
+      inclinePct: telemetry.inclinePct,
+    }
   );
 
   const isAnySensorLive =
-    telemetry.powerWatts > 0 || telemetry.heartRateBpm > 0 || rideState === 'running';
+    telemetry.powerWatts > 0 ||
+    telemetry.speedMph > 0.2 ||
+    telemetry.heartRateBpm > 0 ||
+    rideState === 'running';
 
   const showResistanceStepper =
-    !telemetry.bikeConnected ||
-    Boolean(telemetry.bikeHasMotorizedResistance) ||
-    telemetry.bikeFamily === 'cadence-bike';
+    sportMode === 'running'
+      ? !telemetry.bikeConnected || Boolean(telemetry.bikeHasMotorizedIncline)
+      : !telemetry.bikeConnected ||
+        Boolean(telemetry.bikeHasMotorizedResistance) ||
+        telemetry.bikeFamily === 'cadence-bike';
+
+  const showSpeedStepper =
+    sportMode === 'running' &&
+    (!telemetry.bikeConnected || Boolean(telemetry.bikeHasMotorizedSpeed));
+
+  const speedControl = showSpeedStepper ? (
+    <div className="resistance-stepper">
+      <button
+        type="button"
+        id="treadmill-speed-dec-btn"
+        className="stepper-btn"
+        onClick={() => adjustTreadmillSpeed(-0.2)}
+        aria-label="Decrease treadmill speed"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        id="treadmill-speed-inc-btn"
+        className="stepper-btn"
+        onClick={() => adjustTreadmillSpeed(0.2)}
+        aria-label="Increase treadmill speed"
+      >
+        +
+      </button>
+    </div>
+  ) : null;
 
   const resistanceControl = showResistanceStepper ? (
     <div className="resistance-stepper">
@@ -1436,7 +1893,13 @@ export function App() {
         id="resistance-dec-btn"
         className="stepper-btn"
         onClick={() => adjustResistance(-1)}
-        aria-label="Decrease resistance"
+        aria-label={
+          sportMode === 'running'
+            ? 'Decrease incline'
+            : sportMode === 'rowing'
+              ? 'Decrease damper'
+              : 'Decrease resistance'
+        }
       >
         −
       </button>
@@ -1445,7 +1908,13 @@ export function App() {
         id="resistance-inc-btn"
         className="stepper-btn"
         onClick={() => adjustResistance(1)}
-        aria-label="Increase resistance"
+        aria-label={
+          sportMode === 'running'
+            ? 'Increase incline'
+            : sportMode === 'rowing'
+              ? 'Increase damper'
+              : 'Increase resistance'
+        }
       >
         +
       </button>
@@ -1546,36 +2015,101 @@ export function App() {
     };
   };
 
+  const liveRowSplit =
+    telemetry.paceSecPer500m && telemetry.paceSecPer500m > 0
+      ? telemetry.paceSecPer500m
+      : rowingWattsToSplitSecPer500m(telemetry.powerWatts);
+
   const secondaryStatContent: Record<
     SecondaryStatId,
     { label: string; value: string; sub: string }
-  > = {
-    speed: {
-      label: 'Virtual Speed',
-      value: `${telemetry.speedMph.toFixed(1)} mph`,
-      sub: `Aero ${formatHeightImperial(profile.heightFeet, profile.heightInches)} · ${profile.weightLbs}#`,
-    },
-    distance: {
-      label: 'Distance',
-      value: `${metersToMiles(distanceMeters).toFixed(2)} mi`,
-      sub: `${(distanceMeters / 1000).toFixed(2)} km`,
-    },
-    calories: {
-      label: 'Active Calories',
-      value: `${Math.round(caloriesKcal)} kcal`,
-      sub: 'Power & HR calibrated',
-    },
-    avgPower: {
-      label: 'Avg / NP Power',
-      value: `${avgRideWatts}W / ${npRideWatts}W`,
-      sub: `${computeWattsPerKg(avgRideWatts, profile.weightLbs).toFixed(2)} Avg W/kg`,
-    },
-    burnTime: {
-      label: 'Burn Zone Time',
-      value: formatDuration(burnZoneTotalSec),
-      sub: `${burnPoints} Burn pts earned`,
-    },
-  };
+  > =
+    sportMode === 'running'
+      ? {
+          speed: {
+            label: 'Belt Speed',
+            value: `${telemetry.speedMph.toFixed(1)} mph`,
+            sub: `${formatRunningPacePerMile(telemetry.speedMph)} /mi · ${(telemetry.speedMph * 1.60934).toFixed(1)} km/h`,
+          },
+          distance: {
+            label: 'Distance',
+            value: `${metersToMiles(distanceMeters).toFixed(2)} mi`,
+            sub: `${(distanceMeters / 1000).toFixed(2)} km`,
+          },
+          calories: {
+            label: 'Active Calories',
+            value: `${Math.round(caloriesKcal)} kcal`,
+            sub: 'ACSM incline & speed',
+          },
+          avgPower: {
+            label: 'Incline / Power',
+            value: `${(telemetry.inclinePct ?? 0).toFixed(1)}%`,
+            sub: `Avg ${avgRideWatts}W · NP ${npRideWatts}W`,
+          },
+          burnTime: {
+            label: 'Burn Zone Time',
+            value: formatDuration(burnZoneTotalSec),
+            sub: `${burnPoints} Burn pts earned`,
+          },
+        }
+      : sportMode === 'rowing'
+        ? {
+            speed: {
+              label: 'Live Split',
+              value: `${formatRowingSplit(liveRowSplit)} /500m`,
+              sub: `${Math.round(telemetry.powerWatts)}W · ${Math.round(telemetry.cadenceRpm)} spm`,
+            },
+            distance: {
+              label: 'Meters Rowed',
+              value: `${Math.round(distanceMeters).toLocaleString('en-US')} m`,
+              sub: `${(distanceMeters / 1000).toFixed(2)} km · ${telemetry.strokeCount ?? 0} strokes`,
+            },
+            calories: {
+              label: 'Active Calories',
+              value: `${Math.round(caloriesKcal)} kcal`,
+              sub: 'Erg wattage calibrated',
+            },
+            avgPower: {
+              label: 'Avg / NP Power',
+              value: `${avgRideWatts}W / ${npRideWatts}W`,
+              sub:
+                avgRideWatts > 0
+                  ? `Avg ${formatRowingSplit(rowingWattsToSplitSecPer500m(avgRideWatts))} /500m`
+                  : `Row FTP ${effectivePowerFtp}W`,
+            },
+            burnTime: {
+              label: 'Burn Zone Time',
+              value: formatDuration(burnZoneTotalSec),
+              sub: `${burnPoints} Burn pts earned`,
+            },
+          }
+        : {
+            speed: {
+              label: 'Virtual Speed',
+              value: `${telemetry.speedMph.toFixed(1)} mph`,
+              sub: `Aero ${formatHeightImperial(profile.heightFeet, profile.heightInches)} · ${profile.weightLbs}#`,
+            },
+            distance: {
+              label: 'Distance',
+              value: `${metersToMiles(distanceMeters).toFixed(2)} mi`,
+              sub: `${(distanceMeters / 1000).toFixed(2)} km`,
+            },
+            calories: {
+              label: 'Active Calories',
+              value: `${Math.round(caloriesKcal)} kcal`,
+              sub: 'Power & HR calibrated',
+            },
+            avgPower: {
+              label: 'Avg / NP Power',
+              value: `${avgRideWatts}W / ${npRideWatts}W`,
+              sub: `${computeWattsPerKg(avgRideWatts, profile.weightLbs).toFixed(2)} Avg W/kg`,
+            },
+            burnTime: {
+              label: 'Burn Zone Time',
+              value: formatDuration(burnZoneTotalSec),
+              sub: `${burnPoints} Burn pts earned`,
+            },
+          };
 
   return (
     <div
@@ -1629,7 +2163,7 @@ export function App() {
           />
           <div className="brand-copy">
             <h1 className="brand-title">Just Believe Fitness</h1>
-            <div className="brand-sub">Indoor Cycling Studio · Any Bike &amp; BLE HR</div>
+            <div className="brand-sub">Multi-Sport FTMS Studio · Bike · Run · Row</div>
           </div>
         </div>
 
@@ -1663,7 +2197,7 @@ export function App() {
           id="athlete-stats-chip"
           className="athlete-chip"
           onClick={() => setIsAthleteModalOpen(true)}
-          title="Click to edit height, weight, FTP, and Max HR"
+          title="Click to edit height, weight, FTP, Run Pace, Row FTP, and Max HR"
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <Sliders size={14} color="var(--accent-orange)" />
@@ -1671,7 +2205,12 @@ export function App() {
           </span>
           <span className="athlete-chip-stats tabular">
             {formatHeightImperial(profile.heightFeet, profile.heightInches)} · {profile.weightLbs}# ·{' '}
-            {profile.ftpWatts}W FTP · {profile.maxHrBpm} HR
+            {sportMode === 'running'
+              ? `${formatPaceSeconds(getEffectiveRunThresholdPaceSec(profile))}/mi Thr`
+              : sportMode === 'rowing'
+                ? `${effectivePowerFtp}W Row`
+                : `${profile.ftpWatts}W FTP`}{' '}
+            · {profile.maxHrBpm} HR
           </span>
         </button>
 
@@ -1713,8 +2252,8 @@ export function App() {
                   <Bluetooth size={15} />
                   {telemetry.bikeConnected
                     ? telemetry.hrConnected
-                      ? `${telemetry.bikeShortLabel || 'Bike'} + HR`
-                      : `${telemetry.bikeShortLabel || 'Bike'} Connected`
+                      ? `${telemetry.bikeShortLabel || 'Machine'} + HR`
+                      : `${telemetry.bikeShortLabel || 'Machine'} Connected`
                     : telemetry.hrConnected
                       ? telemetry.hrName || 'HR Connected'
                       : 'Pair Sensors'}
@@ -1956,7 +2495,24 @@ export function App() {
                     activeSegmentInfo.distanceMode.totalTargetMeters,
                     activeSegmentInfo.distanceMode.unit
                   )}
-                  ) — spin easy to cool down or Stop &amp; Save
+                  ) — ease into a cool-down or Stop &amp; Save
+                </>
+              ) : sportMode === 'running' && activeSegmentInfo.targets.targetSpeedMphRange ? (
+                <>
+                  <strong>{cueDisplayLabel(activeSegmentInfo.segment.cue)}:</strong>{' '}
+                  {activeSegmentInfo.segment.label} (
+                  {activeSegmentInfo.targets.targetSpeedMphRange[0].toFixed(1)}–
+                  {activeSegmentInfo.targets.targetSpeedMphRange[1].toFixed(1)} mph ·{' '}
+                  {(activeSegmentInfo.targets.targetInclinePct ?? 1.0).toFixed(1)}% incline)
+                </>
+              ) : sportMode === 'rowing' && activeSegmentInfo.targets.targetSplitSecRange ? (
+                <>
+                  <strong>{cueDisplayLabel(activeSegmentInfo.segment.cue)}:</strong>{' '}
+                  {activeSegmentInfo.segment.label} (
+                  {formatRowingSplit(activeSegmentInfo.targets.targetSplitSecRange[0])}–
+                  {formatRowingSplit(activeSegmentInfo.targets.targetSplitSecRange[1])}/500m ·{' '}
+                  {activeSegmentInfo.segment.cadenceRange[0]}–
+                  {activeSegmentInfo.segment.cadenceRange[1]} spm)
                 </>
               ) : (
                 <>
@@ -1967,6 +2523,17 @@ export function App() {
                   {activeSegmentInfo.targets.suggestedResistanceHigh})
                 </>
               )
+            ) : sportMode === 'running' ? (
+              <>
+                Run Threshold {formatPaceSeconds(getEffectiveRunThresholdPaceSec(profile))}/mi ·
+                Burn Zone ≥ {hrZones[3].minValue} bpm
+              </>
+            ) : sportMode === 'rowing' ? (
+              <>
+                Row FTP {effectivePowerFtp}W (
+                {formatRowingSplit(rowingWattsToSplitSecPer500m(effectivePowerFtp))}/500m) · Burn
+                Zone ≥ {hrZones[3].minValue} bpm
+              </>
             ) : (
               <>
                 Threshold {profile.ftpWatts}W (
@@ -2033,19 +2600,57 @@ export function App() {
         </div>
       </section>
 
-      {/* Workout Selector, Gauge Style Switcher (Rings vs Bars), & Transport Bar */}
+      {/* Sport Switcher, Workout Selector, Gauge Style Switcher (Rings vs Bars), & Transport Bar */}
       <section className="workout-strip">
         <div className="workout-picker-group">
+          <div
+            id="sport-mode-switcher"
+            className="gauge-toggle-group sport-toggle-group"
+            role="group"
+            aria-label="Sport mode"
+          >
+            <button
+              type="button"
+              id="sport-mode-cycling-btn"
+              className={`gauge-toggle-btn ${sportMode === 'cycling' ? 'active' : ''}`}
+              aria-pressed={sportMode === 'cycling'}
+              onClick={() => handleSelectSportMode('cycling')}
+              title="Indoor Cycling (Echelon, FTMS Bike, Power Meter)"
+            >
+              Bike
+            </button>
+            <button
+              type="button"
+              id="sport-mode-running-btn"
+              className={`gauge-toggle-btn ${sportMode === 'running' ? 'active' : ''}`}
+              aria-pressed={sportMode === 'running'}
+              onClick={() => handleSelectSportMode('running')}
+              title="Treadmill & Running (FTMS Treadmill 0x2ACD, BLE Footpod 0x1814)"
+            >
+              Run
+            </button>
+            <button
+              type="button"
+              id="sport-mode-rowing-btn"
+              className={`gauge-toggle-btn ${sportMode === 'rowing' ? 'active' : ''}`}
+              aria-pressed={sportMode === 'rowing'}
+              onClick={() => handleSelectSportMode('rowing')}
+              title="Indoor Rowing (Concept2 PM5, WaterRower, FTMS Rower 0x2AD1)"
+            >
+              Row
+            </button>
+          </div>
+
           <select
             id="workout-template-select"
             className="workout-select"
-            value={selectedWorkoutId}
+            value={selectedWorkout.id}
             onChange={(e) => {
               setSelectedWorkoutId(e.target.value);
               setSegmentOffsetSec(0);
             }}
           >
-            {groupWorkoutTemplates(WORKOUT_TEMPLATES).map((group) => (
+            {groupWorkoutTemplates(activeWorkouts, sportMode).map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.workouts.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -2101,7 +2706,14 @@ export function App() {
               onClick={handleOpenFocusMode}
               title="Open Full-Screen Focused Workout Mode"
             >
-              <span>Open Ride · Tap Focus for full-screen 4-grid cockpit</span>
+              <span>
+                {sportMode === 'running'
+                  ? 'Open Run'
+                  : sportMode === 'rowing'
+                    ? 'Open Row'
+                    : 'Open Ride'}{' '}
+                · Tap Focus for full-screen 4-grid cockpit
+              </span>
               <Maximize2 size={13} style={{ flexShrink: 0, opacity: 0.75 }} />
             </button>
           )}
@@ -2361,67 +2973,203 @@ export function App() {
         </div>
       </section>
 
-      {/* Interactive Simulator Controls when Simulating */}
+      {/* Interactive Multi-Sport Simulator Controls when Simulating */}
       {telemetry.isSimulating && (
         <section className="sim-bar" id="simulator-controls-bar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <strong style={{ fontSize: '0.78rem', color: 'var(--accent-orange)' }}>
-              DEMO SIM:
-            </strong>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => applySimulatorEffort(0.64, 82)}
-            >
-              Warm-Up (Blue)
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => applySimulatorEffort(0.83, 88)}
-            >
-              Base (Green)
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => applySimulatorEffort(0.98, 94)}
-            >
-              Push (Orange)
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => applySimulatorEffort(1.22, 106)}
-            >
-              All-Out (Red)
-            </button>
-          </div>
+          {sportMode === 'running' ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: '0.78rem', color: 'var(--accent-orange)' }}>
+                  RUN SIM:
+                </strong>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRunSimulatorEffort(0.55, 1.0)}
+                >
+                  Walk (Grey)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRunSimulatorEffort(0.75, 1.0)}
+                >
+                  Easy (Blue)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRunSimulatorEffort(0.88, 1.0)}
+                >
+                  Base (Green)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRunSimulatorEffort(1.0, 2.0)}
+                >
+                  Push (Orange)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRunSimulatorEffort(1.16, 1.0)}
+                >
+                  Sprint (Red)
+                </button>
+              </div>
 
-          <div className="sim-sliders tabular">
-            <label className="sim-slider-label">
-              Gear {simResistance}
-              <input
-                id="sim-resistance-slider"
-                type="range"
-                min={1}
-                max={32}
-                value={simResistance}
-                onChange={(e) => setSimResistance(Number(e.target.value))}
-              />
-            </label>
-            <label className="sim-slider-label">
-              Cadence {simCadence} RPM
-              <input
-                id="sim-cadence-slider"
-                type="range"
-                min={45}
-                max={120}
-                value={simCadence}
-                onChange={(e) => setSimCadence(Number(e.target.value))}
-              />
-            </label>
-          </div>
+              <div className="sim-sliders tabular">
+                <label className="sim-slider-label">
+                  Speed {simRunSpeedMph.toFixed(1)} mph ({formatRunningPacePerMile(simRunSpeedMph)}/mi)
+                  <input
+                    id="sim-run-speed-slider"
+                    type="range"
+                    min={2}
+                    max={13}
+                    step={0.1}
+                    value={simRunSpeedMph}
+                    onChange={(e) => setSimRunSpeedMph(Number(e.target.value))}
+                  />
+                </label>
+                <label className="sim-slider-label">
+                  Incline {simRunInclinePct.toFixed(1)}%
+                  <input
+                    id="sim-run-incline-slider"
+                    type="range"
+                    min={0}
+                    max={15}
+                    step={0.5}
+                    value={simRunInclinePct}
+                    onChange={(e) => setSimRunInclinePct(Number(e.target.value))}
+                  />
+                </label>
+              </div>
+            </>
+          ) : sportMode === 'rowing' ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: '0.78rem', color: 'var(--accent-orange)' }}>
+                  ROW SIM:
+                </strong>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRowSimulatorEffort(0.65, 20)}
+                >
+                  Paddle (Blue)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRowSimulatorEffort(0.84, 24)}
+                >
+                  Steady (Green)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRowSimulatorEffort(1.0, 28)}
+                >
+                  2K Pace (Orange)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRowSimulatorEffort(1.24, 33)}
+                >
+                  Sprint (Red)
+                </button>
+              </div>
+
+              <div className="sim-sliders tabular">
+                <label className="sim-slider-label">
+                  Power {simRowWatts}W ({formatRowingSplit(rowingWattsToSplitSecPer500m(simRowWatts))}/500m)
+                  <input
+                    id="sim-row-watts-slider"
+                    type="range"
+                    min={50}
+                    max={450}
+                    step={5}
+                    value={simRowWatts}
+                    onChange={(e) => setSimRowWatts(Number(e.target.value))}
+                  />
+                </label>
+                <label className="sim-slider-label">
+                  Stroke Rate {simRowStrokeRate} SPM
+                  <input
+                    id="sim-row-spm-slider"
+                    type="range"
+                    min={16}
+                    max={40}
+                    value={simRowStrokeRate}
+                    onChange={(e) => setSimRowStrokeRate(Number(e.target.value))}
+                  />
+                </label>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: '0.78rem', color: 'var(--accent-orange)' }}>
+                  DEMO SIM:
+                </strong>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applySimulatorEffort(0.64, 82)}
+                >
+                  Warm-Up (Blue)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applySimulatorEffort(0.83, 88)}
+                >
+                  Base (Green)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applySimulatorEffort(0.98, 94)}
+                >
+                  Push (Orange)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applySimulatorEffort(1.22, 106)}
+                >
+                  All-Out (Red)
+                </button>
+              </div>
+
+              <div className="sim-sliders tabular">
+                <label className="sim-slider-label">
+                  Gear {simResistance}
+                  <input
+                    id="sim-resistance-slider"
+                    type="range"
+                    min={1}
+                    max={32}
+                    value={simResistance}
+                    onChange={(e) => setSimResistance(Number(e.target.value))}
+                  />
+                </label>
+                <label className="sim-slider-label">
+                  Cadence {simCadence} RPM
+                  <input
+                    id="sim-cadence-slider"
+                    type="range"
+                    min={45}
+                    max={120}
+                    value={simCadence}
+                    onChange={(e) => setSimCadence(Number(e.target.value))}
+                  />
+                </label>
+              </div>
+            </>
+          )}
         </section>
       )}
 
@@ -2494,6 +3242,7 @@ export function App() {
                 activeHrZone={activeHrZone}
                 activeSegmentInfo={activeSegmentInfo}
                 resistanceControl={resistanceControl}
+                speedControl={speedControl}
                 quadStatOrder={quadStatOrder}
                 arrange={makeTileArrange(tileId)}
               />
@@ -2646,6 +3395,7 @@ export function App() {
             : trackPoints
         }
         profile={profile}
+        sport={sportMode}
         hrZoneSeconds={hrZoneSeconds}
         powerZoneSeconds={powerZoneSeconds}
         hasHrStream={hasHrStream}
@@ -2746,7 +3496,7 @@ export function App() {
       <FocusRideModal
         isOpen={isFocusModalOpen}
         onClose={handleCloseFocusMode}
-        workouts={WORKOUT_TEMPLATES}
+        workouts={activeWorkouts}
         selectedWorkout={selectedWorkout}
         onSelectWorkoutId={(id) => {
           setSelectedWorkoutId(id);
@@ -2771,6 +3521,7 @@ export function App() {
         activeHrZone={activeHrZone}
         headlineZone={headlineZone}
         resistanceControl={resistanceControl}
+        speedControl={speedControl}
         audioEnabled={audioEnabled}
         onToggleAudio={handleToggleAudio}
         isHudPipActive={isHudPipActive}
@@ -2816,7 +3567,7 @@ export function App() {
         bleSupported={EchelonBikeConnection.isSupported()}
         onConnectBike={(acceptAllDevices) => {
           void bikeBleRef.current
-            ?.requestAndConnect({ acceptAllDevices })
+            ?.requestAndConnect({ acceptAllDevices, preferredSport: sportMode })
             .catch((err: unknown) => {
               if (err instanceof Error && err.name !== 'NotFoundError') {
                 showToast(err.message);
@@ -2918,7 +3669,7 @@ export function App() {
               <p className="modal-subtitle">
                 {stopConfirmAction === 'save'
                   ? `Your workout is paused at ${formatDuration(elapsedSec)}${burnPoints > 0 ? ` (${burnPoints} Burn Points)` : ''}. Ready to finish and open your summary?`
-                  : `Discard ${formatDuration(elapsedSec)} of ride data and reset the timer to 0:00?`}
+                  : `Discard ${formatDuration(elapsedSec)} of workout data and reset the timer to 0:00?`}
               </p>
             </div>
             <div className="confirm-modal-actions">
@@ -2928,7 +3679,12 @@ export function App() {
                 className="btn"
                 onClick={handleCancelStopConfirm}
               >
-                <Play size={15} /> Keep Riding
+                <Play size={15} />{' '}
+                {sportMode === 'running'
+                  ? 'Keep Running'
+                  : sportMode === 'rowing'
+                    ? 'Keep Rowing'
+                    : 'Keep Riding'}
               </button>
               {stopConfirmAction === 'save' ? (
                 <button

@@ -26,7 +26,16 @@ import type {
   StravaConfig,
   ZoneId,
 } from '../types/fitness';
-import { ZONE_PALETTE, computeWattsPerKg, formatDuration, metersToMiles } from '../utils/zones';
+import {
+  ZONE_PALETTE,
+  computeWattsPerKg,
+  formatDuration,
+  formatRowingSplit,
+  formatRunningPacePerMile,
+  metersToMiles,
+  mpsToMph,
+  rowingWattsToSplitSecPer500m,
+} from '../utils/zones';
 import { buildStravaAuthorizeUrl } from '../services/strava';
 import {
   fetchGarminServerStatus,
@@ -69,6 +78,22 @@ export function DeviceConnectionModal({
 }: DeviceModalProps) {
   if (!isOpen) return null;
 
+  const sport = telemetry.sport ?? 'cycling';
+  const pairBtnLabel =
+    telemetry.bikeStatus === 'connecting'
+      ? 'Scan Again'
+      : sport === 'running'
+        ? 'Pair Treadmill / Pod'
+        : sport === 'rowing'
+          ? 'Pair Rower'
+          : 'Pair Machine / Bike';
+  const machineHeading =
+    sport === 'running'
+      ? 'Treadmill / Running Pod'
+      : sport === 'rowing'
+        ? 'Indoor Rower'
+        : 'Fitness Machine / Bike';
+
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="modal-card" onClick={(e) => e.stopPropagation()} id="device-connection-modal">
@@ -76,9 +101,9 @@ export function DeviceConnectionModal({
           <div>
             <h2 className="modal-title">Direct Bluetooth Sensors</h2>
             <p className="modal-subtitle">
-              Pairs directly with any Echelon bike, FTMS smart bike or trainer, power pedals, or
-              cadence pod — plus any Bluetooth heart rate monitor — with zero bridge apps or
-              paywalls.
+              Pairs directly with FTMS bikes, treadmills, rowers, Echelon bikes, power pedals,
+              running footpods, and any Bluetooth heart rate monitor — auto-switching Bike, Run, or
+              Row mode with zero bridge apps or paywalls.
             </p>
           </div>
           <button type="button" className="btn btn-sm" id="close-device-modal" onClick={onClose}>
@@ -97,11 +122,11 @@ export function DeviceConnectionModal({
             }}
           >
             {getBluetoothUnsupportedMessage()}
-            {' '}You can still test everything right now using <strong>Simulate Ride</strong> below!
+            {' '}You can still test everything right now using <strong>Simulate</strong> below!
           </div>
         )}
 
-        {/* Universal Stationary Bike Card (All Echelon Models + Other Bike Brands) */}
+        {/* Universal FTMS Fitness Machine Card (Bikes, Treadmills, Footpods & Rowers) */}
         <div className="history-item" style={{ alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 280px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
@@ -115,13 +140,26 @@ export function DeviceConnectionModal({
                       : ''
                 }`}
               />
-              Stationary Bike ({telemetry.bikeName || 'Echelon · FTMS · Power · Cadence'})
+              {machineHeading} ({telemetry.bikeName || 'Bike · Treadmill · Rower · Footpod'})
             </div>
             <p style={{ margin: '5px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              <strong>Echelon Bikes:</strong> Connect Sport, Sport-s, EX-15, Prime, EX-1, EX-3,
-              EX-4s, EX-4s+, EX-5, EX-5s, EX-7s, EX-8s, EX-Pro &amp; GT+ — including{' '}
-              <strong>automatic offline unlock for locked Echelon firmware</strong> (auto-detects
-              flywheel curve &amp; knob vs. motorized resistance).
+              <strong>Bikes &amp; Trainers:</strong> Echelon Connect Sport, EX-15, EX-3, EX-4s,
+              EX-5, EX-8s &amp; GT+ (with <strong>automatic offline unlock</strong>), Schwinn IC4,
+              Bowflex C6, Concept2 BikeErg, Wahoo KICKR, Tacx, Stages, Wattbike, Keiser M3i,
+              Yesoul, Merach, power pedals, and BLE cadence sensors.
+            </p>
+            <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              <strong>Treadmills &amp; Footpods:</strong> Standard FTMS Treadmills (
+              <code>0x2ACD</code> — Horizon 7.0/7.4/7.8 AT, Sole F63/F80/F85, Bowflex, Echelon
+              Stride, Domyos, NoblePro, Technogym, AssaultRunner, Wahoo KICKR RUN) plus Bluetooth
+              Running Speed &amp; Cadence footpods (<code>0x1814</code> — Stryd, Zwift RunPod,
+              Garmin Foot Pod, NPE Runn).
+            </p>
+            <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              <strong>Rowers:</strong> Standard FTMS Indoor Rowers (<code>0x2AD1</code> — Concept2
+              RowErg PM5, WaterRower S4/SmartRow/ComModule, Ergatta, RP3, Echelon Row, Merach,
+              Domyos, Hydrow/FTMS adapters) with live <code>/500m</code> split, watts &amp; stroke
+              rate.
             </p>
             {telemetry.bikeConnected && telemetry.bikeUnlockStatus === 'unlocking' && (
               <p
@@ -169,16 +207,10 @@ export function DeviceConnectionModal({
                 }}
               >
                 <strong>Firmware lock didn&apos;t confirm:</strong> Unplug the bike for 10 seconds
-                so its Bluetooth LED flashes fresh, then tap <strong>Disconnect</strong> and{' '}
-                <strong>Pair Bike</strong> again.
+                so its Bluetooth LED flashes fresh, then tap <strong>Disconnect</strong> and pair
+                again.
               </p>
             )}
-            <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              <strong>Other Brands:</strong> Works with standard Bluetooth FTMS bikes &amp; trainers
-              (Schwinn IC4, Bowflex C6, Yesoul, Merach, Domyos, Keiser M3i, Stages, Wattbike,
-              Concept2 BikeErg, Renpho, Wahoo KICKR, Tacx, Zwift Ride), power pedals
-              (Assioma/Rally), or any spin bike with a BLE cadence sensor.
-            </p>
             <p
               style={{
                 margin: '6px 0 0',
@@ -190,11 +222,10 @@ export function DeviceConnectionModal({
                 color: 'var(--text-secondary)',
               }}
             >
-              <strong>Tip:</strong> Force-close the official Echelon/brand app (and put built-in{' '}
-              <code>s</code>-series screens in sleep/freestyle) so Bluetooth is free. Locked
-              Echelon firmware (<code>0xF0 0xE0</code>) unlocks automatically offline — if metrics
-              stay at 0, power-cycle the bike for 10s and reconnect. Avoid unnecessary firmware
-              updates in the Echelon app in case future updates add stricter locks.
+              <strong>Tip:</strong> Force-close other fitness apps so your machine&apos;s Bluetooth
+              channel is free. Connecting a treadmill, footpod, or rower automatically switches the
+              studio into <strong>Run</strong> or <strong>Row</strong> mode. On Concept2 PM5,
+              enable <em>More Options → Turn Wireless ON → Connect (FTMS)</em>.
             </p>
           </div>
           {telemetry.bikeConnected ? (
@@ -216,7 +247,7 @@ export function DeviceConnectionModal({
                 onClick={() => onConnectBike(false)}
               >
                 <Bluetooth size={16} />
-                {telemetry.bikeStatus === 'connecting' ? 'Scan Again' : 'Pair Bike'}
+                {pairBtnLabel}
               </button>
               <button
                 type="button"
@@ -224,7 +255,7 @@ export function DeviceConnectionModal({
                 className="btn btn-sm"
                 disabled={!bleSupported}
                 onClick={() => onConnectBike(true)}
-                title="Show all nearby Bluetooth devices if your bike uses a custom name"
+                title="Show all nearby Bluetooth devices if your machine uses a custom name"
               >
                 Scan All BLE
               </button>
@@ -332,11 +363,10 @@ export function DeviceConnectionModal({
         {/* Interactive Demo Simulator */}
         <div className="history-item">
           <div style={{ flex: '1 1 260px' }}>
-            <div style={{ fontWeight: 700 }}>Interactive Ride Simulator</div>
+            <div style={{ fontWeight: 700 }}>Interactive Studio Simulator</div>
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Stream realistic stationary bike gear, cadence, watts, and heart rate off-bike to
-              preview color shifts, Burn Points, PiP HUD, photo stat cards, and Garmin/Strava
-              export.
+              Stream realistic bike, treadmill, or rower telemetry off-machine to preview zone
+              shifts, Burn Points, PiP HUD, photo stat cards, and Garmin/Strava export.
             </p>
           </div>
           <button
@@ -651,11 +681,11 @@ export function HistoryAndStravaModal({
             <h2 className="modal-title">
               {highlightedRide
                 ? 'Workout Summary, Photo Card & Sync'
-                : 'Ride History · Strava & Garmin'}
+                : 'Workout History · Strava & Garmin'}
             </h2>
             <p className="modal-subtitle">
-              Snap a post-ride stat photo, sync directly to Strava, or download .FIT files to upload
-              to Garmin Connect.
+              Snap a post-workout stat photo, sync directly to Strava, or download .FIT files to
+              upload to Garmin Connect.
             </p>
           </div>
           <button type="button" className="btn btn-sm" id="close-history-modal" onClick={onClose}>
@@ -666,50 +696,168 @@ export function HistoryAndStravaModal({
         {/* Highlighted Ride Summary + Photo Overlay Studio */}
         {highlightedRide && (
           <div className="hero-ride-card">
-            <div className="hero-ride-head">
-              <div style={{ minWidth: 0 }}>
-                <div className="hero-ride-title">{highlightedRide.title}</div>
-                <div className="history-stat-chips tabular">
-                  <span>{formatDuration(highlightedRide.durationSec)}</span>
-                  <span>{metersToMiles(highlightedRide.distanceMeters).toFixed(2)} mi</span>
-                  <span>{Math.round(highlightedRide.caloriesKcal)} kcal</span>
-                </div>
-              </div>
-              {highlightedRide.burnPoints > 0 && (
-                <div className="hero-burn-badge">
-                  <Flame size={15} /> {highlightedRide.burnPoints} BURN PTS
-                </div>
-              )}
-            </div>
+            {(() => {
+              const heroSport = highlightedRide.sport ?? 'cycling';
+              const heroAvgMph =
+                highlightedRide.durationSec > 0
+                  ? mpsToMph(highlightedRide.distanceMeters / highlightedRide.durationSec)
+                  : 0;
+              const heroRowSplit =
+                highlightedRide.avgSplitSecPer500m && highlightedRide.avgSplitSecPer500m > 0
+                  ? highlightedRide.avgSplitSecPer500m
+                  : rowingWattsToSplitSecPer500m(highlightedRide.avgWatts);
+              return (
+                <>
+                  <div className="hero-ride-head">
+                    <div style={{ minWidth: 0 }}>
+                      <div className="hero-ride-title">
+                        {heroSport !== 'cycling' && (
+                          <span className={`sport-badge sport-badge-${heroSport}`}>
+                            {heroSport === 'running' ? 'RUN' : 'ROW'}
+                          </span>
+                        )}{' '}
+                        {highlightedRide.title}
+                      </div>
+                      <div className="history-stat-chips tabular">
+                        <span>{formatDuration(highlightedRide.durationSec)}</span>
+                        <span>
+                          {heroSport === 'rowing'
+                            ? `${Math.round(highlightedRide.distanceMeters).toLocaleString('en-US')} m`
+                            : `${metersToMiles(highlightedRide.distanceMeters).toFixed(2)} mi`}
+                        </span>
+                        <span>{Math.round(highlightedRide.caloriesKcal)} kcal</span>
+                      </div>
+                    </div>
+                    {highlightedRide.burnPoints > 0 && (
+                      <div className="hero-burn-badge">
+                        <Flame size={15} /> {highlightedRide.burnPoints} BURN PTS
+                      </div>
+                    )}
+                  </div>
 
-            <div className="summary-metrics-grid">
-              <div className="stat-tile">
-                <span className="stat-tile-label">Avg / NP Power</span>
-                <span className="stat-tile-val tabular">
-                  {highlightedRide.avgWatts}W / {highlightedRide.normalizedWatts}W
-                </span>
-                <span className="stat-tile-sub">{highlightedRide.avgWkg.toFixed(2)} W/kg</span>
-              </div>
-              <div className="stat-tile">
-                <span className="stat-tile-label">Max Power</span>
-                <span className="stat-tile-val tabular">{highlightedRide.maxWatts}W</span>
-                <span className="stat-tile-sub">Avg Res {highlightedRide.avgResistance}</span>
-              </div>
-              <div className="stat-tile">
-                <span className="stat-tile-label">Heart Rate</span>
-                <span className="stat-tile-val tabular">
-                  {highlightedRide.avgHr > 0 ? `${highlightedRide.avgHr} bpm` : '--'}
-                </span>
-                <span className="stat-tile-sub">
-                  Max {highlightedRide.maxHr > 0 ? `${highlightedRide.maxHr} bpm` : '--'}
-                </span>
-              </div>
-              <div className="stat-tile">
-                <span className="stat-tile-label">Cadence</span>
-                <span className="stat-tile-val tabular">{highlightedRide.avgCadence} rpm</span>
-                <span className="stat-tile-sub">Max {highlightedRide.maxCadence} rpm</span>
-              </div>
-            </div>
+                  <div className="summary-metrics-grid">
+                    {heroSport === 'running' ? (
+                      <>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Avg Pace</span>
+                          <span className="stat-tile-val tabular">
+                            {formatRunningPacePerMile(heroAvgMph)} /mi
+                          </span>
+                          <span className="stat-tile-sub">{heroAvgMph.toFixed(1)} mph avg</span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Incline / Power</span>
+                          <span className="stat-tile-val tabular">
+                            {(highlightedRide.avgInclinePct ?? 0).toFixed(1)}%
+                          </span>
+                          <span className="stat-tile-sub">
+                            Max {(highlightedRide.maxInclinePct ?? 0).toFixed(1)}% ·{' '}
+                            {highlightedRide.avgWatts}W
+                          </span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Heart Rate</span>
+                          <span className="stat-tile-val tabular">
+                            {highlightedRide.avgHr > 0 ? `${highlightedRide.avgHr} bpm` : '--'}
+                          </span>
+                          <span className="stat-tile-sub">
+                            Max {highlightedRide.maxHr > 0 ? `${highlightedRide.maxHr} bpm` : '--'}
+                          </span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Cadence</span>
+                          <span className="stat-tile-val tabular">
+                            {highlightedRide.avgCadence > 0
+                              ? `${highlightedRide.avgCadence} spm`
+                              : '--'}
+                          </span>
+                          <span className="stat-tile-sub">
+                            Max{' '}
+                            {highlightedRide.maxCadence > 0
+                              ? `${highlightedRide.maxCadence} spm`
+                              : '--'}
+                          </span>
+                        </div>
+                      </>
+                    ) : heroSport === 'rowing' ? (
+                      <>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Avg Split</span>
+                          <span className="stat-tile-val tabular">
+                            {formatRowingSplit(heroRowSplit)} /500m
+                          </span>
+                          <span className="stat-tile-sub">
+                            {Math.round(highlightedRide.distanceMeters).toLocaleString('en-US')} m
+                          </span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Avg / Max Power</span>
+                          <span className="stat-tile-val tabular">
+                            {highlightedRide.avgWatts}W / {highlightedRide.maxWatts}W
+                          </span>
+                          <span className="stat-tile-sub">NP {highlightedRide.normalizedWatts}W</span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Heart Rate</span>
+                          <span className="stat-tile-val tabular">
+                            {highlightedRide.avgHr > 0 ? `${highlightedRide.avgHr} bpm` : '--'}
+                          </span>
+                          <span className="stat-tile-sub">
+                            Max {highlightedRide.maxHr > 0 ? `${highlightedRide.maxHr} bpm` : '--'}
+                          </span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Stroke Rate</span>
+                          <span className="stat-tile-val tabular">
+                            {highlightedRide.avgCadence} spm
+                          </span>
+                          <span className="stat-tile-sub">
+                            {highlightedRide.totalStrokes
+                              ? `${highlightedRide.totalStrokes} strokes`
+                              : `Max ${highlightedRide.maxCadence} spm`}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Avg / NP Power</span>
+                          <span className="stat-tile-val tabular">
+                            {highlightedRide.avgWatts}W / {highlightedRide.normalizedWatts}W
+                          </span>
+                          <span className="stat-tile-sub">
+                            {highlightedRide.avgWkg.toFixed(2)} W/kg
+                          </span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Max Power</span>
+                          <span className="stat-tile-val tabular">{highlightedRide.maxWatts}W</span>
+                          <span className="stat-tile-sub">
+                            Avg Res {highlightedRide.avgResistance}
+                          </span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Heart Rate</span>
+                          <span className="stat-tile-val tabular">
+                            {highlightedRide.avgHr > 0 ? `${highlightedRide.avgHr} bpm` : '--'}
+                          </span>
+                          <span className="stat-tile-sub">
+                            Max {highlightedRide.maxHr > 0 ? `${highlightedRide.maxHr} bpm` : '--'}
+                          </span>
+                        </div>
+                        <div className="stat-tile">
+                          <span className="stat-tile-label">Cadence</span>
+                          <span className="stat-tile-val tabular">
+                            {highlightedRide.avgCadence} rpm
+                          </span>
+                          <span className="stat-tile-sub">Max {highlightedRide.maxCadence} rpm</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
 
             {highlightedRide.ftpTestResult ? (
               (() => {
@@ -911,16 +1059,29 @@ export function HistoryAndStravaModal({
           <h3 className="panel-heading">Saved Local Workouts ({rides.length})</h3>
           {rides.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem', padding: '10px 0' }}>
-              No saved rides yet. Start a workout and tap Stop &amp; Save when you&apos;re done!
+              No saved workouts yet. Start a workout and tap Stop &amp; Save when you&apos;re done!
             </div>
           ) : (
             rides.map((r) => {
               const isConfirmingDelete = confirmDeleteId === r.id;
+              const rowSport = r.sport ?? 'cycling';
+              const runAvgMph = r.durationSec > 0 ? mpsToMph(r.distanceMeters / r.durationSec) : 0;
+              const rowSplit =
+                r.avgSplitSecPer500m && r.avgSplitSecPer500m > 0
+                  ? r.avgSplitSecPer500m
+                  : rowingWattsToSplitSecPer500m(r.avgWatts);
               return (
                 <div className="history-item history-ride-card" key={r.id}>
                   <div className="history-ride-head">
                     <div className="history-ride-meta">
-                      <div className="history-ride-title">{r.title}</div>
+                      <div className="history-ride-title">
+                        {rowSport !== 'cycling' && (
+                          <span className={`sport-badge sport-badge-${rowSport}`}>
+                            {rowSport === 'running' ? 'RUN' : 'ROW'}
+                          </span>
+                        )}{' '}
+                        {r.title}
+                      </div>
                       {r.burnPoints > 0 && (
                         <div className="history-ride-burn">
                           <Flame size={12} /> {r.burnPoints} Burn pts
@@ -929,9 +1090,22 @@ export function HistoryAndStravaModal({
                       <div className="history-stat-chips tabular">
                         <span>{new Date(r.startedAtIso).toLocaleDateString()}</span>
                         <span>{formatDuration(r.durationSec)}</span>
-                        <span>
-                          {r.avgWatts}W ({r.avgWkg.toFixed(2)} W/kg)
-                        </span>
+                        {rowSport === 'running' ? (
+                          <>
+                            <span>{metersToMiles(r.distanceMeters).toFixed(2)} mi</span>
+                            <span>{formatRunningPacePerMile(runAvgMph)}/mi</span>
+                          </>
+                        ) : rowSport === 'rowing' ? (
+                          <>
+                            <span>{Math.round(r.distanceMeters).toLocaleString('en-US')} m</span>
+                            <span>{formatRowingSplit(rowSplit)}/500m</span>
+                            <span>{r.avgWatts}W</span>
+                          </>
+                        ) : (
+                          <span>
+                            {r.avgWatts}W ({r.avgWkg.toFixed(2)} W/kg)
+                          </span>
+                        )}
                         {r.avgHr > 0 && <span>{r.avgHr} bpm</span>}
                         <span>{Math.round(r.caloriesKcal)} kcal</span>
                       </div>

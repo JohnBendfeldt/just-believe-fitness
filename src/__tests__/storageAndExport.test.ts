@@ -5,11 +5,13 @@ import {
   listSavedRides,
   loadAthleteProfile,
   loadGarminConfig,
+  loadSportMode,
   loadStravaConfig,
   loadYouTubePresets,
   saveAthleteProfile,
   saveGarminConfig,
   saveRideToDb,
+  saveSportMode,
   saveStravaConfig,
   saveYouTubeState,
 } from '../services/storage';
@@ -207,5 +209,99 @@ describe('Garmin Binary .FIT v2.0 Exporter & TCX -> FIT Converter', () => {
 
     downloadRideFit(ride, 'edge-830');
     expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists sport mode locally and exports valid FIT v2.0 & TCX files for Running and Rowing', () => {
+    expect(loadSportMode()).toBe('cycling');
+    saveSportMode('running');
+    expect(loadSportMode()).toBe('running');
+    saveSportMode('rowing');
+    expect(loadSportMode()).toBe('rowing');
+    saveSportMode('cycling');
+    expect(loadSportMode()).toBe('cycling');
+
+    const runRide = makeSampleRide({
+      id: 'run-fit-1',
+      sport: 'running',
+      title: '5K Challenge',
+      bikeLabel: 'Horizon 7.4 AT',
+      durationSec: 1500,
+      distanceMeters: 5000,
+      avgCadence: 174,
+      maxCadence: 184,
+      avgInclinePct: 1.5,
+      maxInclinePct: 3.0,
+      trackPoints: [
+        {
+          timestampMs: Date.parse('2026-11-15T22:00:00Z'),
+          elapsedSec: 1,
+          powerWatts: 245,
+          cadenceRpm: 174,
+          resistance: 2,
+          inclinePct: 1.5,
+          heartRateBpm: 156,
+          speedMps: 3.33,
+          distanceMeters: 3.33,
+          caloriesKcal: 0.25,
+          hrZone: 4,
+          powerZone: 4,
+        },
+        {
+          timestampMs: Date.parse('2026-11-15T22:00:01Z'),
+          elapsedSec: 2,
+          powerWatts: 250,
+          cadenceRpm: 176,
+          resistance: 2,
+          inclinePct: 1.5,
+          heartRateBpm: 157,
+          speedMps: 3.33,
+          distanceMeters: 6.66,
+          caloriesKcal: 0.5,
+          hrZone: 4,
+          powerZone: 4,
+        },
+      ],
+    });
+
+    const runFit = buildRideFitBytes(runRide, 'edge-830');
+    expect(String.fromCharCode(runFit[8], runFit[9], runFit[10], runFit[11])).toBe('.FIT');
+    expect(runFit[12] | (runFit[13] << 8)).toBe(computeFitCrc(runFit, 0, 12));
+    expect(runFit[runFit.length - 2] | (runFit[runFit.length - 1] << 8)).toBe(
+      computeFitCrc(runFit, 0, runFit.length - 2)
+    );
+
+    const runTcx = buildRideTcxXml(runRide);
+    expect(runTcx).toContain('<Activity Sport="Running">');
+    expect(runTcx).toContain('<ns3:RunCadence>87</ns3:RunCadence>');
+    expect(runTcx).toContain('Incline: 1.5%');
+
+    const convertedRun = convertTcxXmlToFitBytes(runTcx, 'edge-830', '5k-run.tcx');
+    expect(convertedRun.ride.sport).toBe('running');
+    expect(convertedRun.ride.avgCadence).toBe(175);
+
+    const rowRide = makeSampleRide({
+      id: 'row-fit-1',
+      sport: 'rowing',
+      title: '2,000m Erg Test',
+      bikeLabel: 'Concept2 RowErg PM5',
+      durationSec: 480,
+      distanceMeters: 2000,
+      avgWatts: 205,
+      avgCadence: 28,
+      maxCadence: 34,
+      avgSplitSecPer500m: 120,
+      totalStrokes: 224,
+    });
+
+    const rowFit = buildRideFitBytes(rowRide, 'edge-830');
+    expect(String.fromCharCode(rowFit[8], rowFit[9], rowFit[10], rowFit[11])).toBe('.FIT');
+    expect(rowFit[12] | (rowFit[13] << 8)).toBe(computeFitCrc(rowFit, 0, 12));
+    expect(rowFit[rowFit.length - 2] | (rowFit[rowFit.length - 1] << 8)).toBe(
+      computeFitCrc(rowFit, 0, rowFit.length - 2)
+    );
+
+    const rowTcx = buildRideTcxXml(rowRide);
+    expect(rowTcx).toContain('<Activity Sport="Other">');
+    expect(rowTcx).toContain('Avg Split: 2:00 /500m');
   });
 });
