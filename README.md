@@ -1,6 +1,6 @@
 # Just Believe Fitness
 
-**Live studio:** [jbfit.studio](https://jbfit.studio) · **Built by:** [John Bendfeldt](https://johnbendfeldt.com/)
+**Live studio:** [jbfit.studio](https://jbfit.studio) · **Built by:** [John Bendfeldt](https://johnbendfeldt.com/) · **Contact:** [dev@jbfit.studio](mailto:dev@jbfit.studio)
 
 A **100% local-first, privacy-first** 5-zone indoor cycling, running, and rowing studio that connects **directly** over Bluetooth to **any Echelon stationary bike**, **standard FTMS bikes & trainers**, **FTMS treadmills**, **BLE running footpods**, **FTMS indoor rowers** (Concept2 PM5, WaterRower, etc.), **power pedals**, or **BLE cadence sensors**, plus **any Bluetooth heart rate monitor** — with **zero accounts, zero paywalls, and zero middleman bridge apps**.
 

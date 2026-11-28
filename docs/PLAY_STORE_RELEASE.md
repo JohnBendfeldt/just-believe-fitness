@@ -59,6 +59,7 @@ npx @bubblewrap/cli build
 ---
 
 ## 4. Google Play Console Questionnaire Answers
+- **Developer / Support Email:** `dev@jbfit.studio`
 - **Privacy Policy URL:** `https://jbfit.studio/privacy`
 - **Data Safety:**
   - *Does your app collect or share any of the required user data types?* -> **No** (all athlete profile, ride history, and tokens stay locally on the user's device; optional Strava/Garmin sync is user-initiated).

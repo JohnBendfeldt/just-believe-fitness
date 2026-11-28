@@ -3433,6 +3433,14 @@ export function App() {
             <GitHubMarkIcon size={13} />
             GitHub Source
           </a>
+          <a
+            id="footer-contact-link"
+            href="mailto:dev@jbfit.studio"
+            className="studio-footer-link"
+            title="Email dev@jbfit.studio for support or feedback"
+          >
+            dev@jbfit.studio
+          </a>
           <button
             type="button"
             id="open-privacy-btn"

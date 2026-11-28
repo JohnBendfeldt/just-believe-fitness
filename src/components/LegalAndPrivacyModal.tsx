@@ -10,6 +10,7 @@ interface LegalAndPrivacyModalProps {
 }
 
 const EFFECTIVE_DATE = 'November 15, 2026';
+const SUPPORT_EMAIL = 'dev@jbfit.studio';
 
 export function LegalAndPrivacyModal({
   activeTab,
@@ -165,8 +166,20 @@ export function LegalAndPrivacyModal({
               <h3>4. Full Data Portability &amp; Control</h3>
               <p>
                 Your fitness data belongs to you. You can export any saved workout as an open
-                standard <code>.TCX</code> file, disconnect Strava or Garmin at any time, or delete
-                individual rides and local browser storage whenever you choose.
+                standard <code>.FIT</code> or <code>.TCX</code> file, disconnect Strava or Garmin
+                at any time, or delete individual rides and local browser storage whenever you
+                choose.
+              </p>
+            </section>
+
+            <section className="legal-section">
+              <h3>5. Contact &amp; Support</h3>
+              <p>
+                Questions about privacy, bike compatibility, or this app? Reach out anytime at{' '}
+                <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--accent-blue)' }}>
+                  {SUPPORT_EMAIL}
+                </a>
+                .
               </p>
             </section>
           </div>
@@ -277,7 +290,10 @@ export function LegalAndPrivacyModal({
           }}
         >
           <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-            Direct links: <code>/privacy</code> · <code>/terms</code>
+            Direct links: <code>/privacy</code> · <code>/terms</code> ·{' '}
+            <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--accent-blue)' }}>
+              {SUPPORT_EMAIL}
+            </a>
           </span>
           <button
             type="button"

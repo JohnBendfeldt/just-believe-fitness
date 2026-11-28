@@ -40,6 +40,7 @@ When you're ready to distribute to other iPhone/iPad riders:
    - Set **Version** and **Build** numbers.
    - Select **Any iOS Device (arm64)** -> **Product -> Archive** -> **Distribute App -> App Store Connect**.
 5. **App Store Connect answers:**
+   - **Support / Contact Email:** `dev@jbfit.studio`
    - **Privacy Policy URL:** `https://jbfit.studio/privacy`
    - **App Privacy:** Data Not Collected (all workouts, athlete stats, and optional OAuth tokens remain locally on device).
    - **Review Notes:** Explain that the app connects natively via CoreBluetooth to indoor cycling bikes (Echelon, FTMS, power meters, cadence sensors) and BLE heart rate monitors, records workouts offline, and exports `.FIT`/`.TCX` files — and that reviewers without a bike can test all features immediately via **Simulate Ride**.
